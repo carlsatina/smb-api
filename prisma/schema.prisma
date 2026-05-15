@@ -1,0 +1,440 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  CASHIER
+  INVENTORY_MANAGER
+  VIEWER
+}
+
+enum PlanTier {
+  STARTER
+  STANDARD
+  GROWTH
+}
+
+enum ProductType {
+  READY_MADE
+  RECIPE
+}
+
+enum MovementType {
+  SALE
+  PURCHASE_RECEIPT
+  STOCK_ADJUSTMENT
+  WASTE
+  REFUND
+  VOID
+}
+
+enum SaleStatus {
+  DRAFT
+  FINALIZED
+  VOIDED
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  TRANSFER
+  GCASH
+  MAYA
+  OTHER
+}
+
+enum PurchaseOrderStatus {
+  DRAFT
+  SENT
+  PARTIALLY_RECEIVED
+  RECEIVED
+  CANCELLED
+}
+
+enum ItemType {
+  PRODUCT
+  INGREDIENT
+}
+
+enum IngredientCategory {
+  RAW_MATERIAL
+  PACKAGING
+}
+
+model User {
+  id           String         @id @default(cuid())
+  email        String         @unique
+  passwordHash String
+  fullName     String?
+  emailVerifiedAt DateTime?
+  subscriptionActive Boolean  @default(true)
+  planTier     PlanTier       @default(STARTER)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  memberships   StoreMember[]
+  invites       StoreInvite[]  @relation("InvitedBy")
+  refreshTokens RefreshToken[]
+  passwordResetTokens PasswordResetToken[]
+  emailVerificationTokens EmailVerificationToken[]
+  auditLogs     AuditLog[]     @relation("Actor")
+  sales         Sale[]         @relation("Cashier")
+  receipts      PurchaseReceipt[] @relation("ReceivedBy")
+  movements     InventoryMovement[] @relation("CreatedBy")
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+}
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+}
+
+model EmailVerificationToken {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+}
+
+model Store {
+  id                 String   @id @default(cuid())
+  name               String
+  timezone           String   @default("Asia/Manila")
+  currency           String   @default("PHP")
+  unitOptions        String[] @default([])
+  categoryOptions    String[] @default([])
+  allowNegativeStock Boolean  @default(false)
+  lowStockThreshold  Decimal  @default(0) @db.Decimal(12, 4)
+  defaultTaxRate     Decimal  @default(0) @db.Decimal(5, 2)
+  defaultDiscount    Decimal  @default(0) @db.Decimal(12, 2)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  deletedAt          DateTime?
+
+  members            StoreMember[]
+  invites            StoreInvite[]
+  products           Product[]
+  ingredients        Ingredient[]
+  recipes            Recipe[]
+  sales              Sale[]
+  purchaseOrders     PurchaseOrder[]
+  receipts           PurchaseReceipt[]
+  inventoryMovements InventoryMovement[]
+  auditLogs          AuditLog[]
+  suppliers          Supplier[]
+}
+
+model StoreMember {
+  id        String   @id @default(cuid())
+  storeId   String
+  userId    String
+  role      Role
+  createdAt DateTime @default(now())
+  deletedAt DateTime?
+
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, userId])
+  @@index([storeId, createdAt])
+  @@index([userId])
+}
+
+model StoreInvite {
+  id          String   @id @default(cuid())
+  storeId     String
+  email       String
+  role        Role
+  tokenHash   String   @unique
+  expiresAt   DateTime
+  acceptedAt  DateTime?
+  invitedById String
+  createdAt   DateTime @default(now())
+
+  store     Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  invitedBy User  @relation("InvitedBy", fields: [invitedById], references: [id], onDelete: Cascade)
+
+  @@index([storeId, email])
+  @@index([storeId, createdAt])
+}
+
+model Product {
+  id                String      @id @default(cuid())
+  storeId           String
+  name              String
+  type              ProductType
+  sku               String?
+  barcode           String?
+  price             Decimal     @db.Decimal(12, 2)
+  cost              Decimal?    @db.Decimal(12, 2)
+  unit              String
+  category          String?
+  active            Boolean     @default(true)
+  lowStockThreshold Decimal? @db.Decimal(12, 4)
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+  deletedAt         DateTime?
+
+  store     Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  recipe    Recipe?
+  saleItems SaleItem[]
+  purchaseOrderItems PurchaseOrderItem[]
+  purchaseReceiptItems PurchaseReceiptItem[]
+
+  @@unique([storeId, sku])
+  @@unique([storeId, barcode])
+  @@index([storeId, createdAt])
+}
+
+model Ingredient {
+  id                String             @id @default(cuid())
+  storeId           String
+  name              String
+  unit              String
+  category          IngredientCategory @default(RAW_MATERIAL)
+  costPerUnit       Decimal            @db.Decimal(12, 4)
+  purchaseUnit      String?
+  purchaseUnitSize  Decimal?           @db.Decimal(12, 4)
+  active            Boolean            @default(true)
+  lowStockThreshold Decimal?           @db.Decimal(12, 4)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  deletedAt         DateTime?
+
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  lines RecipeLine[]
+  purchaseOrderItems PurchaseOrderItem[]
+  purchaseReceiptItems PurchaseReceiptItem[]
+
+  @@unique([storeId, name])
+  @@index([storeId, createdAt])
+}
+
+model Recipe {
+  id        String   @id @default(cuid())
+  storeId   String
+  productId String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  store   Store   @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  lines   RecipeLine[]
+
+  @@index([storeId, createdAt])
+}
+
+model RecipeLine {
+  id                String  @id @default(cuid())
+  recipeId          String
+  ingredientId      String
+  qtyPerProductUnit Decimal @db.Decimal(12, 4)
+
+  recipe     Recipe     @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  ingredient Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+
+  @@unique([recipeId, ingredientId])
+}
+
+model InventoryMovement {
+  id            String       @id @default(cuid())
+  storeId       String
+  itemType      ItemType
+  itemId        String
+  qtyDelta      Decimal      @db.Decimal(12, 4)
+  unitCost      Decimal?     @db.Decimal(12, 4)
+  type          MovementType
+  referenceType String?
+  referenceId   String?
+  note          String?
+  createdById   String?
+  createdAt     DateTime     @default(now())
+
+  store     Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  createdBy User? @relation("CreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([storeId, createdAt])
+  @@index([storeId, itemType, itemId])
+}
+
+model Sale {
+  id            String      @id @default(cuid())
+  storeId       String
+  cashierId     String
+  status        SaleStatus  @default(DRAFT)
+  receiptNumber Int?
+  subtotal      Decimal     @db.Decimal(12, 2)
+  discount      Decimal     @db.Decimal(12, 2)
+  tax           Decimal     @db.Decimal(12, 2)
+  total         Decimal     @db.Decimal(12, 2)
+  paymentMethod PaymentMethod
+  createdAt     DateTime    @default(now())
+  finalizedAt   DateTime?
+  voidedAt      DateTime?
+  deletedAt     DateTime?
+
+  store   Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  cashier User  @relation("Cashier", fields: [cashierId], references: [id])
+  items   SaleItem[]
+
+  @@unique([storeId, receiptNumber])
+  @@index([storeId, createdAt])
+  @@index([storeId, status, createdAt])
+}
+
+model SaleItem {
+  id           String   @id @default(cuid())
+  saleId       String
+  productId    String
+  qty          Decimal  @db.Decimal(12, 4)
+  unitPrice    Decimal  @db.Decimal(12, 2)
+  discount     Decimal  @db.Decimal(12, 2)
+  tax          Decimal  @db.Decimal(12, 2)
+  total        Decimal  @db.Decimal(12, 2)
+  nameSnapshot String
+
+  sale    Sale    @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id])
+
+  @@index([saleId])
+}
+
+model Supplier {
+  id        String   @id @default(cuid())
+  storeId   String
+  name      String
+  email     String?
+  phone     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  store          Store          @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  purchaseOrders PurchaseOrder[]
+
+  @@unique([storeId, name])
+  @@index([storeId, createdAt])
+}
+
+model PurchaseOrder {
+  id           String              @id @default(cuid())
+  storeId      String
+  supplierId   String?
+  supplierName String?
+  status       PurchaseOrderStatus @default(DRAFT)
+  expectedDate DateTime?
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+  deletedAt    DateTime?
+
+  store    Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  supplier Supplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  items    PurchaseOrderItem[]
+  receipts PurchaseReceipt[]
+
+  @@index([storeId, createdAt])
+  @@index([storeId, status, createdAt])
+}
+
+model PurchaseOrderItem {
+  id              String  @id @default(cuid())
+  purchaseOrderId String
+  itemType        ItemType @default(PRODUCT)
+  productId       String?
+  ingredientId    String?
+  qtyOrdered      Decimal @db.Decimal(12, 4)
+  qtyReceived     Decimal @db.Decimal(12, 4) @default(0)
+  unitCost        Decimal @db.Decimal(12, 4)
+
+  purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  product       Product?      @relation(fields: [productId], references: [id])
+  ingredient    Ingredient?   @relation(fields: [ingredientId], references: [id])
+
+  @@unique([purchaseOrderId, productId])
+  @@unique([purchaseOrderId, ingredientId])
+}
+
+model PurchaseReceipt {
+  id             String   @id @default(cuid())
+  storeId         String
+  purchaseOrderId String?
+  invoiceNumber   String?
+  receivedById    String
+  receivedAt      DateTime @default(now())
+  totalCost       Decimal  @db.Decimal(12, 2)
+
+  store         Store          @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  purchaseOrder PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id], onDelete: SetNull)
+  receivedBy    User           @relation("ReceivedBy", fields: [receivedById], references: [id])
+  items         PurchaseReceiptItem[]
+
+  @@index([storeId, receivedAt])
+}
+
+model PurchaseReceiptItem {
+  id          String  @id @default(cuid())
+  receiptId   String
+  itemType    ItemType @default(PRODUCT)
+  productId   String?
+  ingredientId String?
+  qtyReceived Decimal @db.Decimal(12, 4)
+  unitCost    Decimal @db.Decimal(12, 4)
+
+  receipt PurchaseReceipt @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  product Product?        @relation(fields: [productId], references: [id])
+  ingredient Ingredient?  @relation(fields: [ingredientId], references: [id])
+
+  @@index([receiptId])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  storeId    String
+  actorId    String?
+  action     String
+  entityType String
+  entityId   String?
+  meta       Json?
+  createdAt  DateTime @default(now())
+
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  actor User? @relation("Actor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([storeId, createdAt])
+  @@index([storeId, action, createdAt])
+  @@index([storeId, actorId, createdAt])
+}

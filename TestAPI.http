@@ -1,0 +1,40 @@
+###
+GET http://localhost:9000/api/v1/services/search/abung
+
+
+###
+
+GET http://localhost:9000/api/v1/services
+
+
+###
+
+GET http://localhost:9000/api/v1/services/store_info
+
+###
+
+POST http://localhost:9000/api/v1/auth/login
+Content-Type: application/json
+
+{
+    "email": "jade@email.com",
+    "password": "Admin1234!!"
+}
+
+###
+
+POST http://localhost:9000/api/v1/auth/register
+Content-Type: application/json
+
+{
+    "fullName": "asdfasdf",
+    "contactNo": "asdfasdf",
+    "email": "asdfadf@email.com",
+    "password": "aksdjakdsjf",
+    "verifyPassword": "ksjdkfsdf"
+}
+
+###
+GET http://localhost:9000/api/v1/auth/profile
+Content-Type: application/json
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MiwiZnVsbE5hbWUiOiJqYWRlIiwiZW1haWwiOiJqYWRlQGVtYWlsLmNvbSIsImNvbnRhY3ROdW1iZXIiOiIwOTM4OTM0Iiwic3RhdHVzIjowLCJpc0FkbWluIjowLCJpYXQiOjE2OTY5MTU5MTZ9.zvsFK3OXR2_r6Nboiy3uQBrEA0_DvLGTfIsBZxyDpQY

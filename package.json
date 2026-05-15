@@ -1,0 +1,75 @@
+{
+  "name": "template",
+  "version": "0.1.0",
+  "description": "template backend API",
+  "main": "dist/index.js",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "npx prisma generate && npx tsc",
+    "start": "node dist/index.js",
+    "prod": "concurrently \"npx tsc --watch\" \"tsx watch dist/index.js\"",
+    "dev": "NODE_ENV=development tsx watch index.ts",
+    "test": "vitest run",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "test:all": "npm run test && npm run test:integration",
+    "test:watch": "vitest",
+    "smoke": "tsx scripts/smoke.ts",
+    "monitor": "tsx scripts/monitor.ts",
+    "cleanup": "tsx scripts/cleanup.ts",
+    "db:seed": "prisma db seed",
+    "db:deploy": "prisma migrate deploy",
+    "db:backup": "bash scripts/backup.sh",
+    "db:restore": "bash scripts/restore.sh",
+    "postinstall": "prisma generate"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/carlsatina/template.git"
+  },
+  "keywords": [
+    "HealthRecords"
+  ],
+  "author": "RC Satina",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/carlsatina/template/issues"
+  },
+  "homepage": "https://github.com/carlsatina/tempate#readme",
+  "dependencies": {
+    "@prisma/adapter-pg": "^7.2.0",
+    "@prisma/client": "^7.2.0",
+    "@types/multer": "^2.0.0",
+    "bcrypt": "^6.0.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "fs": "^0.0.1-security",
+    "jsonwebtoken": "^9.0.2",
+    "multer": "^2.0.2",
+    "nodemailer": "^6.9.16",
+    "openapi-comment-parser": "^1.0.0",
+    "pg": "^8.11.3",
+    "@sentry/node": "^8.43.0",
+    "swagger-ui-express": "^5.0.0",
+    "zod": "^4.1.5"
+  },
+  "devDependencies": {
+    "@types/bcrypt": "^6.0.0",
+    "@types/cors": "^2.8.14",
+    "@types/express": "^4.17.18",
+    "@types/jsonwebtoken": "^9.0.3",
+    "@types/node": "^20.8.2",
+    "@types/nodemailer": "^6.4.14",
+    "@types/pg": "^8.10.3",
+    "@types/swagger-ui-express": "^4.1.6",
+    "concurrently": "^8.2.1",
+    "prisma": "^7.2.0",
+    "supertest": "^7.0.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.2.2",
+    "vitest": "^3.2.4",
+    "@types/supertest": "^2.0.16"
+  }
+}
