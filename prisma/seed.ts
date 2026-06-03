@@ -1,6 +1,7 @@
 import dotenv from 'dotenv';
 import bcrypt from 'bcrypt';
 import {
+    IngredientCategory,
     ItemType,
     MovementType,
     PaymentMethod,
@@ -597,7 +598,10 @@ const main = async () => {
                     storeId: store.id,
                     name: 'Coffee Beans',
                     unit: 'kg',
+                    category: IngredientCategory.RAW_MATERIAL,
                     costPerUnit: 14.5,
+                    purchaseUnit: 'bag',
+                    purchaseUnitSize: 5,
                     active: true,
                     lowStockThreshold: 2,
                 },
@@ -605,7 +609,10 @@ const main = async () => {
                     storeId: store.id,
                     name: 'Milk',
                     unit: 'liter',
+                    category: IngredientCategory.RAW_MATERIAL,
                     costPerUnit: 1.1,
+                    purchaseUnit: 'case',
+                    purchaseUnitSize: 12,
                     active: true,
                     lowStockThreshold: 10,
                 },
@@ -613,6 +620,7 @@ const main = async () => {
                     storeId: store.id,
                     name: 'Sugar',
                     unit: 'kg',
+                    category: IngredientCategory.RAW_MATERIAL,
                     costPerUnit: 0.9,
                     active: true,
                     lowStockThreshold: 5,
@@ -621,7 +629,10 @@ const main = async () => {
                     storeId: store.id,
                     name: 'Tea Leaves',
                     unit: 'kg',
+                    category: IngredientCategory.RAW_MATERIAL,
                     costPerUnit: 12.5,
+                    purchaseUnit: 'bag',
+                    purchaseUnitSize: 1,
                     active: true,
                     lowStockThreshold: 2,
                 },
@@ -629,6 +640,7 @@ const main = async () => {
                     storeId: store.id,
                     name: 'Butter',
                     unit: 'kg',
+                    category: IngredientCategory.RAW_MATERIAL,
                     costPerUnit: 6.5,
                     active: true,
                     lowStockThreshold: 3,
@@ -637,9 +649,23 @@ const main = async () => {
                     storeId: store.id,
                     name: 'Flour',
                     unit: 'kg',
+                    category: IngredientCategory.RAW_MATERIAL,
                     costPerUnit: 1.4,
+                    purchaseUnit: 'sack',
+                    purchaseUnitSize: 25,
                     active: true,
                     lowStockThreshold: 6,
+                },
+                {
+                    storeId: store.id,
+                    name: 'Paper Cups',
+                    unit: 'piece',
+                    category: IngredientCategory.PACKAGING,
+                    costPerUnit: 0.05,
+                    purchaseUnit: 'sleeve',
+                    purchaseUnitSize: 50,
+                    active: true,
+                    lowStockThreshold: 100,
                 },
             ],
             skipDuplicates: true,
@@ -650,6 +676,101 @@ const main = async () => {
         where: { storeId: store.id, deletedAt: null },
         orderBy: { name: 'asc' },
     });
+
+    // Recipe products (STANDARD plan feature)
+    const recipeProductCount = await prisma.product.count({
+        where: { storeId: store.id, type: ProductType.RECIPE, deletedAt: null },
+    });
+
+    if (recipeProductCount === 0 && ingredients.length >= 3) {
+        const ingByName = new Map(ingredients.map((i) => [i.name, i]));
+
+        const recipeSeeds = [
+            {
+                sku: 'RCP-LAT-001',
+                name: 'Fresh Latte',
+                price: 4.75,
+                cost: 1.8,
+                unit: 'cup',
+                category: 'Beverages',
+                lines: [
+                    { ingredientName: 'Coffee Beans', qtyPerProductUnit: 0.018 },
+                    { ingredientName: 'Milk', qtyPerProductUnit: 0.2 },
+                    { ingredientName: 'Paper Cups', qtyPerProductUnit: 1 },
+                ],
+            },
+            {
+                sku: 'RCP-CAP-001',
+                name: 'House Cappuccino',
+                price: 4.5,
+                cost: 1.65,
+                unit: 'cup',
+                category: 'Beverages',
+                lines: [
+                    { ingredientName: 'Coffee Beans', qtyPerProductUnit: 0.018 },
+                    { ingredientName: 'Milk', qtyPerProductUnit: 0.12 },
+                    { ingredientName: 'Paper Cups', qtyPerProductUnit: 1 },
+                ],
+            },
+            {
+                sku: 'RCP-CHA-001',
+                name: 'Chai Latte',
+                price: 4.25,
+                cost: 1.5,
+                unit: 'cup',
+                category: 'Beverages',
+                lines: [
+                    { ingredientName: 'Tea Leaves', qtyPerProductUnit: 0.01 },
+                    { ingredientName: 'Milk', qtyPerProductUnit: 0.2 },
+                    { ingredientName: 'Sugar', qtyPerProductUnit: 0.01 },
+                    { ingredientName: 'Paper Cups', qtyPerProductUnit: 1 },
+                ],
+            },
+        ];
+
+        for (const seed of recipeSeeds) {
+            const recipeProduct = await prisma.product.create({
+                data: {
+                    storeId: store.id,
+                    name: seed.name,
+                    type: ProductType.RECIPE,
+                    sku: seed.sku,
+                    price: seed.price,
+                    cost: seed.cost,
+                    unit: seed.unit,
+                    category: seed.category,
+                    active: true,
+                },
+            });
+
+            const validLines = seed.lines
+                .filter((l) => ingByName.has(l.ingredientName))
+                .map((l) => ({
+                    ingredientId: ingByName.get(l.ingredientName)!.id,
+                    qtyPerProductUnit: l.qtyPerProductUnit,
+                }));
+
+            await prisma.recipe.create({
+                data: {
+                    storeId: store.id,
+                    productId: recipeProduct.id,
+                    lines: { create: validLines },
+                },
+            });
+
+            await prisma.inventoryMovement.create({
+                data: {
+                    storeId: store.id,
+                    itemType: ItemType.PRODUCT,
+                    itemId: recipeProduct.id,
+                    qtyDelta: 50,
+                    type: MovementType.STOCK_ADJUSTMENT,
+                    note: 'Initial stock',
+                    createdById: ownerUser.id,
+                },
+            });
+        }
+    }
 
     const supplierSeeds = [
         { name: 'Daily Farms', email: 'orders@dailyfarms.test', phone: '+1 555 0100' },
@@ -998,6 +1119,48 @@ const main = async () => {
                     },
                 ],
             });
+
+            // DRAFT order — being prepared, not yet sent
+            await createPurchaseOrder({
+                supplierId: primarySupplier?.id ?? null,
+                status: PurchaseOrderStatus.DRAFT,
+                expectedDate: daysFromNow(10),
+                items: [
+                    {
+                        itemType: ItemType.PRODUCT,
+                        itemId: pickProduct(7).id,
+                        qtyOrdered: 20,
+                        unitCost: safeCost(pickProduct(7).cost, 1.5),
+                    },
+                    {
+                        itemType: ItemType.INGREDIENT,
+                        itemId: pickIngredient(4).id,
+                        qtyOrdered: 8,
+                        unitCost: safeCost(pickIngredient(4).costPerUnit, 6.0),
+                    },
+                ],
+            });
+
+            // CANCELLED order
+            await prisma.purchaseOrder.create({
+                data: {
+                    storeId: store.id,
+                    supplierId: backupSupplier?.id ?? null,
+                    status: PurchaseOrderStatus.CANCELLED,
+                    expectedDate: daysAgo(7),
+                    items: {
+                        create: [
+                            {
+                                itemType: ItemType.PRODUCT,
+                                productId: pickProduct(8).id,
+                                qtyOrdered: 15,
+                                qtyReceived: 0,
+                                unitCost: safeCost(pickProduct(8).cost, 2.0),
+                            },
+                        ],
+                    },
+                },
+            });
         }
     }
 
@@ -1030,14 +1193,25 @@ const main = async () => {
                 return shuffled.slice(0, Math.min(count, shuffled.length));
             };
 
-            const paymentMethods = [PaymentMethod.CASH, PaymentMethod.CARD, PaymentMethod.TRANSFER];
+            const paymentMethods = [
+                PaymentMethod.CASH,
+                PaymentMethod.CARD,
+                PaymentMethod.TRANSFER,
+                PaymentMethod.GCASH,
+                PaymentMethod.MAYA,
+            ];
             let saleIndex = 0;
+            let receiptCounter = 1001;
+
+            const cashierUser = roleUsers.find((r) => r.role === Role.CASHIER)?.user ?? ownerUser;
 
             // Build a product map for name snapshots
             const productMap = new Map(allProducts.map((p) => [p.id, p]));
 
             const createSale = async (input: {
                 finalizedAt: Date;
+                cashierId?: string;
+                receiptNumber?: number;
                 items: Array<{
                     productId: string;
                     qty: number;
@@ -1057,8 +1231,9 @@ const main = async () => {
                 const sale = await prisma.sale.create({
                     data: {
                         store: { connect: { id: store.id } },
-                        cashier: { connect: { id: ownerUser.id } },
+                        cashier: { connect: { id: input.cashierId ?? ownerUser.id } },
                         status: SaleStatus.FINALIZED,
+                        receiptNumber: input.receiptNumber ?? null,
                         paymentMethod,
                         subtotal,
                         discount,
@@ -1090,7 +1265,7 @@ const main = async () => {
                         type: MovementType.SALE,
                         referenceType: 'Sale',
                         referenceId: sale.id,
-                        createdById: ownerUser.id,
+                        createdById: input.cashierId ?? ownerUser.id,
                     })),
                 });
 
@@ -1144,8 +1319,11 @@ const main = async () => {
                     const applyDiscount = Math.random() > 0.8;
                     const discount = applyDiscount ? Math.round(subtotal * 0.1 * 100) / 100 : 0;
 
+                    const rn = receiptCounter++;
                     await createSale({
                         finalizedAt: daysAgo(pattern.daysBack, hour),
+                        cashierId: rn % 4 === 0 ? cashierUser.id : ownerUser.id,
+                        receiptNumber: rn,
                         items,
                         discount,
                         tax: 0,
@@ -1180,7 +1358,190 @@ const main = async () => {
                 },
             });
 
-            console.log(`Created ${salesPatterns.reduce((sum, p) => sum + p.salesCount, 0)} sales and 1 voided sale for reports`);
+            // DRAFT sale — cart in progress, not yet finalised
+            const draftProduct = allProducts[0];
+            await prisma.sale.create({
+                data: {
+                    store: { connect: { id: store.id } },
+                    cashier: { connect: { id: cashierUser.id } },
+                    status: SaleStatus.DRAFT,
+                    paymentMethod: PaymentMethod.CASH,
+                    subtotal: Number(draftProduct.price ?? 0) * 3,
+                    discount: 0,
+                    tax: 0,
+                    total: Number(draftProduct.price ?? 0) * 3,
+                    items: {
+                        create: [{
+                            product: { connect: { id: draftProduct.id } },
+                            qty: 3,
+                            unitPrice: Number(draftProduct.price ?? 0),
+                            discount: 0,
+                            tax: 0,
+                            total: Number(draftProduct.price ?? 0) * 3,
+                            nameSnapshot: draftProduct.name,
+                        }],
+                    },
+                },
+            });
+
+            console.log(`Created ${salesPatterns.reduce((sum, p) => sum + p.salesCount, 0)} sales, 1 voided sale, and 1 draft sale for reports`);
+        }
+    }
+
+    // --- Starter Store products and sales ---
+    const starterProductCount = await prisma.product.count({
+        where: { storeId: starterStore.id, deletedAt: null },
+    });
+    if (starterProductCount === 0) {
+        await prisma.product.createMany({
+            data: [
+                { storeId: starterStore.id, name: 'Americano', type: ProductType.READY_MADE, sku: 'ST-COF-001', price: 3.0, cost: 0.9, unit: 'cup', category: 'Beverages', active: true },
+                { storeId: starterStore.id, name: 'Bottled Water', type: ProductType.READY_MADE, sku: 'ST-WAT-001', price: 1.5, cost: 0.5, unit: 'bottle', category: 'Beverages', active: true },
+                { storeId: starterStore.id, name: 'Croissant', type: ProductType.READY_MADE, sku: 'ST-BKY-001', price: 2.5, cost: 1.0, unit: 'piece', category: 'Bakery', active: true },
+                { storeId: starterStore.id, name: 'Granola Bar', type: ProductType.READY_MADE, sku: 'ST-SNK-001', price: 1.75, cost: 0.7, unit: 'bar', category: 'Snacks', active: true },
+                { storeId: starterStore.id, name: 'Orange Juice', type: ProductType.READY_MADE, sku: 'ST-JUI-001', price: 2.75, cost: 1.0, unit: 'glass', category: 'Beverages', active: true },
+            ],
+            skipDuplicates: true,
+        });
+    }
+
+    const starterSalesCount = await prisma.sale.count({ where: { storeId: starterStore.id } });
+    if (starterSalesCount === 0) {
+        const starterProducts = await prisma.product.findMany({
+            where: { storeId: starterStore.id, deletedAt: null, active: true },
+        });
+        if (starterProducts.length > 0) {
+            const daysAgoSt = (days: number, hour: number) => {
+                const d = new Date();
+                d.setDate(d.getDate() - days);
+                d.setHours(hour, 30, 0, 0);
+                return d;
+            };
+            let stReceipt = 2001;
+            const stPayments = [PaymentMethod.CASH, PaymentMethod.GCASH];
+            for (let day = 0; day < 7; day++) {
+                const count = 3 + (day % 3);
+                for (let i = 0; i < count; i++) {
+                    const product = starterProducts[i % starterProducts.length];
+                    const qty = (i % 2) + 1;
+                    const price = Number(product.price ?? 0);
+                    const total = qty * price;
+                    const rn = stReceipt++;
+                    await prisma.sale.create({
+                        data: {
+                            store: { connect: { id: starterStore.id } },
+                            cashier: { connect: { id: starterOwner.id } },
+                            status: SaleStatus.FINALIZED,
+                            receiptNumber: rn,
+                            paymentMethod: stPayments[rn % stPayments.length],
+                            subtotal: total,
+                            discount: 0,
+                            tax: 0,
+                            total,
+                            finalizedAt: daysAgoSt(day, 9 + (i % 8) * 1),
+                            items: {
+                                create: [{ product: { connect: { id: product.id } }, qty, unitPrice: price, discount: 0, tax: 0, total, nameSnapshot: product.name }],
+                            },
+                        },
+                    });
+                }
+            }
+        }
+    }
+
+    // --- Growth Store products, ingredients, recipe, and sales ---
+    const growthProductCount = await prisma.product.count({
+        where: { storeId: growthStore.id, deletedAt: null },
+    });
+    if (growthProductCount === 0) {
+        await prisma.product.createMany({
+            data: [
+                { storeId: growthStore.id, name: 'Flat White', type: ProductType.READY_MADE, sku: 'GR-COF-001', price: 5.0, cost: 1.9, unit: 'cup', category: 'Beverages', active: true },
+                { storeId: growthStore.id, name: 'Cold Brew', type: ProductType.READY_MADE, sku: 'GR-COF-002', price: 5.5, cost: 2.1, unit: 'cup', category: 'Beverages', active: true },
+                { storeId: growthStore.id, name: 'Sparkling Water', type: ProductType.READY_MADE, sku: 'GR-WAT-001', price: 2.0, cost: 0.7, unit: 'bottle', category: 'Beverages', active: true },
+                { storeId: growthStore.id, name: 'Avocado Toast', type: ProductType.READY_MADE, sku: 'GR-FOOD-001', price: 8.5, cost: 3.5, unit: 'plate', category: 'Meals', active: true },
+                { storeId: growthStore.id, name: 'Blueberry Muffin', type: ProductType.READY_MADE, sku: 'GR-BKY-001', price: 3.5, cost: 1.4, unit: 'piece', category: 'Bakery', active: true },
+            ],
+            skipDuplicates: true,
+        });
+    }
+
+    const growthIngredientCount = await prisma.ingredient.count({ where: { storeId: growthStore.id } });
+    if (growthIngredientCount === 0) {
+        await prisma.ingredient.createMany({
+            data: [
+                { storeId: growthStore.id, name: 'Espresso Beans', unit: 'kg', category: IngredientCategory.RAW_MATERIAL, costPerUnit: 16.0, purchaseUnit: 'bag', purchaseUnitSize: 2, active: true, lowStockThreshold: 1 },
+                { storeId: growthStore.id, name: 'Oat Milk', unit: 'liter', category: IngredientCategory.RAW_MATERIAL, costPerUnit: 1.8, purchaseUnit: 'case', purchaseUnitSize: 6, active: true, lowStockThreshold: 5 },
+                { storeId: growthStore.id, name: 'Eco Cups', unit: 'piece', category: IngredientCategory.PACKAGING, costPerUnit: 0.08, purchaseUnit: 'sleeve', purchaseUnitSize: 50, active: true, lowStockThreshold: 100 },
+            ],
+            skipDuplicates: true,
+        });
+    }
+
+    const growthRecipeCount = await prisma.product.count({
+        where: { storeId: growthStore.id, type: ProductType.RECIPE, deletedAt: null },
+    });
+    if (growthRecipeCount === 0) {
+        const growthIngs = await prisma.ingredient.findMany({ where: { storeId: growthStore.id, deletedAt: null } });
+        const gIngByName = new Map(growthIngs.map((i) => [i.name, i]));
+        if (growthIngs.length >= 2) {
+            const oatLatte = await prisma.product.create({
+                data: { storeId: growthStore.id, name: 'Oat Milk Latte', type: ProductType.RECIPE, sku: 'GR-RCP-001', price: 5.75, cost: 2.2, unit: 'cup', category: 'Beverages', active: true },
+            });
+            const gLines = [
+                { ingredientName: 'Espresso Beans', qtyPerProductUnit: 0.018 },
+                { ingredientName: 'Oat Milk', qtyPerProductUnit: 0.25 },
+                { ingredientName: 'Eco Cups', qtyPerProductUnit: 1 },
+            ]
+                .filter((l) => gIngByName.has(l.ingredientName))
+                .map((l) => ({ ingredientId: gIngByName.get(l.ingredientName)!.id, qtyPerProductUnit: l.qtyPerProductUnit }));
+            await prisma.recipe.create({
+                data: { storeId: growthStore.id, productId: oatLatte.id, lines: { create: gLines } },
+            });
+        }
+    }
+
+    const growthSalesCount = await prisma.sale.count({ where: { storeId: growthStore.id } });
+    if (growthSalesCount === 0) {
+        const growthProducts = await prisma.product.findMany({
+            where: { storeId: growthStore.id, deletedAt: null, active: true, type: ProductType.READY_MADE },
+        });
+        if (growthProducts.length > 0) {
+            const daysAgoGr = (days: number, hour: number) => {
+                const d = new Date();
+                d.setDate(d.getDate() - days);
+                d.setHours(hour, 15, 0, 0);
+                return d;
+            };
+            let grReceipt = 3001;
+            const grPayments = [PaymentMethod.CASH, PaymentMethod.CARD, PaymentMethod.GCASH, PaymentMethod.MAYA];
+            for (let day = 0; day < 7; day++) {
+                const count = 4 + (day % 4);
+                for (let i = 0; i < count; i++) {
+                    const product = growthProducts[i % growthProducts.length];
+                    const qty = (i % 2) + 1;
+                    const price = Number(product.price ?? 0);
+                    const total = qty * price;
+                    const rn = grReceipt++;
+                    await prisma.sale.create({
+                        data: {
+                            store: { connect: { id: growthStore.id } },
+                            cashier: { connect: { id: growthOwner.id } },
+                            status: SaleStatus.FINALIZED,
+                            receiptNumber: rn,
+                            paymentMethod: grPayments[rn % grPayments.length],
+                            subtotal: total,
+                            discount: 0,
+                            tax: 0,
+                            total,
+                            finalizedAt: daysAgoGr(day, 8 + (i % 10)),
+                            items: {
+                                create: [{ product: { connect: { id: product.id } }, qty, unitPrice: price, discount: 0, tax: 0, total, nameSnapshot: product.name }],
+                            },
+                        },
+                    });
+                }
+            }
         }
     }
 };
