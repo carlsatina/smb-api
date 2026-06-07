@@ -1,3 +1,4 @@
+import { StoreType } from '@prisma/client';
 import { z } from 'zod';
 
 const optionalString = z.string().min(1).optional();
@@ -17,6 +18,7 @@ const optionalStringArray = z.array(z.string().min(1)).optional();
 
 export const createStoreSchema = z.object({
     name: z.string().min(1),
+    storeType: z.nativeEnum(StoreType).optional(),
     timezone: optionalString,
     currency: optionalString,
     allowNegativeStock: z.boolean().optional(),
@@ -30,6 +32,7 @@ export const createStoreSchema = z.object({
 export const updateStoreSchema = z
     .object({
         name: optionalString,
+        storeType: z.nativeEnum(StoreType).optional(),
         timezone: optionalString,
         currency: optionalString,
         allowNegativeStock: z.boolean().optional(),
@@ -42,6 +45,7 @@ export const updateStoreSchema = z
     .refine(
         (data) =>
             data.name !== undefined ||
+            data.storeType !== undefined ||
             data.timezone !== undefined ||
             data.currency !== undefined ||
             data.allowNegativeStock !== undefined ||

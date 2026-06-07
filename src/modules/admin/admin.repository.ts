@@ -29,8 +29,11 @@ export const adminRepository = {
         return { users, total, page, pageSize: PAGE_SIZE };
     },
 
-    findAllStores: async (page: number) => {
+    findAllStores: async (page: number, month: number, year: number) => {
         const skip = (page - 1) * PAGE_SIZE;
+        const monthStart = new Date(year, month - 1, 1);
+        const monthEnd = new Date(year, month, 1); // exclusive upper bound
+
         const [stores, total] = await Promise.all([
             prisma.store.findMany({
                 skip,
@@ -40,6 +43,7 @@ export const adminRepository = {
                 select: {
                     id: true,
                     name: true,
+                    storeType: true,
                     currency: true,
                     createdAt: true,
                     members: {
@@ -58,11 +62,34 @@ export const adminRepository = {
                             },
                         },
                     },
+                    _count: {
+                        select: {
+                            sales: { where: { status: 'FINALIZED' } },
+                            receipts: true,
+                        },
+                    },
                 },
             }),
             prisma.store.count({ where: { deletedAt: null } }),
         ]);
-        return { stores, total, page, pageSize: PAGE_SIZE };
+
+        const monthlySales = await prisma.sale.groupBy({
+            by: ['storeId'],
+            where: {
+                storeId: { in: stores.map((s) => s.id) },
+                status: 'FINALIZED',
+                createdAt: { gte: monthStart, lt: monthEnd },
+            },
+            _count: { _all: true },
+        });
+        const monthlyMap = new Map(monthlySales.map((r) => [r.storeId, r._count._all]));
+
+        const enriched = stores.map((s) => ({
+            ...s,
+            salesThisMonth: monthlyMap.get(s.id) ?? 0,
+        }));
+
+        return { stores: enriched, total, page, pageSize: PAGE_SIZE, month, year };
     },
 
     updateUserPlan: async (userId: string, data: { planTier: PlanTier; subscriptionActive: boolean; emailVerifiedAt?: Date | null }) => {

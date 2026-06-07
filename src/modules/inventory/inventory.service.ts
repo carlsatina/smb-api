@@ -1,4 +1,4 @@
-import { ItemType, MovementType, Prisma, ProductType } from '@prisma/client';
+import { ItemType, MovementType, Prisma, ProductType, StoreType } from '@prisma/client';
 import prisma from '../../../lib/prisma';
 import { AppError } from '../../shared/errors';
 import { inventoryRepository, MovementFilters } from './inventory.repository';
@@ -125,6 +125,7 @@ const buildMovementResponse = async (
 ) => {
     const productIds = new Set<string>();
     const ingredientIds = new Set<string>();
+    const counterpartStoreIds = new Set<string>();
 
     movements.forEach((movement) => {
         if (movement.itemType === ItemType.PRODUCT) {
@@ -132,9 +133,12 @@ const buildMovementResponse = async (
         } else {
             ingredientIds.add(movement.itemId);
         }
+        if (movement.counterpartStoreId) {
+            counterpartStoreIds.add(movement.counterpartStoreId);
+        }
     });
 
-    const [products, ingredients] = await Promise.all([
+    const [products, ingredients, counterpartStores] = await Promise.all([
         productIds.size
             ? prisma.product.findMany({
                   where: {
@@ -155,14 +159,24 @@ const buildMovementResponse = async (
                   select: { id: true, name: true, unit: true },
               })
             : Promise.resolve([]),
+        counterpartStoreIds.size
+            ? prisma.store.findMany({
+                  where: { id: { in: Array.from(counterpartStoreIds) } },
+                  select: { id: true, name: true, storeType: true },
+              })
+            : Promise.resolve([]),
     ]);
 
     const productMap = new Map(products.map((product) => [product.id, product]));
     const ingredientMap = new Map(ingredients.map((ingredient) => [ingredient.id, ingredient]));
+    const counterpartStoreMap = new Map(counterpartStores.map((s) => [s.id, s]));
 
     return movements.map((movement) => {
         const product = movement.itemType === ItemType.PRODUCT ? productMap.get(movement.itemId) : null;
         const ingredient = movement.itemType === ItemType.INGREDIENT ? ingredientMap.get(movement.itemId) : null;
+        const counterpartStore = movement.counterpartStoreId
+            ? counterpartStoreMap.get(movement.counterpartStoreId)
+            : null;
         return {
             id: movement.id,
             itemType: movement.itemType,
@@ -179,6 +193,10 @@ const buildMovementResponse = async (
             note: movement.note,
             createdAt: movement.createdAt,
             createdBy: movement.createdBy,
+            counterpartStoreId: movement.counterpartStoreId ?? null,
+            counterpartStoreName: counterpartStore?.name ?? null,
+            counterpartStoreType: counterpartStore?.storeType ?? null,
+            counterpartMovementId: movement.counterpartMovementId ?? null,
         };
     });
 };
@@ -344,5 +362,286 @@ export const inventoryService = {
         });
 
         return buildMovementResponse(storeId, [movement]).then((items) => items[0]);
+    },
+    transferStock: async (
+        sourceStoreId: string,
+        userId: string | undefined,
+        data: {
+            destinationStoreId: string;
+            itemType: ItemType;
+            itemId: string;
+            qty: number;
+            note?: string | null;
+        }
+    ) => {
+        if (!userId) {
+            throw new AppError('UNAUTHORIZED', 'User is required to record transfers.', 401);
+        }
+        if (data.destinationStoreId === sourceStoreId) {
+            throw new AppError('INVALID_TRANSFER', 'Source and destination must be different stores.', 400);
+        }
+
+        const [sourceStore, destStore] = await Promise.all([
+            prisma.store.findFirst({
+                where: { id: sourceStoreId, deletedAt: null },
+                select: { id: true, name: true, allowNegativeStock: true, storeType: true },
+            }),
+            prisma.store.findFirst({
+                where: { id: data.destinationStoreId, deletedAt: null },
+                select: { id: true, name: true, storeType: true },
+            }),
+        ]);
+
+        if (!sourceStore) throw new AppError('NOT_FOUND', 'Source store not found', 404);
+        if (!destStore) throw new AppError('NOT_FOUND', 'Destination store not found', 404);
+
+        let itemName = '';
+        if (data.itemType === ItemType.PRODUCT) {
+            const product = await prisma.product.findFirst({
+                where: { id: data.itemId, storeId: sourceStoreId, deletedAt: null },
+                select: { name: true, type: true },
+            });
+            if (!product) throw new AppError('NOT_FOUND', 'Product not found', 404);
+            if (product.type !== ProductType.READY_MADE) {
+                throw new AppError('INVALID_PRODUCT_TYPE', 'Recipe products cannot be transferred directly.', 400);
+            }
+            itemName = product.name;
+        } else {
+            const ingredient = await prisma.ingredient.findFirst({
+                where: { id: data.itemId, storeId: sourceStoreId, deletedAt: null },
+                select: { name: true },
+            });
+            if (!ingredient) throw new AppError('NOT_FOUND', 'Ingredient not found', 404);
+            itemName = ingredient.name;
+        }
+
+        const currentQty = normalizeDecimal(
+            await inventoryRepository.sumByItemId(sourceStoreId, data.itemType, data.itemId)
+        );
+
+        if (!sourceStore.allowNegativeStock && currentQty - data.qty < 0) {
+            throw new AppError(
+                'NEGATIVE_STOCK',
+                `Insufficient stock. Available: ${currentQty} — requested: ${data.qty}`,
+                400
+            );
+        }
+
+        const [outMovement, inMovement] = await prisma.$transaction(async (tx) => {
+            const outMov = await tx.inventoryMovement.create({
+                data: {
+                    store: { connect: { id: sourceStoreId } },
+                    itemType: data.itemType,
+                    itemId: data.itemId,
+                    qtyDelta: new Prisma.Decimal(-data.qty),
+                    type: MovementType.TRANSFER_OUT,
+                    counterpartStoreId: data.destinationStoreId,
+                    note: data.note ?? null,
+                    createdBy: { connect: { id: userId } },
+                },
+                include: { createdBy: { select: { id: true, fullName: true, email: true } } },
+            });
+
+            const inMov = await tx.inventoryMovement.create({
+                data: {
+                    store: { connect: { id: data.destinationStoreId } },
+                    itemType: data.itemType,
+                    itemId: data.itemId,
+                    qtyDelta: new Prisma.Decimal(data.qty),
+                    type: MovementType.TRANSFER_IN,
+                    counterpartStoreId: sourceStoreId,
+                    counterpartMovementId: outMov.id,
+                    note: data.note ?? null,
+                    createdBy: { connect: { id: userId } },
+                },
+                include: { createdBy: { select: { id: true, fullName: true, email: true } } },
+            });
+
+            await tx.inventoryMovement.update({
+                where: { id: outMov.id },
+                data: { counterpartMovementId: inMov.id },
+            });
+
+            await tx.auditLog.create({
+                data: {
+                    store: { connect: { id: sourceStoreId } },
+                    actor: { connect: { id: userId } },
+                    action: 'INVENTORY_TRANSFER',
+                    entityType: 'InventoryMovement',
+                    entityId: outMov.id,
+                    meta: {
+                        itemType: data.itemType,
+                        itemId: data.itemId,
+                        itemName,
+                        qty: data.qty,
+                        destinationStoreId: data.destinationStoreId,
+                        destinationStoreName: destStore.name,
+                        note: data.note ?? null,
+                        currentQty,
+                        nextQty: currentQty - data.qty,
+                    },
+                },
+            });
+
+            return [outMov, inMov];
+        });
+
+        const [formattedOut] = await buildMovementResponse(sourceStoreId, [outMovement]);
+        return {
+            out: formattedOut,
+            inMovementId: inMovement.id,
+            destinationStoreName: destStore.name,
+        };
+    },
+    batchTransferStock: async (
+        sourceStoreId: string,
+        userId: string | undefined,
+        data: {
+            destinationStoreId: string;
+            items: Array<{ itemType: ItemType; itemId: string; qty: number }>;
+            note?: string | null;
+        }
+    ) => {
+        if (!userId) {
+            throw new AppError('UNAUTHORIZED', 'User is required to record transfers.', 401);
+        }
+        if (data.destinationStoreId === sourceStoreId) {
+            throw new AppError('INVALID_TRANSFER', 'Source and destination must be different stores.', 400);
+        }
+
+        const [sourceStore, destStore] = await Promise.all([
+            prisma.store.findFirst({
+                where: { id: sourceStoreId, deletedAt: null },
+                select: { id: true, name: true, allowNegativeStock: true, storeType: true },
+            }),
+            prisma.store.findFirst({
+                where: { id: data.destinationStoreId, deletedAt: null },
+                select: { id: true, name: true, storeType: true },
+            }),
+        ]);
+
+        if (!sourceStore) throw new AppError('NOT_FOUND', 'Source store not found', 404);
+        if (!destStore) throw new AppError('NOT_FOUND', 'Destination store not found', 404);
+
+        // Validate all items and fetch their names + current quantities
+        const itemDetails: Array<{
+            itemType: ItemType;
+            itemId: string;
+            itemName: string;
+            qty: number;
+            currentQty: number;
+        }> = [];
+
+        for (const item of data.items) {
+            let itemName = '';
+            if (item.itemType === ItemType.PRODUCT) {
+                const product = await prisma.product.findFirst({
+                    where: { id: item.itemId, storeId: sourceStoreId, deletedAt: null },
+                    select: { name: true, type: true },
+                });
+                if (!product) throw new AppError('NOT_FOUND', `Product ${item.itemId} not found`, 404);
+                if (product.type !== ProductType.READY_MADE) {
+                    throw new AppError('INVALID_PRODUCT_TYPE', `"${product.name}" is a recipe product and cannot be transferred directly.`, 400);
+                }
+                itemName = product.name;
+            } else {
+                const ingredient = await prisma.ingredient.findFirst({
+                    where: { id: item.itemId, storeId: sourceStoreId, deletedAt: null },
+                    select: { name: true },
+                });
+                if (!ingredient) throw new AppError('NOT_FOUND', `Ingredient ${item.itemId} not found`, 404);
+                itemName = ingredient.name;
+            }
+
+            const currentQty = normalizeDecimal(
+                await inventoryRepository.sumByItemId(sourceStoreId, item.itemType, item.itemId)
+            );
+
+            if (!sourceStore.allowNegativeStock && currentQty - item.qty < 0) {
+                throw new AppError(
+                    'NEGATIVE_STOCK',
+                    `Insufficient stock for "${itemName}". Available: ${currentQty} — requested: ${item.qty}`,
+                    400
+                );
+            }
+
+            itemDetails.push({ ...item, itemName, currentQty });
+        }
+
+        const outMovements = await prisma.$transaction(async (tx) => {
+            const created: Prisma.InventoryMovementGetPayload<{
+                include: { createdBy: { select: { id: true; fullName: true; email: true } } };
+            }>[] = [];
+
+            for (const item of itemDetails) {
+                const outMov = await tx.inventoryMovement.create({
+                    data: {
+                        store: { connect: { id: sourceStoreId } },
+                        itemType: item.itemType,
+                        itemId: item.itemId,
+                        qtyDelta: new Prisma.Decimal(-item.qty),
+                        type: MovementType.TRANSFER_OUT,
+                        counterpartStoreId: data.destinationStoreId,
+                        note: data.note ?? null,
+                        createdBy: { connect: { id: userId } },
+                    },
+                    include: { createdBy: { select: { id: true, fullName: true, email: true } } },
+                });
+
+                const inMov = await tx.inventoryMovement.create({
+                    data: {
+                        store: { connect: { id: data.destinationStoreId } },
+                        itemType: item.itemType,
+                        itemId: item.itemId,
+                        qtyDelta: new Prisma.Decimal(item.qty),
+                        type: MovementType.TRANSFER_IN,
+                        counterpartStoreId: sourceStoreId,
+                        counterpartMovementId: outMov.id,
+                        note: data.note ?? null,
+                        createdBy: { connect: { id: userId } },
+                    },
+                    include: { createdBy: { select: { id: true, fullName: true, email: true } } },
+                });
+
+                await tx.inventoryMovement.update({
+                    where: { id: outMov.id },
+                    data: { counterpartMovementId: inMov.id },
+                });
+
+                created.push(outMov);
+            }
+
+            await tx.auditLog.create({
+                data: {
+                    store: { connect: { id: sourceStoreId } },
+                    actor: { connect: { id: userId } },
+                    action: 'INVENTORY_TRANSFER',
+                    entityType: 'InventoryMovement',
+                    entityId: created[0].id,
+                    meta: {
+                        batchSize: itemDetails.length,
+                        destinationStoreId: data.destinationStoreId,
+                        destinationStoreName: destStore.name,
+                        note: data.note ?? null,
+                        items: itemDetails.map((i) => ({
+                            itemType: i.itemType,
+                            itemId: i.itemId,
+                            itemName: i.itemName,
+                            qty: i.qty,
+                            currentQty: i.currentQty,
+                        })),
+                    },
+                },
+            });
+
+            return created;
+        });
+
+        const formatted = await buildMovementResponse(sourceStoreId, outMovements);
+        return {
+            transferred: formatted.length,
+            destinationStoreName: destStore.name,
+            movements: formatted,
+        };
     },
 };

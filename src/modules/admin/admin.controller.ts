@@ -20,15 +20,22 @@ export const listUsers = asyncHandler(async (req: AuthRequest, res: Response) =>
 
 export const listStores = asyncHandler(async (req: AuthRequest, res: Response) => {
     const page = Math.max(1, Number(req.query.page) || 1);
-    const result = await adminRepository.findAllStores(page);
+    const now = new Date();
+    const month = Math.min(12, Math.max(1, Number(req.query.month) || now.getMonth() + 1));
+    const year = Math.max(2020, Number(req.query.year) || now.getFullYear());
+    const result = await adminRepository.findAllStores(page, month, year);
     const stores = result.stores.map((s) => ({
         id: s.id,
         name: s.name,
+        storeType: s.storeType,
         currency: s.currency,
         createdAt: s.createdAt,
         owner: s.members[0]?.user ?? null,
+        totalSales: s._count.sales,
+        totalReceipts: s._count.receipts,
+        salesThisMonth: s.salesThisMonth,
     }));
-    res.status(200).json({ stores, total: result.total, page: result.page, pageSize: result.pageSize });
+    res.status(200).json({ stores, total: result.total, page: result.page, pageSize: result.pageSize, month, year });
 });
 
 export const overrideUserPlan = asyncHandler(async (req: AuthRequest, res: Response) => {

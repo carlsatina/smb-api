@@ -1,4 +1,4 @@
-import { Prisma, Role } from '@prisma/client';
+import { Prisma, Role, StoreType } from '@prisma/client';
 import prisma from '../../../lib/prisma';
 import { getPlanConfig } from '../../config/plans';
 import { AppError } from '../../shared/errors';
@@ -6,6 +6,7 @@ import { DEFAULT_CATEGORY_OPTIONS, DEFAULT_UNIT_OPTIONS } from './store.defaults
 
 type CreateStoreInput = {
     name: string;
+    storeType?: StoreType;
     timezone?: string;
     currency?: string;
     allowNegativeStock?: boolean;
@@ -18,6 +19,7 @@ type CreateStoreInput = {
 
 type UpdateStoreInput = {
     name?: string;
+    storeType?: StoreType;
     timezone?: string;
     currency?: string;
     allowNegativeStock?: boolean;
@@ -95,6 +97,7 @@ export const storeService = {
             return {
                 id: membership.store.id,
                 name: membership.store.name,
+                storeType: membership.store.storeType,
                 timezone: membership.store.timezone,
                 currency: membership.store.currency,
                 allowNegativeStock: membership.store.allowNegativeStock,
@@ -165,6 +168,7 @@ export const storeService = {
             const store = await tx.store.create({
                 data: {
                     name: input.name,
+                    storeType: input.storeType ?? StoreType.RETAIL,
                     timezone: input.timezone ?? 'Asia/Manila',
                     currency: input.currency ?? 'PHP',
                     allowNegativeStock: input.allowNegativeStock ?? false,
@@ -202,6 +206,9 @@ export const storeService = {
         const data: Prisma.StoreUpdateInput = {};
         if (input.name !== undefined) {
             data.name = input.name;
+        }
+        if (input.storeType !== undefined) {
+            data.storeType = input.storeType;
         }
         if (input.timezone !== undefined) {
             data.timezone = input.timezone;

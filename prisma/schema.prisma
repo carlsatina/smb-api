@@ -33,6 +33,13 @@ enum MovementType {
   WASTE
   REFUND
   VOID
+  TRANSFER_OUT
+  TRANSFER_IN
+}
+
+enum StoreType {
+  RETAIL
+  WAREHOUSE
 }
 
 enum SaleStatus {
@@ -133,10 +140,11 @@ model EmailVerificationToken {
 }
 
 model Store {
-  id                 String   @id @default(cuid())
+  id                 String    @id @default(cuid())
   name               String
-  timezone           String   @default("Asia/Manila")
-  currency           String   @default("PHP")
+  storeType          StoreType @default(RETAIL)
+  timezone           String    @default("Asia/Manila")
+  currency           String    @default("PHP")
   unitOptions        String[] @default([])
   categoryOptions    String[] @default([])
   allowNegativeStock Boolean  @default(false)
@@ -274,18 +282,20 @@ model RecipeLine {
 }
 
 model InventoryMovement {
-  id            String       @id @default(cuid())
-  storeId       String
-  itemType      ItemType
-  itemId        String
-  qtyDelta      Decimal      @db.Decimal(12, 4)
-  unitCost      Decimal?     @db.Decimal(12, 4)
-  type          MovementType
-  referenceType String?
-  referenceId   String?
-  note          String?
-  createdById   String?
-  createdAt     DateTime     @default(now())
+  id                   String       @id @default(cuid())
+  storeId              String
+  itemType             ItemType
+  itemId               String
+  qtyDelta             Decimal      @db.Decimal(12, 4)
+  unitCost             Decimal?     @db.Decimal(12, 4)
+  type                 MovementType
+  referenceType        String?
+  referenceId          String?
+  note                 String?
+  createdById          String?
+  counterpartStoreId   String?
+  counterpartMovementId String?
+  createdAt            DateTime     @default(now())
 
   store     Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
   createdBy User? @relation("CreatedBy", fields: [createdById], references: [id], onDelete: SetNull)

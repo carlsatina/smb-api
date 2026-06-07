@@ -147,3 +147,25 @@ export const stockAdjustmentSchema = z
             });
         }
     });
+
+export const transferStockSchema = z.object({
+    destinationStoreId: z.string().min(1),
+    itemType: z.nativeEnum(ItemType),
+    itemId: z.string().min(1),
+    qty: z.number().positive(),
+    note: z.string().max(500).optional().nullable(),
+});
+
+export const batchTransferStockSchema = z.object({
+    destinationStoreId: z.string().min(1),
+    items: z
+        .array(
+            z.object({
+                itemType: z.nativeEnum(ItemType),
+                itemId: z.string().min(1),
+                qty: z.number().positive(),
+            })
+        )
+        .min(1, 'At least one item is required.'),
+    note: z.string().max(500).optional().nullable(),
+});

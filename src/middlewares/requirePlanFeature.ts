@@ -44,15 +44,25 @@ const getStoreOwnerPlan = async (storeId: string) => {
     return owner.user;
 };
 
+type PlanTier = import('@prisma/client').PlanTier;
+const TIER_ORDER: Record<PlanTier, number> = { STARTER: 0, STANDARD: 1, GROWTH: 2 };
+
 const resolveEffectivePlan = (user: {
-    planTier: import('@prisma/client').PlanTier;
-    grantedPlan: import('@prisma/client').PlanTier | null;
+    planTier: PlanTier;
+    subscriptionActive: boolean;
+    grantedPlan: PlanTier | null;
     grantedUntil: Date | null;
-}) => {
-    if (user.grantedPlan && (!user.grantedUntil || user.grantedUntil > new Date())) {
-        return user.grantedPlan;
+}): PlanTier => {
+    const grantTier =
+        user.grantedPlan && (!user.grantedUntil || user.grantedUntil > new Date())
+            ? user.grantedPlan
+            : null;
+    const paidTier = user.subscriptionActive ? user.planTier : null;
+
+    if (grantTier && paidTier) {
+        return TIER_ORDER[grantTier] >= TIER_ORDER[paidTier] ? grantTier : paidTier;
     }
-    return user.planTier;
+    return grantTier ?? paidTier ?? 'STARTER';
 };
 
 export const requirePlanFeature = (feature: PlanFeature) => {
@@ -63,7 +73,10 @@ export const requirePlanFeature = (feature: PlanFeature) => {
         }
 
         const owner = await getStoreOwnerPlan(storeId);
-        if (!owner.subscriptionActive) {
+        const hasValidGrant =
+            owner.grantedPlan && (!owner.grantedUntil || owner.grantedUntil > new Date());
+
+        if (!hasValidGrant && !owner.subscriptionActive) {
             return next(
                 new AppError('SUBSCRIPTION_REQUIRED', 'Active subscription required to access this feature.', 403)
             );

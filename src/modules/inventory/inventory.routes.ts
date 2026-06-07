@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { Role } from '@prisma/client';
 import { authMiddleware } from '../../middlewares/auth';
 import { requireStoreRole } from '../../middlewares/requireStoreRole';
-import { createStockAdjustment, listMovements, listStock } from './inventory.controller';
+import { batchTransferStock, createStockAdjustment, listMovements, listStock, transferStock } from './inventory.controller';
 
 export const inventoryRouter = Router({ mergeParams: true });
 
@@ -14,3 +14,5 @@ inventoryRouter.use(authMiddleware);
 inventoryRouter.get('/stock', requireStoreRole(readRoles), listStock);
 inventoryRouter.get('/movements', requireStoreRole(readRoles), listMovements);
 inventoryRouter.post('/adjustments', requireStoreRole(writeRoles), createStockAdjustment);
+inventoryRouter.post('/transfers', requireStoreRole(writeRoles), transferStock);
+inventoryRouter.post('/transfers/batch', requireStoreRole(writeRoles), batchTransferStock);
