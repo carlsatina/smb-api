@@ -142,7 +142,7 @@ const sendVerificationForUser = async (user: { id: string; email: string; emailV
 };
 
 export const authService = {
-    register: async (email: string, password: string, fullName?: string) => {
+    register: async (email: string, password: string, fullName?: string, plan?: 'STANDARD' | 'GROWTH') => {
         const normalizedEmail = normalizeEmail(email);
         const existing = await prisma.user.findUnique({ where: { email: normalizedEmail } });
         if (existing) {
@@ -150,12 +150,14 @@ export const authService = {
         }
 
         const passwordHash = await bcrypt.hash(password, 10);
+        const trialEndsAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
         const user = await prisma.user.create({
             data: {
                 email: normalizedEmail,
                 passwordHash,
                 fullName,
                 subscriptionActive: true,
+                ...(plan && { grantedPlan: plan, grantedUntil: trialEndsAt }),
             },
         });
 
