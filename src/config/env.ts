@@ -84,10 +84,6 @@ export const env = {
     errorReportingHealthcheckCheckinMargin: Number(getEnv('ERROR_REPORTING_HEALTHCHECK_MARGIN', '5')),
     errorReportingHealthcheckMaxRuntime: Number(getEnv('ERROR_REPORTING_HEALTHCHECK_MAX_RUNTIME', '60')),
     errorReportingHealthcheckTimezone: getEnv('ERROR_REPORTING_HEALTHCHECK_TIMEZONE', 'UTC') as string,
-    adminEmails: (getEnv('ADMIN_EMAILS', '') ?? '')
-        .split(',')
-        .map((email) => email.trim().toLowerCase())
-        .filter(Boolean),
 };
 
 const validateEnv = () => {

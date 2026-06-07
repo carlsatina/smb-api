@@ -6,6 +6,7 @@ import { AppError } from '../shared/errors';
 export type AuthUser = {
     sub: string;
     email: string;
+    isSuperAdmin: boolean;
 };
 
 export type AuthRequest = Request & {

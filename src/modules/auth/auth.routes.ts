@@ -3,7 +3,6 @@ import { authMiddleware } from '../../middlewares/auth';
 import { csrfMiddleware } from '../../middlewares/csrf';
 import { createRateLimiter } from '../../middlewares/rateLimit';
 import {
-    devUpgradePlan,
     forgotPassword,
     login,
     logout,
@@ -78,5 +77,3 @@ authRouter.post('/password/reset', resetLimiter, resetPassword);
 authRouter.post('/verify', verifyLimiter, verifyEmail);
 authRouter.post('/verify/resend', verifyRequestLimiter, resendVerification);
 authRouter.get('/me', authMiddleware, me);
-// TODO(production): Remove before going live — no payment gate.
-authRouter.patch('/plan', authMiddleware, csrfMiddleware, devUpgradePlan);

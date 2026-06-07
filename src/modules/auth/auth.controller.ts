@@ -12,7 +12,6 @@ import {
     setRefreshTokenCookie,
 } from './auth.cookies';
 import {
-    devUpgradePlanSchema,
     forgotPasswordSchema,
     loginSchema,
     refreshSchema,
@@ -109,7 +108,17 @@ export const me = asyncHandler(async (req: AuthRequest, res: Response) => {
 
     const user = await prisma.user.findUnique({
         where: { id: userId },
-        select: { id: true, email: true, fullName: true, subscriptionActive: true, planTier: true, emailVerifiedAt: true },
+        select: {
+            id: true,
+            email: true,
+            fullName: true,
+            subscriptionActive: true,
+            planTier: true,
+            grantedPlan: true,
+            grantedUntil: true,
+            isSuperAdmin: true,
+            emailVerifiedAt: true,
+        },
     });
 
     if (!user) {
@@ -125,25 +134,3 @@ export const me = asyncHandler(async (req: AuthRequest, res: Response) => {
     });
 });
 
-// TODO(production): Delete this handler before going live.
-// Plan changes must be gated behind a payment provider (e.g. Stripe checkout
-// + webhook confirmation). Trusting the client to self-select a paid plan is
-// a critical billing vulnerability in production.
-export const devUpgradePlan = asyncHandler(async (req: Request, res: Response) => {
-    const authReq = req as AuthRequest;
-    const userId = authReq.user?.sub;
-    if (!userId) {
-        res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Not authenticated' } });
-        return;
-    }
-
-    const { planTier } = devUpgradePlanSchema.parse(req.body);
-
-    const user = await prisma.user.update({
-        where: { id: userId },
-        data: { planTier, subscriptionActive: true },
-        select: { id: true, email: true, planTier: true, subscriptionActive: true },
-    });
-
-    res.status(200).json({ user });
-});

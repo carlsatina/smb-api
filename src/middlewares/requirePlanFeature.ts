@@ -30,6 +30,8 @@ const getStoreOwnerPlan = async (storeId: string) => {
                 select: {
                     planTier: true,
                     subscriptionActive: true,
+                    grantedPlan: true,
+                    grantedUntil: true,
                 },
             },
         },
@@ -40,6 +42,17 @@ const getStoreOwnerPlan = async (storeId: string) => {
     }
 
     return owner.user;
+};
+
+const resolveEffectivePlan = (user: {
+    planTier: import('@prisma/client').PlanTier;
+    grantedPlan: import('@prisma/client').PlanTier | null;
+    grantedUntil: Date | null;
+}) => {
+    if (user.grantedPlan && (!user.grantedUntil || user.grantedUntil > new Date())) {
+        return user.grantedPlan;
+    }
+    return user.planTier;
 };
 
 export const requirePlanFeature = (feature: PlanFeature) => {
@@ -56,7 +69,8 @@ export const requirePlanFeature = (feature: PlanFeature) => {
             );
         }
 
-        const plan = getPlanConfig(owner.planTier);
+        const effectiveTier = resolveEffectivePlan(owner);
+        const plan = getPlanConfig(effectiveTier);
         if (!plan.features[feature]) {
             return next(
                 new AppError(

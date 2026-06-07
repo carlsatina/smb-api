@@ -43,6 +43,9 @@ describe('authService.login', () => {
             emailVerifiedAt: null,
             subscriptionActive: true,
             planTier: 'STANDARD',
+            grantedPlan: null,
+            grantedUntil: null,
+            isSuperAdmin: false,
             createdAt: new Date(),
             updatedAt: new Date(),
         });

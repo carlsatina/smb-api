@@ -34,8 +34,8 @@ const parseDurationToMs = (value: string) => {
     return amount * multiplier;
 };
 
-const signAccessToken = (userId: string, email: string) => {
-    return jwt.sign({ sub: userId, email }, env.accessTokenSecret, {
+const signAccessToken = (userId: string, email: string, isSuperAdmin: boolean) => {
+    return jwt.sign({ sub: userId, email, isSuperAdmin }, env.accessTokenSecret, {
         expiresIn: env.accessTokenExpiresIn as jwt.SignOptions['expiresIn'],
     });
 };
@@ -159,7 +159,7 @@ export const authService = {
             },
         });
 
-        const accessToken = signAccessToken(user.id, user.email);
+        const accessToken = signAccessToken(user.id, user.email, user.isSuperAdmin);
         const refreshToken = signRefreshToken(user.id);
         await storeRefreshToken(user.id, refreshToken);
         await sendVerificationForUser(user);
@@ -171,6 +171,9 @@ export const authService = {
                 fullName: user.fullName,
                 subscriptionActive: user.subscriptionActive,
                 planTier: user.planTier,
+                grantedPlan: user.grantedPlan,
+                grantedUntil: user.grantedUntil,
+                isSuperAdmin: user.isSuperAdmin,
                 emailVerified: Boolean(user.emailVerifiedAt),
             },
             accessToken,
@@ -189,7 +192,7 @@ export const authService = {
             throw new AppError('INVALID_CREDENTIALS', 'Invalid email or password', 401);
         }
 
-        const accessToken = signAccessToken(user.id, user.email);
+        const accessToken = signAccessToken(user.id, user.email, user.isSuperAdmin);
         const refreshToken = signRefreshToken(user.id);
         await storeRefreshToken(user.id, refreshToken);
 
@@ -200,6 +203,9 @@ export const authService = {
                 fullName: user.fullName,
                 subscriptionActive: user.subscriptionActive,
                 planTier: user.planTier,
+                grantedPlan: user.grantedPlan,
+                grantedUntil: user.grantedUntil,
+                isSuperAdmin: user.isSuperAdmin,
                 emailVerified: Boolean(user.emailVerifiedAt),
             },
             accessToken,
@@ -243,7 +249,7 @@ export const authService = {
         }
 
         await revokeRefreshToken(refreshToken);
-        const accessToken = signAccessToken(user.id, user.email);
+        const accessToken = signAccessToken(user.id, user.email, user.isSuperAdmin);
         const nextRefreshToken = signRefreshToken(payload.sub);
         await storeRefreshToken(payload.sub, nextRefreshToken);
 
