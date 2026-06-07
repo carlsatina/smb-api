@@ -2,7 +2,7 @@ import { Response } from 'express';
 import { AuthRequest } from '../../middlewares/auth';
 import { asyncHandler } from '../../shared/asyncHandler';
 import { AppError } from '../../shared/errors';
-import { saleFinalizeSchema, saleListQuerySchema } from './sale.schemas';
+import { saleExportQuerySchema, saleFinalizeSchema, saleListQuerySchema } from './sale.schemas';
 import { saleService } from './sale.service';
 
 export const listSales = asyncHandler(async (req: AuthRequest, res: Response) => {
@@ -49,6 +49,61 @@ export const finalizeSale = asyncHandler(async (req: AuthRequest, res: Response)
     const payload = saleFinalizeSchema.parse(req.body);
     const sale = await saleService.finalize(storeId, userId, payload);
     res.status(201).json({ sale });
+});
+
+const escapeCsvValue = (value: string | number | null | undefined): string => {
+    if (value === null || value === undefined) return '';
+    const text = String(value);
+    if (/[",\n]/.test(text)) return `"${text.replace(/"/g, '""')}"`;
+    return text;
+};
+
+export const exportSales = asyncHandler(async (req: AuthRequest, res: Response) => {
+    const storeId = req.params.storeId;
+    if (!storeId) throw new AppError('STORE_REQUIRED', 'Store is required', 400);
+
+    const query = saleExportQuerySchema.parse(req.query);
+    const filters = {
+        status: query.status,
+        from: query.from,
+        to: query.to,
+        cashierId: query.cashierId,
+        paymentMethod: query.paymentMethod,
+        productId: query.productId,
+    };
+
+    const pageSize = 100;
+    let page = 1;
+    let total = 0;
+    const rows: Array<Array<string | number | null | undefined>> = [
+        ['Receipt #', 'Date', 'Status', 'Cashier', 'Payment Method', 'Items', 'Subtotal', 'Discount', 'Tax', 'Total'],
+    ];
+
+    do {
+        const data = await saleService.list(storeId, filters, page, pageSize);
+        total = data.total;
+        data.sales.forEach((sale) => {
+            rows.push([
+                sale.receiptNumber ?? '',
+                sale.createdAt instanceof Date ? sale.createdAt.toISOString() : sale.createdAt,
+                sale.status,
+                sale.cashier?.fullName || sale.cashier?.email || '',
+                sale.paymentMethod,
+                sale.items.map((i) => `${i.name} x${i.qty}`).join('; '),
+                sale.subtotal,
+                sale.discount,
+                sale.tax,
+                sale.total,
+            ]);
+        });
+        page++;
+    } while (rows.length - 1 < total);
+
+    const csv = rows.map((row) => row.map(escapeCsvValue).join(',')).join('\n');
+    const filename = `sales-${storeId}-${new Date().toISOString().slice(0, 10)}.csv`;
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.status(200).send(csv);
 });
 
 export const voidSale = asyncHandler(async (req: AuthRequest, res: Response) => {

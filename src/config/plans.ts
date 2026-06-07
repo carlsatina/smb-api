@@ -1,6 +1,6 @@
 import { PlanTier } from '@prisma/client';
 
-export type PlanFeature = 'ingredients' | 'recipes' | 'purchaseOrders' | 'exports';
+export type PlanFeature = 'ingredients' | 'recipes' | 'purchaseOrders' | 'importExport';
 
 export type PlanConfig = {
     tier: PlanTier;
@@ -20,7 +20,7 @@ const planConfigs: Record<PlanTier, PlanConfig> = {
             ingredients: false,
             recipes: false,
             purchaseOrders: false,
-            exports: false,
+            importExport: false,
         },
     },
     STANDARD: {
@@ -32,7 +32,7 @@ const planConfigs: Record<PlanTier, PlanConfig> = {
             ingredients: true,
             recipes: true,
             purchaseOrders: true,
-            exports: true,
+            importExport: true,
         },
     },
     GROWTH: {
@@ -44,7 +44,7 @@ const planConfigs: Record<PlanTier, PlanConfig> = {
             ingredients: true,
             recipes: true,
             purchaseOrders: true,
-            exports: true,
+            importExport: true,
         },
     },
 };

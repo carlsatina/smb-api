@@ -59,3 +59,12 @@ export const saleListQuerySchema = z.object({
         .preprocess((value) => (value === undefined ? 25 : Number(value)), z.number().int().min(1).max(100))
         .default(25),
 });
+
+export const saleExportQuerySchema = z.object({
+    status: z.nativeEnum(SaleStatus).optional(),
+    from: dateValue.optional(),
+    to: dateValue.optional(),
+    cashierId: optionalString,
+    paymentMethod: z.nativeEnum(PaymentMethod).optional(),
+    productId: optionalString,
+});

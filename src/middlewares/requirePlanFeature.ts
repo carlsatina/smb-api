@@ -9,7 +9,7 @@ const featureLabels: Record<PlanFeature, string> = {
     ingredients: 'ingredients',
     recipes: 'recipes',
     purchaseOrders: 'purchase orders',
-    exports: 'exports',
+    importExport: 'import/export',
 };
 
 const getStoreOwnerPlan = async (storeId: string) => {

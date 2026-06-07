@@ -12,7 +12,7 @@ auditLogRouter.use(authMiddleware);
 auditLogRouter.get(
     '/export',
     requireStoreRole([Role.OWNER, Role.ADMIN]),
-    requirePlanFeature('exports'),
+    requirePlanFeature('importExport'),
     exportAuditLogs
 );
 auditLogRouter.get('/', requireStoreRole([Role.OWNER, Role.ADMIN]), listAuditLogs);

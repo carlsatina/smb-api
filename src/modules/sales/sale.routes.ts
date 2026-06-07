@@ -1,8 +1,9 @@
 import { Router } from 'express';
 import { Role } from '@prisma/client';
 import { authMiddleware } from '../../middlewares/auth';
+import { requirePlanFeature } from '../../middlewares/requirePlanFeature';
 import { requireStoreRole } from '../../middlewares/requireStoreRole';
-import { finalizeSale, getSale, listSales, voidSale } from './sale.controller';
+import { exportSales, finalizeSale, getSale, listSales, voidSale } from './sale.controller';
 
 export const saleRouter = Router({ mergeParams: true });
 
@@ -12,6 +13,7 @@ const voidRoles = [Role.OWNER, Role.ADMIN];
 
 saleRouter.use(authMiddleware);
 
+saleRouter.get('/export', requireStoreRole(readRoles), requirePlanFeature('importExport'), exportSales);
 saleRouter.get('/', requireStoreRole(readRoles), listSales);
 saleRouter.get('/:saleId', requireStoreRole(readRoles), getSale);
 saleRouter.post('/finalize', requireStoreRole(finalizeRoles), finalizeSale);
