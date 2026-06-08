@@ -161,6 +161,8 @@ export const importSales = asyncHandler(async (req: AuthRequest & { file?: Expre
         saleId: r[col('saleid')]?.trim() ?? '',
         date: r[col('date')]?.trim() ?? '',
         paymentMode: col('paymentmode') !== -1 ? (r[col('paymentmode')]?.trim() ?? '') : '',
+        staff: col('staff') !== -1 ? (r[col('staff')]?.trim() ?? '') : '',
+        seniorDiscount: col('seniordiscount') !== -1 ? (Number(r[col('seniordiscount')]?.trim()) || 0) : 0,
         productName: r[col('productname')]?.trim() ?? '',
         qty: Number(r[col('quantity')]?.trim()),
         unitPrice: Number(r[col('unitprice')]?.trim()),

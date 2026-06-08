@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import {
     ItemType,
     MovementType,
@@ -685,6 +686,8 @@ export const saleService = {
             saleId: string;
             date: string;
             paymentMode: string;
+            staff: string;
+            seniorDiscount: number;
             productName: string;
             qty: number;
             unitPrice: number;
@@ -709,9 +712,24 @@ export const saleService = {
         });
         const productByName = new Map(storeProducts.map((p) => [p.name.toLowerCase().trim(), p]));
 
+        const storeMembers = await prisma.storeMember.findMany({
+            where: { storeId },
+            select: { userId: true, user: { select: { fullName: true, email: true } } },
+        });
+        const cashierByName = new Map(
+            storeMembers.flatMap((m) => {
+                const entries: [string, string][] = [];
+                if (m.user.fullName) entries.push([m.user.fullName.toLowerCase().trim(), m.userId]);
+                if (m.user.email) entries.push([m.user.email.toLowerCase().trim(), m.userId]);
+                return entries;
+            })
+        );
+
         type ImportGroup = {
             date: Date;
             paymentMethod: PaymentMethod;
+            cashierId: string;
+            discount: number;
             items: { productId: string; name: string; qty: number; unitPrice: number; lineTotal: number }[];
         };
 
@@ -723,20 +741,30 @@ export const saleService = {
             const { saleId } = row;
             if (failedSaleIds.has(saleId)) continue;
 
+            if (!row.productName) {
+                failedSaleIds.add(saleId);
+                groups.delete(saleId);
+                errors.push({ saleId, message: 'Skipped: product name is blank in this row' });
+                continue;
+            }
+
             const product = productByName.get(row.productName.toLowerCase().trim());
             if (!product) {
                 failedSaleIds.add(saleId);
                 groups.delete(saleId);
-                errors.push({ saleId, message: `Product not found: "${row.productName}"` });
+                errors.push({ saleId, message: `Product not found in this store: "${row.productName}"` });
                 continue;
             }
 
             if (!groups.has(saleId)) {
                 const paymentMethod = PAYMENT_MODE_MAP[row.paymentMode.toLowerCase().trim()] ?? PaymentMethod.OTHER;
                 const parsedDate = new Date(row.date);
+                const cashierId = (row.staff ? cashierByName.get(row.staff.toLowerCase().trim()) : undefined) ?? importerId;
                 groups.set(saleId, {
                     date: isNaN(parsedDate.getTime()) ? new Date() : parsedDate,
                     paymentMethod,
+                    cashierId,
+                    discount: row.seniorDiscount ?? 0,
                     items: [],
                 });
             }
@@ -751,51 +779,71 @@ export const saleService = {
         }
 
         let imported = 0;
-        let failed = failedSaleIds.size;
 
-        for (const [extSaleId, sale] of groups) {
+        const CHUNK_SIZE = 200;
+        const groupEntries = Array.from(groups.entries());
+
+        for (let i = 0; i < groupEntries.length; i += CHUNK_SIZE) {
+            const chunk = groupEntries.slice(i, i + CHUNK_SIZE);
+
             try {
-                const subtotal = roundMoney(sale.items.reduce((sum, i) => sum + roundMoney(i.qty * i.unitPrice), 0));
-
                 await prisma.$transaction(async (tx) => {
-                    const receiptNumber = await getNextReceiptNumber(tx, storeId);
-                    const created = await tx.sale.create({
-                        data: {
+                    const maxResult = await tx.sale.aggregate({
+                        where: { storeId, deletedAt: null },
+                        _max: { receiptNumber: true },
+                    });
+                    let nextReceipt = (maxResult._max.receiptNumber ?? 0) + 1;
+
+                    const saleBatch: Prisma.SaleCreateManyInput[] = [];
+                    const itemBatch: Prisma.SaleItemCreateManyInput[] = [];
+
+                    for (const [, sale] of chunk) {
+                        const id = randomUUID();
+                        const subtotal = roundMoney(sale.items.reduce((sum, i) => sum + roundMoney(i.qty * i.unitPrice), 0));
+                        const discount = roundMoney(sale.discount);
+                        const total = roundMoney(subtotal - discount);
+
+                        saleBatch.push({
+                            id,
                             storeId,
-                            cashierId: importerId,
+                            cashierId: sale.cashierId,
                             status: SaleStatus.FINALIZED,
-                            receiptNumber,
+                            receiptNumber: nextReceipt++,
                             subtotal: new Prisma.Decimal(subtotal),
-                            discount: new Prisma.Decimal(0),
+                            discount: new Prisma.Decimal(discount),
                             tax: new Prisma.Decimal(0),
-                            total: new Prisma.Decimal(subtotal),
+                            total: new Prisma.Decimal(total),
                             paymentMethod: sale.paymentMethod,
                             createdAt: sale.date,
                             finalizedAt: sale.date,
-                        },
-                    });
+                        });
 
-                    await tx.saleItem.createMany({
-                        data: sale.items.map((item) => ({
-                            saleId: created.id,
-                            productId: item.productId,
-                            nameSnapshot: item.name,
-                            qty: new Prisma.Decimal(item.qty),
-                            unitPrice: new Prisma.Decimal(roundMoney(item.unitPrice)),
-                            discount: new Prisma.Decimal(0),
-                            tax: new Prisma.Decimal(0),
-                            total: new Prisma.Decimal(roundMoney(item.lineTotal)),
-                        })),
-                    });
+                        for (const item of sale.items) {
+                            itemBatch.push({
+                                saleId: id,
+                                productId: item.productId,
+                                nameSnapshot: item.name,
+                                qty: new Prisma.Decimal(item.qty),
+                                unitPrice: new Prisma.Decimal(roundMoney(item.unitPrice)),
+                                discount: new Prisma.Decimal(0),
+                                tax: new Prisma.Decimal(0),
+                                total: new Prisma.Decimal(roundMoney(item.lineTotal)),
+                            });
+                        }
+                    }
+
+                    await tx.sale.createMany({ data: saleBatch });
+                    await tx.saleItem.createMany({ data: itemBatch });
                 });
 
-                imported++;
+                imported += chunk.length;
             } catch (err: any) {
-                failed++;
-                errors.push({ saleId: extSaleId, message: err.message ?? 'Failed to create sale' });
+                for (const [extSaleId] of chunk) {
+                    errors.push({ saleId: extSaleId, message: err.message ?? 'Chunk import failed' });
+                }
             }
         }
 
-        return { imported, failed, errors };
+        return { imported, failed: failedSaleIds.size + (groups.size - imported), errors };
     },
 };
