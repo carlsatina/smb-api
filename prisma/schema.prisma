@@ -98,6 +98,11 @@ model User {
   sales         Sale[]         @relation("Cashier")
   receipts      PurchaseReceipt[] @relation("ReceivedBy")
   movements     InventoryMovement[] @relation("CreatedBy")
+  userFeatures         UserFeature[]          @relation("UserFeatureUser")
+  grantedUserFeatures  UserFeature[]          @relation("UserFeatureGrantedBy")
+  dailySalesEntries    DailySalesEntry[]      @relation("DailySalesCreatedBy")
+  dailySalesGoals      DailySalesGoal[]       @relation("DailySalesGoalCreatedBy")
+  cashierEntries       DailySalesCashierEntry[] @relation("CashierEntryUser")
 }
 
 model RefreshToken {
@@ -166,6 +171,8 @@ model Store {
   inventoryMovements InventoryMovement[]
   auditLogs          AuditLog[]
   suppliers          Supplier[]
+  dailySalesEntries  DailySalesEntry[]
+  dailySalesGoals    DailySalesGoal[]
 }
 
 model StoreMember {
@@ -450,4 +457,74 @@ model AuditLog {
   @@index([storeId, createdAt])
   @@index([storeId, action, createdAt])
   @@index([storeId, actorId, createdAt])
+}
+
+model UserFeature {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation("UserFeatureUser", fields: [userId], references: [id], onDelete: Cascade)
+  feature     String
+  grantedAt   DateTime  @default(now())
+  expiresAt   DateTime?
+  grantedById String
+  grantedBy   User      @relation("UserFeatureGrantedBy", fields: [grantedById], references: [id])
+
+  @@unique([userId, feature])
+  @@index([userId])
+}
+
+model DailySalesGoal {
+  id            String   @id @default(cuid())
+  storeId       String
+  store         Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  goal          Decimal  @db.Decimal(12, 2)
+  effectiveDate DateTime @db.Date
+  createdById   String
+  createdBy     User     @relation("DailySalesGoalCreatedBy", fields: [createdById], references: [id])
+  createdAt     DateTime @default(now())
+
+  @@unique([storeId, effectiveDate])
+  @@index([storeId, effectiveDate])
+}
+
+model DailySalesEntry {
+  id             String    @id @default(cuid())
+  storeId        String
+  store          Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  date           DateTime  @db.Date
+  expense        Decimal   @default(0) @db.Decimal(12, 2)
+  seniorDiscount Decimal   @default(0) @db.Decimal(12, 2)
+  actualCoh      Decimal?  @db.Decimal(12, 2)
+  createdById    String
+  createdBy   User      @relation("DailySalesCreatedBy", fields: [createdById], references: [id])
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  cashierEntries DailySalesCashierEntry[]
+
+  @@unique([storeId, date])
+  @@index([storeId, date])
+}
+
+model DailySalesCashierEntry {
+  id                String          @id @default(cuid())
+  dailySalesEntryId String
+  dailySalesEntry   DailySalesEntry @relation(fields: [dailySalesEntryId], references: [id], onDelete: Cascade)
+  userId            String
+  user              User            @relation("CashierEntryUser", fields: [userId], references: [id])
+  cashAmount        Decimal         @default(0) @db.Decimal(12, 2)
+  gcashAmount       Decimal         @default(0) @db.Decimal(12, 2)
+  denom1000         Int             @default(0)
+  denom500          Int             @default(0)
+  denom200          Int             @default(0)
+  denom100          Int             @default(0)
+  denom50           Int             @default(0)
+  denom20           Int             @default(0)
+  coins             Decimal         @default(0) @db.Decimal(10, 2)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@unique([dailySalesEntryId, userId])
+  @@index([dailySalesEntryId])
 }

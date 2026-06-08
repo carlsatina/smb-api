@@ -118,6 +118,9 @@ export const me = asyncHandler(async (req: AuthRequest, res: Response) => {
             grantedUntil: true,
             isSuperAdmin: true,
             emailVerifiedAt: true,
+            userFeatures: {
+                select: { feature: true, expiresAt: true },
+            },
         },
     });
 
@@ -126,10 +129,17 @@ export const me = asyncHandler(async (req: AuthRequest, res: Response) => {
         return;
     }
 
+    const now = new Date();
+    const activeFeatures = user.userFeatures
+        .filter((f) => !f.expiresAt || f.expiresAt > now)
+        .map((f) => f.feature);
+
     res.status(200).json({
         user: {
             ...user,
             emailVerified: Boolean(user.emailVerifiedAt),
+            features: activeFeatures,
+            userFeatures: undefined,
         },
     });
 });

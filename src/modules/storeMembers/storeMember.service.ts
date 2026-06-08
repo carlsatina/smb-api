@@ -421,6 +421,23 @@ export const storeMemberService = {
             throw new AppError('NOT_FOUND', 'Invite not found', 404);
         }
     },
+    previewInvite: async (storeId: string, token: string) => {
+        const tokenHash = hashToken(token);
+        const invite = await prisma.storeInvite.findFirst({
+            where: { storeId, tokenHash },
+            include: { invitedBy: { select: { fullName: true, email: true } } },
+        });
+        if (!invite) throw new AppError('INVALID_INVITE', 'Invite not found', 404);
+        if (invite.expiresAt <= new Date()) throw new AppError('INVITE_EXPIRED', 'Invite has expired', 410);
+        if (invite.acceptedAt) throw new AppError('INVITE_USED', 'Invite has already been accepted', 409);
+        return {
+            email: invite.email,
+            role: invite.role,
+            invitedBy: invite.invitedBy?.fullName || invite.invitedBy?.email || null,
+            expiresAt: invite.expiresAt,
+        };
+    },
+
     acceptInvite: async (storeId: string, userId: string, email: string, token: string) => {
         await ensureStoreExists(storeId);
         const tokenHash = hashToken(token);
@@ -471,16 +488,19 @@ export const storeMemberService = {
             });
 
             const updateResult = await tx.storeInvite.updateMany({
-                where: {
-                    id: invite.id,
-                    storeId,
-                },
+                where: { id: invite.id, storeId },
                 data: { acceptedAt: new Date() },
             });
 
             if (updateResult.count === 0) {
                 throw new AppError('INVALID_INVITE', 'Invite not found', 404);
             }
+
+            // Accepting an invite proves email ownership — verify if not already done
+            await tx.user.updateMany({
+                where: { id: userId, emailVerifiedAt: null },
+                data: { emailVerifiedAt: new Date() },
+            });
 
             return member;
         });

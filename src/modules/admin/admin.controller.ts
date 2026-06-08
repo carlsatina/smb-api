@@ -149,3 +149,38 @@ export const getMetrics = asyncHandler(async (req: AuthRequest, res: Response) =
 
     res.status(200).json({ metrics: getMetricsSnapshot(limit) });
 });
+
+export const getUserFeatures = asyncHandler(async (req: AuthRequest, res: Response) => {
+    const { userId } = req.params;
+    const features = await prisma.userFeature.findMany({
+        where: { userId },
+        select: { feature: true, grantedAt: true, expiresAt: true, grantedBy: { select: { email: true } } },
+    });
+    res.status(200).json({ features });
+});
+
+export const grantUserFeature = asyncHandler(async (req: AuthRequest, res: Response) => {
+    const { userId } = req.params;
+    const grantedById = req.user?.sub;
+    if (!grantedById) throw new AppError('UNAUTHORIZED', 'Authentication required', 401);
+
+    const { feature, expiresAt } = req.body as { feature: string; expiresAt?: string };
+    if (!feature) throw new AppError('BAD_REQUEST', 'feature is required', 400);
+
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new AppError('NOT_FOUND', 'User not found', 404);
+
+    const grant = await prisma.userFeature.upsert({
+        where: { userId_feature: { userId, feature } },
+        create: { userId, feature, grantedById, expiresAt: expiresAt ? new Date(expiresAt) : null },
+        update: { grantedById, expiresAt: expiresAt ? new Date(expiresAt) : null, grantedAt: new Date() },
+    });
+    res.status(200).json({ grant });
+});
+
+export const revokeUserFeature = asyncHandler(async (req: AuthRequest, res: Response) => {
+    const { userId, feature } = req.params;
+
+    await prisma.userFeature.deleteMany({ where: { userId, feature } });
+    res.status(204).send();
+});

@@ -7,6 +7,7 @@ import { requestLogger } from './middlewares/requestLogger';
 import { securityHeaders } from './middlewares/securityHeaders';
 import { captureHealthCheck } from './shared/errorReporting';
 import { auditLogRouter } from './modules/auditLogs/auditLog.routes';
+import { dailySalesRouter } from './modules/dailySales/dailySales.routes';
 import { adminRouter } from './modules/admin/admin.routes';
 import { authRouter } from './modules/auth/auth.routes';
 import { ingredientRouter } from './modules/ingredients/ingredient.routes';
@@ -74,6 +75,7 @@ export const createApp = () => {
     app.use('/api/v1/stores/:storeId/audit-logs', auditLogRouter);
     app.use('/api/v1/stores/:storeId/members', storeMemberRouter);
     app.use('/api/v1/stores/:storeId/invites', storeInviteRouter);
+    app.use('/api/v1/stores/:storeId/daily-sales', dailySalesRouter);
 
     app.use(errorHandler);
 

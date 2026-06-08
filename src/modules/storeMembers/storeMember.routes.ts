@@ -8,6 +8,7 @@ import {
     createInvite,
     listInvites,
     listMembers,
+    previewInvite,
     removeMember,
     revokeInvite,
     updateMemberRole,
@@ -16,7 +17,7 @@ import {
 export const storeMemberRouter = Router({ mergeParams: true });
 export const storeInviteRouter = Router({ mergeParams: true });
 
-const readRoles = [Role.OWNER, Role.ADMIN, Role.INVENTORY_MANAGER, Role.VIEWER];
+const readRoles = [Role.OWNER, Role.ADMIN, Role.CASHIER, Role.INVENTORY_MANAGER, Role.VIEWER];
 const manageRoles = [Role.OWNER, Role.ADMIN];
 
 const inviteLimiter = createRateLimiter({
@@ -30,6 +31,9 @@ const acceptLimiter = createRateLimiter({
     max: 20,
     message: 'Too many invite accepts. Please try again later.',
 });
+
+// Public — no auth required
+storeInviteRouter.get('/preview', acceptLimiter, previewInvite);
 
 storeMemberRouter.use(authMiddleware);
 storeInviteRouter.use(authMiddleware);

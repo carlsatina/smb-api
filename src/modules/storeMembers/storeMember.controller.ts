@@ -82,6 +82,14 @@ export const revokeInvite = asyncHandler(async (req: AuthRequest, res: Response)
     res.status(204).send();
 });
 
+export const previewInvite = asyncHandler(async (req: AuthRequest, res: Response) => {
+    const storeId = req.params.storeId;
+    const token = req.query.token as string | undefined;
+    if (!storeId || !token) throw new AppError('BAD_REQUEST', 'Store and token are required', 400);
+    const preview = await storeMemberService.previewInvite(storeId, token);
+    res.status(200).json({ preview });
+});
+
 export const acceptInvite = asyncHandler(async (req: AuthRequest, res: Response) => {
     const storeId = req.params.storeId;
     const actorId = req.user?.sub;

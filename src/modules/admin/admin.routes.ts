@@ -4,10 +4,13 @@ import { requirePlatformAdmin } from '../../middlewares/requirePlatformAdmin';
 import {
     getMetrics,
     getStats,
+    grantUserFeature,
     grantUserPlan,
+    getUserFeatures,
     listStores,
     listUsers,
     overrideUserPlan,
+    revokeUserFeature,
     revokeUserGrant,
     toggleSuperAdmin,
 } from './admin.controller';
@@ -24,3 +27,6 @@ adminRouter.delete('/users/:userId/grant', revokeUserGrant);
 adminRouter.patch('/users/:userId/super-admin', toggleSuperAdmin);
 adminRouter.get('/stats', getStats);
 adminRouter.get('/metrics', getMetrics);
+adminRouter.get('/users/:userId/features', getUserFeatures);
+adminRouter.post('/users/:userId/features', grantUserFeature);
+adminRouter.delete('/users/:userId/features/:feature', revokeUserFeature);
