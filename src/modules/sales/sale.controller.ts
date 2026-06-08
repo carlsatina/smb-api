@@ -5,6 +5,37 @@ import { AppError } from '../../shared/errors';
 import { saleExportQuerySchema, saleFinalizeSchema, saleListQuerySchema } from './sale.schemas';
 import { saleService } from './sale.service';
 
+const parseCSV = (text: string): string[][] => {
+    const rows: string[][] = [];
+    let row: string[] = [];
+    let field = '';
+    let inQuotes = false;
+    for (let i = 0; i < text.length; i++) {
+        const char = text[i];
+        const next = text[i + 1];
+        if (inQuotes) {
+            if (char === '"' && next === '"') { field += '"'; i++; }
+            else if (char === '"') { inQuotes = false; }
+            else { field += char; }
+        } else {
+            if (char === '"') { inQuotes = true; }
+            else if (char === ',') { row.push(field); field = ''; }
+            else if (char === '\n') {
+                row.push(field);
+                if (row.some((f) => f.trim() !== '')) rows.push(row);
+                row = []; field = '';
+            } else if (char === '\r') {
+                // skip
+            } else { field += char; }
+        }
+    }
+    if (field || row.length > 0) {
+        row.push(field);
+        if (row.some((f) => f.trim() !== '')) rows.push(row);
+    }
+    return rows;
+};
+
 export const listSales = asyncHandler(async (req: AuthRequest, res: Response) => {
     const storeId = req.params.storeId;
     if (!storeId) {
@@ -104,6 +135,40 @@ export const exportSales = asyncHandler(async (req: AuthRequest, res: Response) 
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.status(200).send(csv);
+});
+
+export const importSales = asyncHandler(async (req: AuthRequest & { file?: Express.Multer.File }, res: Response) => {
+    const storeId = req.params.storeId;
+    const importerId = req.user?.sub;
+    if (!storeId) throw new AppError('STORE_REQUIRED', 'Store is required', 400);
+    if (!importerId) throw new AppError('UNAUTHORIZED', 'Authentication required', 401);
+    if (!req.file) throw new AppError('FILE_REQUIRED', 'CSV file is required', 400);
+
+    const text = req.file.buffer.toString('utf-8');
+    const rows = parseCSV(text);
+    if (rows.length < 2) throw new AppError('EMPTY_FILE', 'CSV file has no data rows', 400);
+
+    const headers = rows[0].map((h) => h.trim().toLowerCase().replace(/[_\s]/g, ''));
+    const col = (name: string) => headers.indexOf(name);
+
+    const REQUIRED = ['saleid', 'date', 'productname', 'quantity', 'unitprice'];
+    const missing = REQUIRED.filter((h) => col(h) === -1);
+    if (missing.length > 0) {
+        throw new AppError('INVALID_HEADERS', `CSV missing required columns: ${missing.join(', ')}`, 400);
+    }
+
+    const rawRows = rows.slice(1).map((r) => ({
+        saleId: r[col('saleid')]?.trim() ?? '',
+        date: r[col('date')]?.trim() ?? '',
+        paymentMode: col('paymentmode') !== -1 ? (r[col('paymentmode')]?.trim() ?? '') : '',
+        productName: r[col('productname')]?.trim() ?? '',
+        qty: Number(r[col('quantity')]?.trim()),
+        unitPrice: Number(r[col('unitprice')]?.trim()),
+        lineTotal: col('linetotal') !== -1 ? Number(r[col('linetotal')]?.trim()) : Number(r[col('unitprice')]?.trim()) * Number(r[col('quantity')]?.trim()),
+    })).filter((r) => r.saleId);
+
+    const result = await saleService.importSales(storeId, importerId, rawRows);
+    res.status(200).json(result);
 });
 
 export const voidSale = asyncHandler(async (req: AuthRequest, res: Response) => {

@@ -677,4 +677,125 @@ export const saleService = {
 
         return mapSaleDetail(updated);
     },
+
+    importSales: async (
+        storeId: string,
+        importerId: string,
+        rawRows: Array<{
+            saleId: string;
+            date: string;
+            paymentMode: string;
+            productName: string;
+            qty: number;
+            unitPrice: number;
+            lineTotal: number;
+        }>
+    ) => {
+        const PAYMENT_MODE_MAP: Record<string, PaymentMethod> = {
+            cash: PaymentMethod.CASH,
+            card: PaymentMethod.CARD,
+            'credit card': PaymentMethod.CARD,
+            'debit card': PaymentMethod.CARD,
+            gcash: PaymentMethod.GCASH,
+            maya: PaymentMethod.MAYA,
+            paymaya: PaymentMethod.MAYA,
+            transfer: PaymentMethod.TRANSFER,
+            'bank transfer': PaymentMethod.TRANSFER,
+        };
+
+        const storeProducts = await prisma.product.findMany({
+            where: { storeId, deletedAt: null },
+            select: { id: true, name: true },
+        });
+        const productByName = new Map(storeProducts.map((p) => [p.name.toLowerCase().trim(), p]));
+
+        type ImportGroup = {
+            date: Date;
+            paymentMethod: PaymentMethod;
+            items: { productId: string; name: string; qty: number; unitPrice: number; lineTotal: number }[];
+        };
+
+        const groups = new Map<string, ImportGroup>();
+        const failedSaleIds = new Set<string>();
+        const errors: Array<{ saleId: string; message: string }> = [];
+
+        for (const row of rawRows) {
+            const { saleId } = row;
+            if (failedSaleIds.has(saleId)) continue;
+
+            const product = productByName.get(row.productName.toLowerCase().trim());
+            if (!product) {
+                failedSaleIds.add(saleId);
+                groups.delete(saleId);
+                errors.push({ saleId, message: `Product not found: "${row.productName}"` });
+                continue;
+            }
+
+            if (!groups.has(saleId)) {
+                const paymentMethod = PAYMENT_MODE_MAP[row.paymentMode.toLowerCase().trim()] ?? PaymentMethod.OTHER;
+                const parsedDate = new Date(row.date);
+                groups.set(saleId, {
+                    date: isNaN(parsedDate.getTime()) ? new Date() : parsedDate,
+                    paymentMethod,
+                    items: [],
+                });
+            }
+
+            groups.get(saleId)!.items.push({
+                productId: product.id,
+                name: product.name,
+                qty: row.qty,
+                unitPrice: row.unitPrice,
+                lineTotal: row.lineTotal,
+            });
+        }
+
+        let imported = 0;
+        let failed = failedSaleIds.size;
+
+        for (const [extSaleId, sale] of groups) {
+            try {
+                const subtotal = roundMoney(sale.items.reduce((sum, i) => sum + roundMoney(i.qty * i.unitPrice), 0));
+
+                await prisma.$transaction(async (tx) => {
+                    const receiptNumber = await getNextReceiptNumber(tx, storeId);
+                    const created = await tx.sale.create({
+                        data: {
+                            storeId,
+                            cashierId: importerId,
+                            status: SaleStatus.FINALIZED,
+                            receiptNumber,
+                            subtotal: new Prisma.Decimal(subtotal),
+                            discount: new Prisma.Decimal(0),
+                            tax: new Prisma.Decimal(0),
+                            total: new Prisma.Decimal(subtotal),
+                            paymentMethod: sale.paymentMethod,
+                            createdAt: sale.date,
+                            finalizedAt: sale.date,
+                        },
+                    });
+
+                    await tx.saleItem.createMany({
+                        data: sale.items.map((item) => ({
+                            saleId: created.id,
+                            productId: item.productId,
+                            nameSnapshot: item.name,
+                            qty: new Prisma.Decimal(item.qty),
+                            unitPrice: new Prisma.Decimal(roundMoney(item.unitPrice)),
+                            discount: new Prisma.Decimal(0),
+                            tax: new Prisma.Decimal(0),
+                            total: new Prisma.Decimal(roundMoney(item.lineTotal)),
+                        })),
+                    });
+                });
+
+                imported++;
+            } catch (err: any) {
+                failed++;
+                errors.push({ saleId: extSaleId, message: err.message ?? 'Failed to create sale' });
+            }
+        }
+
+        return { imported, failed, errors };
+    },
 };

@@ -130,15 +130,25 @@ export const importProducts = asyncHandler(async (req: AuthRequest & { file?: Ex
         throw new AppError('EMPTY_FILE', 'CSV file has no data rows', 400);
     }
 
-    const EXPECTED_HEADERS = ['name', 'type', 'sku', 'barcode', 'price', 'cost', 'unit', 'category', 'active', 'lowstockthreshold'];
-    const headers = rows[0].map((h) => h.trim().toLowerCase().replace(/\s+/g, ''));
+    const headers = rows[0].map((h) => h.trim().toLowerCase().replace(/[\s_]+/g, ''));
     const col = (name: string) => headers.indexOf(name);
 
-    if (col('name') === -1 || col('price') === -1 || col('unit') === -1) {
-        throw new AppError('INVALID_HEADERS', 'CSV must include at least: name, price, unit', 400);
+    // Support common column name aliases
+    const colName = () => {
+        const idx = col('name');
+        return idx !== -1 ? idx : col('productname');
+    };
+
+    if (colName() === -1 || col('price') === -1) {
+        throw new AppError('INVALID_HEADERS', 'CSV must include at least: name (or product_name) and price', 400);
     }
 
+    // Pre-load existing products by name for upsert lookup
+    const existingProducts = await productService.list(storeId);
+    const existingByName = new Map(existingProducts.map((p) => [p.name.toLowerCase().trim(), p]));
+
     let imported = 0;
+    let updated = 0;
     let failed = 0;
     const errors: Array<{ row: number; message: string }> = [];
 
@@ -147,7 +157,7 @@ export const importProducts = asyncHandler(async (req: AuthRequest & { file?: Ex
         const rowNum = i + 1;
         try {
             const raw = {
-                name: r[col('name')]?.trim(),
+                name: r[colName()]?.trim(),
                 type: (r[col('type')]?.trim().toUpperCase() || 'READY_MADE') as 'READY_MADE' | 'RECIPE',
                 sku: r[col('sku')]?.trim() || null,
                 barcode: r[col('barcode')]?.trim() || null,
@@ -161,8 +171,15 @@ export const importProducts = asyncHandler(async (req: AuthRequest & { file?: Ex
 
             const payload = productCreateSchema.parse(raw);
             const { recipeLines, ...productData } = payload;
-            await productService.create(storeId, productData, recipeLines);
-            imported++;
+
+            const existing = existingByName.get((raw.name ?? '').toLowerCase().trim());
+            if (existing) {
+                await productService.update(storeId, existing.id, productData, recipeLines);
+                updated++;
+            } else {
+                await productService.create(storeId, productData, recipeLines);
+                imported++;
+            }
         } catch (err: any) {
             failed++;
             const message = err?.errors?.[0]?.message ?? err?.message ?? 'Invalid row';
@@ -170,5 +187,5 @@ export const importProducts = asyncHandler(async (req: AuthRequest & { file?: Ex
         }
     }
 
-    res.status(200).json({ imported, failed, errors });
+    res.status(200).json({ imported, updated, failed, errors });
 });
