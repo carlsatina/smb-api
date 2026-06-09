@@ -8,7 +8,7 @@ import { exportSales, finalizeSale, getSale, importSales, listSales, voidSale } 
 
 export const saleRouter = Router({ mergeParams: true });
 
-const readRoles = [Role.OWNER, Role.ADMIN, Role.INVENTORY_MANAGER, Role.VIEWER];
+const readRoles = [Role.OWNER, Role.ADMIN, Role.CASHIER, Role.INVENTORY_MANAGER, Role.VIEWER];
 const adminRoles = [Role.OWNER, Role.ADMIN];
 const finalizeRoles = [Role.OWNER, Role.ADMIN, Role.CASHIER];
 const voidRoles = [Role.OWNER, Role.ADMIN];

@@ -60,14 +60,19 @@ const getSalesAggregateForDate = async (
 };
 
 const getActiveGoal = async (storeId: string, asOfDate: Date): Promise<number> => {
-    const goal = await prisma.dailySalesGoal.findFirst({
-        where: {
-            storeId,
-            effectiveDate: { lte: asOfDate },
-        },
-        orderBy: { effectiveDate: 'desc' },
-        select: { goal: true },
-    });
+    // Prefer the most recent goal on or before asOfDate; fall back to the earliest
+    // goal ever set so past months still reflect the configured goal.
+    const goal =
+        (await prisma.dailySalesGoal.findFirst({
+            where: { storeId, effectiveDate: { lte: asOfDate } },
+            orderBy: { effectiveDate: 'desc' },
+            select: { goal: true },
+        })) ??
+        (await prisma.dailySalesGoal.findFirst({
+            where: { storeId },
+            orderBy: { effectiveDate: 'asc' },
+            select: { goal: true },
+        }));
     return toNum(goal?.goal);
 };
 

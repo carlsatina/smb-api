@@ -28,6 +28,8 @@ type UpdateStoreInput = {
     categoryOptions?: string[];
     defaultTaxRate?: number;
     defaultDiscount?: number;
+    cashierSalesHistoryLimit?: number | null;
+    paymentMethods?: string[];
 };
 
 const normalizeOptions = (options: string[] | undefined, fallback: string[]) => {
@@ -106,6 +108,8 @@ export const storeService = {
                 categoryOptions: membership.store.categoryOptions,
                 defaultTaxRate: Number(membership.store.defaultTaxRate ?? 0),
                 defaultDiscount: Number(membership.store.defaultDiscount ?? 0),
+                cashierSalesHistoryLimit: membership.store.cashierSalesHistoryLimit ?? null,
+                paymentMethods: membership.store.paymentMethods,
                 role: membership.role,
                 ownerPlanTier: owner?.planTier ?? 'STARTER',
                 ownerSubscriptionActive: owner?.subscriptionActive ?? false,
@@ -233,6 +237,12 @@ export const storeService = {
         }
         if (input.defaultDiscount !== undefined) {
             data.defaultDiscount = input.defaultDiscount;
+        }
+        if (input.cashierSalesHistoryLimit !== undefined) {
+            data.cashierSalesHistoryLimit = input.cashierSalesHistoryLimit;
+        }
+        if (input.paymentMethods !== undefined) {
+            data.paymentMethods = input.paymentMethods;
         }
 
         return prisma.store.update({

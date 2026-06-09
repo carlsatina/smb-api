@@ -152,10 +152,12 @@ model Store {
   currency           String    @default("PHP")
   unitOptions        String[] @default([])
   categoryOptions    String[] @default([])
-  allowNegativeStock Boolean  @default(false)
-  lowStockThreshold  Decimal  @default(0) @db.Decimal(12, 4)
-  defaultTaxRate     Decimal  @default(0) @db.Decimal(5, 2)
-  defaultDiscount    Decimal  @default(0) @db.Decimal(12, 2)
+  allowNegativeStock          Boolean  @default(false)
+  lowStockThreshold           Decimal  @default(0) @db.Decimal(12, 4)
+  defaultTaxRate              Decimal  @default(0) @db.Decimal(5, 2)
+  defaultDiscount             Decimal  @default(0) @db.Decimal(12, 2)
+  cashierSalesHistoryLimit    Int?
+  paymentMethods              String[] @default(["CASH", "CARD", "TRANSFER", "GCASH", "MAYA", "OTHER"])
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
   deletedAt          DateTime?

@@ -14,7 +14,19 @@ const optionalNumber = z.preprocess(
     },
     z.number().nonnegative()
 ).optional();
+
+const optionalPositiveInt = z.preprocess(
+    (value) => {
+        if (value === null || value === undefined || value === '') return null;
+        if (typeof value === 'string') return Number(value);
+        return value;
+    },
+    z.number().int().positive().nullable()
+).optional();
 const optionalStringArray = z.array(z.string().min(1)).optional();
+
+const VALID_PAYMENT_METHODS = ['CASH', 'CARD', 'TRANSFER', 'GCASH', 'MAYA', 'OTHER'] as const;
+const optionalPaymentMethods = z.array(z.enum(VALID_PAYMENT_METHODS)).min(1, 'At least one payment method required').optional();
 
 export const createStoreSchema = z.object({
     name: z.string().min(1),
@@ -41,6 +53,8 @@ export const updateStoreSchema = z
         defaultDiscount: optionalNumber,
         unitOptions: optionalStringArray,
         categoryOptions: optionalStringArray,
+        cashierSalesHistoryLimit: optionalPositiveInt,
+        paymentMethods: optionalPaymentMethods,
     })
     .refine(
         (data) =>
@@ -53,7 +67,9 @@ export const updateStoreSchema = z
             data.defaultTaxRate !== undefined ||
             data.defaultDiscount !== undefined ||
             data.unitOptions !== undefined ||
-            data.categoryOptions !== undefined,
+            data.categoryOptions !== undefined ||
+            data.cashierSalesHistoryLimit !== undefined ||
+            data.paymentMethods !== undefined,
         {
             message: 'Provide at least one field to update.',
         }
