@@ -7,6 +7,7 @@ export type AuthUser = {
     sub: string;
     email: string;
     isSuperAdmin: boolean;
+    aud?: 'app' | 'admin';
 };
 
 export type AuthRequest = Request & {

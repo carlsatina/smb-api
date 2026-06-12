@@ -199,6 +199,34 @@ const buildVerifyEmailMessage = (payload: { verifyLink: string; expiresAt?: Date
     });
 };
 
+const formatPeso = (amount: number) =>
+    `₱${amount.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+const buildBillingMessage = (payload: {
+    storeName: string;
+    periodLabel: string;
+    receiptCount: number;
+    feeRate: number;
+    amount: number;
+    appLink: string;
+}) => {
+    return buildStyledEmail({
+        subject: `Billing summary for ${payload.storeName} — ${payload.periodLabel}`,
+        preheader: `Your ${payload.periodLabel} usage summary for ${payload.storeName}.`,
+        eyebrow: 'Billing',
+        title: `${payload.periodLabel} billing summary`,
+        body: [
+            `Here is the usage summary for ${payload.storeName} for ${payload.periodLabel}.`,
+            `Receipts processed: ${payload.receiptCount.toLocaleString('en-PH')}`,
+            `Convenience fee: ${formatPeso(payload.feeRate)} per receipt`,
+            `Total amount due: ${formatPeso(payload.amount)}`,
+        ],
+        ctaLabel: 'Open SmB-PoS',
+        ctaLink: payload.appLink,
+        note: 'Please settle this amount at your earliest convenience. Reply to this email if you have any questions about your billing.',
+    });
+};
+
 const sendViaResend = async (to: string, message: { subject: string; text: string; html: string }) => {
     if (!env.resendApiKey || !env.resendFrom) {
         return { sent: false };
@@ -262,6 +290,37 @@ export const sendPasswordResetEmail = async (payload: {
     expiresAt: Date;
 }) => {
     const message = buildPasswordResetMessage(payload);
+    const resendResult = await sendViaResend(payload.to, message);
+    if (resendResult.sent) {
+        return resendResult;
+    }
+
+    const transport = getTransport();
+    if (!transport || !env.smtpFrom) {
+        return { sent: false };
+    }
+
+    await transport.sendMail({
+        from: env.smtpFrom,
+        to: payload.to,
+        subject: message.subject,
+        text: message.text,
+        html: message.html,
+    });
+
+    return { sent: true };
+};
+
+export const sendBillingEmail = async (payload: {
+    to: string;
+    storeName: string;
+    periodLabel: string;
+    receiptCount: number;
+    feeRate: number;
+    amount: number;
+    appLink: string;
+}) => {
+    const message = buildBillingMessage(payload);
     const resendResult = await sendViaResend(payload.to, message);
     if (resendResult.sent) {
         return resendResult;

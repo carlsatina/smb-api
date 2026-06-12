@@ -1,14 +1,13 @@
-import { NextFunction, Response } from 'express';
-import { getCsrfTokenFromRequest } from '../modules/auth/auth.cookies';
+import { NextFunction, Request, Response } from 'express';
+import { getAdminCsrfTokenFromRequest, getCsrfTokenFromRequest } from '../modules/auth/auth.cookies';
 import { AppError } from '../shared/errors';
 import { AuthRequest } from './auth';
 
-export const csrfMiddleware = (req: AuthRequest, res: Response, next: NextFunction) => {
+const verifyCsrf = (req: Request, cookieToken: string | null, next: NextFunction) => {
     if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
         return next();
     }
 
-    const cookieToken = getCsrfTokenFromRequest(req);
     const headerToken =
         (req.headers['x-csrf-token'] as string | undefined) ||
         (req.headers['x-xsrf-token'] as string | undefined);
@@ -22,4 +21,12 @@ export const csrfMiddleware = (req: AuthRequest, res: Response, next: NextFuncti
     }
 
     return next();
+};
+
+export const csrfMiddleware = (req: AuthRequest, res: Response, next: NextFunction) => {
+    return verifyCsrf(req, getCsrfTokenFromRequest(req), next);
+};
+
+export const adminCsrfMiddleware = (req: AuthRequest, res: Response, next: NextFunction) => {
+    return verifyCsrf(req, getAdminCsrfTokenFromRequest(req), next);
 };

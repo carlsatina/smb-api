@@ -42,6 +42,7 @@ describe('authService.login', () => {
             fullName: 'Owner',
             emailVerifiedAt: null,
             subscriptionActive: true,
+            payPerReceipt: false,
             planTier: 'STANDARD',
             grantedPlan: null,
             grantedUntil: null,

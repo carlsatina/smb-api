@@ -19,6 +19,7 @@ export const adminRepository = {
                     grantedPlan: true,
                     grantedUntil: true,
                     subscriptionActive: true,
+                    payPerReceipt: true,
                     isSuperAdmin: true,
                     emailVerifiedAt: true,
                     createdAt: true,
@@ -58,14 +59,14 @@ export const adminRepository = {
                                     grantedPlan: true,
                                     grantedUntil: true,
                                     subscriptionActive: true,
+                                    payPerReceipt: true,
                                 },
                             },
                         },
                     },
                     _count: {
                         select: {
-                            sales: { where: { status: 'FINALIZED' } },
-                            receipts: true,
+                            sales: { where: { status: 'FINALIZED', deletedAt: null } },
                         },
                     },
                 },
@@ -78,6 +79,7 @@ export const adminRepository = {
             where: {
                 storeId: { in: stores.map((s) => s.id) },
                 status: 'FINALIZED',
+                deletedAt: null,
                 createdAt: { gte: monthStart, lt: monthEnd },
             },
             _count: { _all: true },
@@ -106,6 +108,111 @@ export const adminRepository = {
 
     updateUserSuperAdmin: async (userId: string, isSuperAdmin: boolean) => {
         return prisma.user.update({ where: { id: userId }, data: { isSuperAdmin } });
+    },
+
+    updateUserBillingMode: async (userId: string, payPerReceipt: boolean) => {
+        return prisma.user.update({ where: { id: userId }, data: { payPerReceipt } });
+    },
+
+    findBillingStores: async (month: number, year: number) => {
+        const monthStart = new Date(year, month - 1, 1);
+        const monthEnd = new Date(year, month, 1);
+
+        const stores = await prisma.store.findMany({
+            where: {
+                deletedAt: null,
+                members: { some: { role: 'OWNER', deletedAt: null, user: { payPerReceipt: true } } },
+            },
+            orderBy: { name: 'asc' },
+            select: {
+                id: true,
+                name: true,
+                currency: true,
+                members: {
+                    where: { role: 'OWNER', deletedAt: null },
+                    take: 1,
+                    select: { user: { select: { id: true, email: true } } },
+                },
+                billingNotices: {
+                    where: { year, month },
+                    take: 1,
+                    select: { sentAt: true, amount: true, receiptCount: true, feeRate: true, sentToEmail: true },
+                },
+            },
+        });
+
+        const counts = await prisma.sale.groupBy({
+            by: ['storeId'],
+            where: {
+                storeId: { in: stores.map((s) => s.id) },
+                status: 'FINALIZED',
+                deletedAt: null,
+                createdAt: { gte: monthStart, lt: monthEnd },
+            },
+            _count: { _all: true },
+        });
+        const countMap = new Map(counts.map((r) => [r.storeId, r._count._all]));
+
+        return stores.map((s) => ({
+            id: s.id,
+            name: s.name,
+            currency: s.currency,
+            owner: s.members[0]?.user ?? null,
+            receiptCount: countMap.get(s.id) ?? 0,
+            lastNotice: s.billingNotices[0] ?? null,
+        }));
+    },
+
+    findStoreWithOwner: async (storeId: string) => {
+        return prisma.store.findFirst({
+            where: { id: storeId, deletedAt: null },
+            select: {
+                id: true,
+                name: true,
+                members: {
+                    where: { role: 'OWNER', deletedAt: null },
+                    take: 1,
+                    select: { user: { select: { id: true, email: true, payPerReceipt: true } } },
+                },
+            },
+        });
+    },
+
+    getStoreReceiptCount: async (storeId: string, month: number, year: number) => {
+        const monthStart = new Date(year, month - 1, 1);
+        const monthEnd = new Date(year, month, 1);
+        return prisma.sale.count({
+            where: {
+                storeId,
+                status: 'FINALIZED',
+                deletedAt: null,
+                createdAt: { gte: monthStart, lt: monthEnd },
+            },
+        });
+    },
+
+    recordBillingNotice: async (data: {
+        storeId: string;
+        year: number;
+        month: number;
+        receiptCount: number;
+        feeRate: number;
+        amount: number;
+        sentToEmail: string;
+        sentById: string;
+    }) => {
+        return prisma.billingNotice.upsert({
+            where: { storeId_year_month: { storeId: data.storeId, year: data.year, month: data.month } },
+            create: data,
+            update: {
+                receiptCount: data.receiptCount,
+                feeRate: data.feeRate,
+                amount: data.amount,
+                sentToEmail: data.sentToEmail,
+                sentById: data.sentById,
+                sentAt: new Date(),
+            },
+        });
     },
 
     getPlatformStats: async () => {

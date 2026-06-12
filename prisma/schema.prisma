@@ -82,6 +82,7 @@ model User {
   fullName           String?
   emailVerifiedAt    DateTime?
   subscriptionActive Boolean   @default(true)
+  payPerReceipt      Boolean   @default(false)
   planTier           PlanTier  @default(STARTER)
   grantedPlan        PlanTier?
   grantedUntil       DateTime?
@@ -103,6 +104,26 @@ model User {
   dailySalesEntries    DailySalesEntry[]      @relation("DailySalesCreatedBy")
   dailySalesGoals      DailySalesGoal[]       @relation("DailySalesGoalCreatedBy")
   cashierEntries       DailySalesCashierEntry[] @relation("CashierEntryUser")
+  billingNoticesSent   BillingNotice[]        @relation("BillingNoticeSentBy")
+}
+
+model BillingNotice {
+  id           String   @id @default(cuid())
+  storeId      String
+  year         Int
+  month        Int
+  receiptCount Int
+  feeRate      Decimal  @db.Decimal(12, 2)
+  amount       Decimal  @db.Decimal(12, 2)
+  sentToEmail  String
+  sentById     String
+  sentAt       DateTime @default(now())
+
+  store  Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  sentBy User  @relation("BillingNoticeSentBy", fields: [sentById], references: [id])
+
+  @@unique([storeId, year, month])
+  @@index([storeId])
 }
 
 model RefreshToken {
@@ -175,6 +196,7 @@ model Store {
   suppliers          Supplier[]
   dailySalesEntries  DailySalesEntry[]
   dailySalesGoals    DailySalesGoal[]
+  billingNotices     BillingNotice[]
 }
 
 model StoreMember {

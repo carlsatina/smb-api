@@ -1,11 +1,15 @@
 import { Response } from 'express';
 import prisma from '../../../lib/prisma';
+import { env } from '../../config/env';
 import { AuthRequest } from '../../middlewares/auth';
 import { asyncHandler } from '../../shared/asyncHandler';
+import { sendBillingEmail } from '../../shared/email';
 import { AppError } from '../../shared/errors';
 import { getMetricsSnapshot } from '../../shared/metrics';
 import { adminRepository } from './admin.repository';
-import { grantPlanSchema, planOverrideSchema, toggleSuperAdminSchema } from './admin.schemas';
+import { grantPlanSchema, planOverrideSchema, sendBillingSchema, toggleBillingModeSchema, toggleSuperAdminSchema } from './admin.schemas';
+
+const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
 export const listUsers = asyncHandler(async (req: AuthRequest, res: Response) => {
     const page = Math.max(1, Number(req.query.page) || 1);
@@ -32,7 +36,6 @@ export const listStores = asyncHandler(async (req: AuthRequest, res: Response) =
         createdAt: s.createdAt,
         owner: s.members[0]?.user ?? null,
         totalSales: s._count.sales,
-        totalReceipts: s._count.receipts,
         salesThisMonth: s.salesThisMonth,
     }));
     res.status(200).json({ stores, total: result.total, page: result.page, pageSize: result.pageSize, month, year });
@@ -130,6 +133,97 @@ export const toggleSuperAdmin = asyncHandler(async (req: AuthRequest, res: Respo
             id: updated.id,
             email: updated.email,
             isSuperAdmin: updated.isSuperAdmin,
+        },
+    });
+});
+
+export const toggleBillingMode = asyncHandler(async (req: AuthRequest, res: Response) => {
+    const payload = toggleBillingModeSchema.parse(req.body);
+    const userId = req.params.userId;
+
+    const existing = await prisma.user.findUnique({ where: { id: userId } });
+    if (!existing) {
+        throw new AppError('NOT_FOUND', 'User not found.', 404);
+    }
+
+    const updated = await adminRepository.updateUserBillingMode(userId, payload.payPerReceipt);
+    res.status(200).json({
+        user: {
+            id: updated.id,
+            email: updated.email,
+            payPerReceipt: updated.payPerReceipt,
+        },
+    });
+});
+
+export const listBilling = asyncHandler(async (req: AuthRequest, res: Response) => {
+    const now = new Date();
+    const month = Math.min(12, Math.max(1, Number(req.query.month) || now.getMonth() + 1));
+    const year = Math.max(2020, Number(req.query.year) || now.getFullYear());
+    const result = await adminRepository.findBillingStores(month, year);
+    const stores = result.map((s) => ({
+        id: s.id,
+        name: s.name,
+        currency: s.currency,
+        owner: s.owner,
+        receiptCount: s.receiptCount,
+        lastBilledAt: s.lastNotice?.sentAt ?? null,
+        lastBilledAmount: s.lastNotice ? Number(s.lastNotice.amount) : null,
+        lastBilledReceipts: s.lastNotice?.receiptCount ?? null,
+    }));
+    res.status(200).json({ stores, month, year });
+});
+
+export const sendBillingNotice = asyncHandler(async (req: AuthRequest, res: Response) => {
+    const storeId = req.params.storeId;
+    const payload = sendBillingSchema.parse(req.body);
+
+    const store = await adminRepository.findStoreWithOwner(storeId);
+    if (!store) {
+        throw new AppError('NOT_FOUND', 'Store not found.', 404);
+    }
+    const owner = store.members[0]?.user;
+    if (!owner?.email) {
+        throw new AppError('NO_OWNER', 'This store has no owner email to bill.', 400);
+    }
+
+    const receiptCount = await adminRepository.getStoreReceiptCount(storeId, payload.month, payload.year);
+    const amount = Math.round(receiptCount * payload.feeRate * 100) / 100;
+    const periodLabel = `${MONTH_NAMES[payload.month - 1]} ${payload.year}`;
+
+    const result = await sendBillingEmail({
+        to: owner.email,
+        storeName: store.name,
+        periodLabel,
+        receiptCount,
+        feeRate: payload.feeRate,
+        amount,
+        appLink: env.appBaseUrl,
+    });
+
+    if (!result.sent) {
+        res.status(200).json({ sent: false, message: 'Email could not be sent. Check email configuration.' });
+        return;
+    }
+
+    const notice = await adminRepository.recordBillingNotice({
+        storeId,
+        year: payload.year,
+        month: payload.month,
+        receiptCount,
+        feeRate: payload.feeRate,
+        amount,
+        sentToEmail: owner.email,
+        sentById: req.user!.sub,
+    });
+
+    res.status(200).json({
+        sent: true,
+        notice: {
+            sentAt: notice.sentAt,
+            amount: Number(notice.amount),
+            receiptCount: notice.receiptCount,
+            sentToEmail: notice.sentToEmail,
         },
     });
 });

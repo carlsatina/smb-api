@@ -34,8 +34,13 @@ const parseDurationToMs = (value: string) => {
     return amount * multiplier;
 };
 
-const signAccessToken = (userId: string, email: string, isSuperAdmin: boolean) => {
-    return jwt.sign({ sub: userId, email, isSuperAdmin }, env.accessTokenSecret, {
+const signAccessToken = (
+    userId: string,
+    email: string,
+    isSuperAdmin: boolean,
+    audience: 'app' | 'admin' = 'app'
+) => {
+    return jwt.sign({ sub: userId, email, isSuperAdmin, aud: audience }, env.accessTokenSecret, {
         expiresIn: env.accessTokenExpiresIn as jwt.SignOptions['expiresIn'],
     });
 };
@@ -194,7 +199,16 @@ export const authService = {
             throw new AppError('INVALID_CREDENTIALS', 'Invalid email or password', 401);
         }
 
-        const accessToken = signAccessToken(user.id, user.email, user.isSuperAdmin);
+        // Platform admins are kept out of the normal app — they must use the admin portal.
+        if (user.isSuperAdmin) {
+            throw new AppError(
+                'ADMIN_LOGIN_REQUIRED',
+                'This is a platform admin account. Please sign in through the admin portal.',
+                403
+            );
+        }
+
+        const accessToken = signAccessToken(user.id, user.email, user.isSuperAdmin, 'app');
         const refreshToken = signRefreshToken(user.id);
         await storeRefreshToken(user.id, refreshToken);
 
@@ -213,6 +227,83 @@ export const authService = {
             accessToken,
             refreshToken,
         };
+    },
+    adminLogin: async (email: string, password: string) => {
+        const normalizedEmail = normalizeEmail(email);
+        const user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
+        if (!user) {
+            throw new AppError('INVALID_CREDENTIALS', 'Invalid email or password', 401);
+        }
+
+        const valid = await bcrypt.compare(password, user.passwordHash);
+        if (!valid) {
+            throw new AppError('INVALID_CREDENTIALS', 'Invalid email or password', 401);
+        }
+
+        if (!user.isSuperAdmin) {
+            throw new AppError('NOT_ADMIN', 'This account is not a platform admin.', 403);
+        }
+
+        const accessToken = signAccessToken(user.id, user.email, user.isSuperAdmin, 'admin');
+        const refreshToken = signRefreshToken(user.id);
+        await storeRefreshToken(user.id, refreshToken);
+
+        return {
+            user: {
+                id: user.id,
+                email: user.email,
+                fullName: user.fullName,
+                isSuperAdmin: user.isSuperAdmin,
+                emailVerified: Boolean(user.emailVerifiedAt),
+            },
+            accessToken,
+            refreshToken,
+        };
+    },
+    adminRefresh: async (refreshToken: string) => {
+        let payload: { sub: string; tokenType: string };
+        try {
+            payload = jwt.verify(refreshToken, env.refreshTokenSecret) as { sub: string; tokenType: string };
+        } catch (error) {
+            throw new AppError('INVALID_REFRESH', 'Invalid refresh token', 401);
+        }
+
+        if (!payload.sub || payload.tokenType !== 'refresh') {
+            throw new AppError('INVALID_REFRESH', 'Invalid refresh token', 401);
+        }
+
+        const tokenHash = hashToken(refreshToken);
+        const stored = await prisma.refreshToken.findUnique({ where: { tokenHash } });
+        if (!stored) {
+            throw new AppError('INVALID_REFRESH', 'Refresh token expired or revoked', 401);
+        }
+        if (stored.userId !== payload.sub) {
+            throw new AppError('INVALID_REFRESH', 'Invalid refresh token', 401);
+        }
+        if (stored.revokedAt) {
+            await revokeAllRefreshTokens(stored.userId);
+            throw new AppError('REFRESH_REUSE', 'Refresh token reuse detected', 401);
+        }
+        if (stored.expiresAt <= new Date()) {
+            throw new AppError('INVALID_REFRESH', 'Refresh token expired or revoked', 401);
+        }
+
+        const user = await prisma.user.findUnique({ where: { id: stored.userId } });
+        if (!user) {
+            throw new AppError('INVALID_REFRESH', 'User not found', 401);
+        }
+        // Re-check super-admin so a demoted admin's session can't be refreshed.
+        if (!user.isSuperAdmin) {
+            await revokeRefreshToken(refreshToken);
+            throw new AppError('NOT_ADMIN', 'This account is not a platform admin.', 403);
+        }
+
+        await revokeRefreshToken(refreshToken);
+        const accessToken = signAccessToken(user.id, user.email, user.isSuperAdmin, 'admin');
+        const nextRefreshToken = signRefreshToken(payload.sub);
+        await storeRefreshToken(payload.sub, nextRefreshToken);
+
+        return { accessToken, refreshToken: nextRefreshToken };
     },
     refresh: async (refreshToken: string) => {
         let payload: { sub: string; tokenType: string };
@@ -347,6 +438,50 @@ export const authService = {
                 data: { usedAt: now },
             }),
         ]);
+
+        return { ok: true };
+    },
+    updateProfile: async (userId: string, fullName: string) => {
+        const user = await prisma.user.update({
+            where: { id: userId },
+            data: { fullName },
+            select: { id: true, email: true, fullName: true },
+        });
+        return { user };
+    },
+    changePassword: async (
+        userId: string,
+        currentPassword: string,
+        newPassword: string,
+        currentRefreshToken?: string
+    ) => {
+        const user = await prisma.user.findUnique({ where: { id: userId } });
+        if (!user) {
+            throw new AppError('NOT_FOUND', 'User not found', 404);
+        }
+
+        const valid = await bcrypt.compare(currentPassword, user.passwordHash);
+        if (!valid) {
+            throw new AppError('INVALID_PASSWORD', 'Current password is incorrect', 400);
+        }
+
+        const passwordHash = await bcrypt.hash(newPassword, 10);
+        const keepHash = currentRefreshToken ? hashToken(currentRefreshToken) : null;
+        await prisma.$transaction(async (tx) => {
+            await tx.user.update({
+                where: { id: userId },
+                data: { passwordHash },
+            });
+            // Revoke all other active sessions, keeping the current one signed in.
+            await tx.refreshToken.updateMany({
+                where: {
+                    userId,
+                    revokedAt: null,
+                    ...(keepHash ? { NOT: { tokenHash: keepHash } } : {}),
+                },
+                data: { revokedAt: new Date() },
+            });
+        });
 
         return { ok: true };
     },

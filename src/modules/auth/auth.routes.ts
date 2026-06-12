@@ -1,8 +1,13 @@
 import { Request, Router } from 'express';
 import { authMiddleware } from '../../middlewares/auth';
-import { csrfMiddleware } from '../../middlewares/csrf';
+import { adminCsrfMiddleware, csrfMiddleware } from '../../middlewares/csrf';
+import { requirePlatformAdmin } from '../../middlewares/requirePlatformAdmin';
 import { createRateLimiter } from '../../middlewares/rateLimit';
 import {
+    adminLogin,
+    adminLogout,
+    adminRefresh,
+    changePassword,
     forgotPassword,
     login,
     logout,
@@ -11,6 +16,7 @@ import {
     register,
     resendVerification,
     resetPassword,
+    updateProfile,
     verifyEmail,
 } from './auth.controller';
 
@@ -77,3 +83,11 @@ authRouter.post('/password/reset', resetLimiter, resetPassword);
 authRouter.post('/verify', verifyLimiter, verifyEmail);
 authRouter.post('/verify/resend', verifyRequestLimiter, resendVerification);
 authRouter.get('/me', authMiddleware, me);
+authRouter.patch('/me', authMiddleware, updateProfile);
+authRouter.post('/password/change', authMiddleware, changePassword);
+
+// Platform admin portal — separate, audience-scoped session.
+authRouter.post('/admin/login', loginLimiter, adminLogin);
+authRouter.post('/admin/refresh', refreshLimiter, adminCsrfMiddleware, adminRefresh);
+authRouter.post('/admin/logout', adminCsrfMiddleware, adminLogout);
+authRouter.get('/admin/me', authMiddleware, requirePlatformAdmin, me);

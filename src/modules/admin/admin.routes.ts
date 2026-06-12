@@ -7,11 +7,14 @@ import {
     grantUserFeature,
     grantUserPlan,
     getUserFeatures,
+    listBilling,
     listStores,
     listUsers,
     overrideUserPlan,
     revokeUserFeature,
     revokeUserGrant,
+    sendBillingNotice,
+    toggleBillingMode,
     toggleSuperAdmin,
 } from './admin.controller';
 
@@ -21,10 +24,13 @@ adminRouter.use(authMiddleware, requirePlatformAdmin);
 
 adminRouter.get('/users', listUsers);
 adminRouter.get('/stores', listStores);
+adminRouter.get('/billing', listBilling);
+adminRouter.post('/billing/:storeId/send', sendBillingNotice);
 adminRouter.patch('/users/:userId/plan', overrideUserPlan);
 adminRouter.patch('/users/:userId/grant', grantUserPlan);
 adminRouter.delete('/users/:userId/grant', revokeUserGrant);
 adminRouter.patch('/users/:userId/super-admin', toggleSuperAdmin);
+adminRouter.patch('/users/:userId/billing-mode', toggleBillingMode);
 adminRouter.get('/stats', getStats);
 adminRouter.get('/metrics', getMetrics);
 adminRouter.get('/users/:userId/features', getUserFeatures);

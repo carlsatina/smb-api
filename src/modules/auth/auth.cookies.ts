@@ -73,6 +73,11 @@ const buildCsrfCookieOptions = () => {
     } as const;
 };
 
+// Admin sessions use separate cookie names so an admin session and a normal
+// session can coexist in the same browser without clobbering each other.
+const adminRefreshCookieName = `${env.refreshTokenCookieName}.admin`;
+const adminCsrfCookieName = `${env.csrfCookieName}.admin`;
+
 export const getRefreshTokenFromRequest = (req: Request) => {
     const cookies = parseCookies(req.headers.cookie);
     return cookies[env.refreshTokenCookieName] ?? null;
@@ -81,6 +86,16 @@ export const getRefreshTokenFromRequest = (req: Request) => {
 export const getCsrfTokenFromRequest = (req: Request) => {
     const cookies = parseCookies(req.headers.cookie);
     return cookies[env.csrfCookieName] ?? null;
+};
+
+export const getAdminRefreshTokenFromRequest = (req: Request) => {
+    const cookies = parseCookies(req.headers.cookie);
+    return cookies[adminRefreshCookieName] ?? null;
+};
+
+export const getAdminCsrfTokenFromRequest = (req: Request) => {
+    const cookies = parseCookies(req.headers.cookie);
+    return cookies[adminCsrfCookieName] ?? null;
 };
 
 export const generateCsrfToken = () => {
@@ -105,4 +120,24 @@ export const clearRefreshTokenCookie = (res: Response) => {
 export const clearCsrfTokenCookie = (res: Response) => {
     const { maxAge, ...options } = buildCsrfCookieOptions();
     res.clearCookie(env.csrfCookieName, options);
+};
+
+export const setAdminRefreshTokenCookie = (res: Response, token: string) => {
+    const options = buildRefreshCookieOptions();
+    res.cookie(adminRefreshCookieName, token, options);
+};
+
+export const setAdminCsrfTokenCookie = (res: Response, token: string) => {
+    const options = buildCsrfCookieOptions();
+    res.cookie(adminCsrfCookieName, token, options);
+};
+
+export const clearAdminRefreshTokenCookie = (res: Response) => {
+    const { maxAge, ...options } = buildRefreshCookieOptions();
+    res.clearCookie(adminRefreshCookieName, options);
+};
+
+export const clearAdminCsrfTokenCookie = (res: Response) => {
+    const { maxAge, ...options } = buildCsrfCookieOptions();
+    res.clearCookie(adminCsrfCookieName, options);
 };

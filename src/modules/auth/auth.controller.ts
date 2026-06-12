@@ -4,20 +4,27 @@ import { AuthRequest } from '../../middlewares/auth';
 import { asyncHandler } from '../../shared/asyncHandler';
 import { authService } from './auth.service';
 import {
+    clearAdminCsrfTokenCookie,
+    clearAdminRefreshTokenCookie,
     clearCsrfTokenCookie,
     clearRefreshTokenCookie,
     generateCsrfToken,
+    getAdminRefreshTokenFromRequest,
     getRefreshTokenFromRequest,
+    setAdminCsrfTokenCookie,
+    setAdminRefreshTokenCookie,
     setCsrfTokenCookie,
     setRefreshTokenCookie,
 } from './auth.cookies';
 import {
+    changePasswordSchema,
     forgotPasswordSchema,
     loginSchema,
     refreshSchema,
     registerSchema,
     resendVerificationSchema,
     resetPasswordSchema,
+    updateProfileSchema,
     verifyEmailSchema,
 } from './auth.schemas';
 
@@ -45,6 +52,45 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
         accessToken: result.accessToken,
         csrfToken,
     });
+});
+
+export const adminLogin = asyncHandler(async (req: Request, res: Response) => {
+    const payload = loginSchema.parse(req.body);
+    const result = await authService.adminLogin(payload.email, payload.password);
+    setAdminRefreshTokenCookie(res, result.refreshToken);
+    const csrfToken = generateCsrfToken();
+    setAdminCsrfTokenCookie(res, csrfToken);
+    res.status(200).json({
+        user: result.user,
+        accessToken: result.accessToken,
+        csrfToken,
+    });
+});
+
+export const adminRefresh = asyncHandler(async (req: Request, res: Response) => {
+    const refreshToken = getAdminRefreshTokenFromRequest(req);
+    if (!refreshToken) {
+        res.status(400).json({ error: { code: 'REFRESH_REQUIRED', message: 'Refresh token is required.' } });
+        return;
+    }
+    const result = await authService.adminRefresh(refreshToken);
+    setAdminRefreshTokenCookie(res, result.refreshToken);
+    const csrfToken = generateCsrfToken();
+    setAdminCsrfTokenCookie(res, csrfToken);
+    res.status(200).json({
+        accessToken: result.accessToken,
+        csrfToken,
+    });
+});
+
+export const adminLogout = asyncHandler(async (req: Request, res: Response) => {
+    const refreshToken = getAdminRefreshTokenFromRequest(req);
+    if (refreshToken) {
+        await authService.logout(refreshToken);
+    }
+    clearAdminRefreshTokenCookie(res);
+    clearAdminCsrfTokenCookie(res);
+    res.status(204).send();
 });
 
 export const refresh = asyncHandler(async (req: Request, res: Response) => {
@@ -142,5 +188,33 @@ export const me = asyncHandler(async (req: AuthRequest, res: Response) => {
             userFeatures: undefined,
         },
     });
+});
+
+export const updateProfile = asyncHandler(async (req: AuthRequest, res: Response) => {
+    const userId = req.user?.sub;
+    if (!userId) {
+        res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Unauthorized' } });
+        return;
+    }
+    const payload = updateProfileSchema.parse(req.body);
+    const result = await authService.updateProfile(userId, payload.fullName);
+    res.status(200).json(result);
+});
+
+export const changePassword = asyncHandler(async (req: AuthRequest, res: Response) => {
+    const userId = req.user?.sub;
+    if (!userId) {
+        res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Unauthorized' } });
+        return;
+    }
+    const payload = changePasswordSchema.parse(req.body);
+    const currentRefreshToken = getRefreshTokenFromRequest(req);
+    const result = await authService.changePassword(
+        userId,
+        payload.currentPassword,
+        payload.newPassword,
+        currentRefreshToken
+    );
+    res.status(200).json(result);
 });
 
