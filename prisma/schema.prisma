@@ -122,8 +122,10 @@ model BillingNotice {
   store  Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
   sentBy User  @relation("BillingNoticeSentBy", fields: [sentById], references: [id])
 
-  @@unique([storeId, year, month])
-  @@index([storeId])
+  // Append-only billing log: one row per send (no upsert), so resends are
+  // recorded individually. The "last billed" is just the most recent row.
+  @@index([storeId, year, month])
+  @@index([sentAt])
 }
 
 model RefreshToken {

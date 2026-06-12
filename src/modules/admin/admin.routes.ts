@@ -8,6 +8,7 @@ import {
     grantUserPlan,
     getUserFeatures,
     listBilling,
+    listBillingHistory,
     listStores,
     listUsers,
     overrideUserPlan,
@@ -25,6 +26,7 @@ adminRouter.use(authMiddleware, requirePlatformAdmin);
 adminRouter.get('/users', listUsers);
 adminRouter.get('/stores', listStores);
 adminRouter.get('/billing', listBilling);
+adminRouter.get('/billing/history', listBillingHistory);
 adminRouter.post('/billing/:storeId/send', sendBillingNotice);
 adminRouter.patch('/users/:userId/plan', overrideUserPlan);
 adminRouter.patch('/users/:userId/grant', grantUserPlan);

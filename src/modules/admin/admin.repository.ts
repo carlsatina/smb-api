@@ -135,6 +135,7 @@ export const adminRepository = {
                 },
                 billingNotices: {
                     where: { year, month },
+                    orderBy: { sentAt: 'desc' },
                     take: 1,
                     select: { sentAt: true, amount: true, receiptCount: true, feeRate: true, sentToEmail: true },
                 },
@@ -201,16 +202,27 @@ export const adminRepository = {
         sentToEmail: string;
         sentById: string;
     }) => {
-        return prisma.billingNotice.upsert({
-            where: { storeId_year_month: { storeId: data.storeId, year: data.year, month: data.month } },
-            create: data,
-            update: {
-                receiptCount: data.receiptCount,
-                feeRate: data.feeRate,
-                amount: data.amount,
-                sentToEmail: data.sentToEmail,
-                sentById: data.sentById,
-                sentAt: new Date(),
+        // Append-only: each send is its own row.
+        return prisma.billingNotice.create({ data });
+    },
+
+    findBillingHistory: async (month?: number, year?: number) => {
+        const where = month && year ? { month, year } : {};
+        return prisma.billingNotice.findMany({
+            where,
+            orderBy: { sentAt: 'desc' },
+            take: 500,
+            select: {
+                id: true,
+                year: true,
+                month: true,
+                receiptCount: true,
+                feeRate: true,
+                amount: true,
+                sentToEmail: true,
+                sentAt: true,
+                store: { select: { name: true } },
+                sentBy: { select: { email: true } },
             },
         });
     },

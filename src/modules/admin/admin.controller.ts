@@ -174,6 +174,34 @@ export const listBilling = asyncHandler(async (req: AuthRequest, res: Response) 
     res.status(200).json({ stores, month, year });
 });
 
+export const listBillingHistory = asyncHandler(async (req: AuthRequest, res: Response) => {
+    const monthRaw = Number(req.query.month);
+    const yearRaw = Number(req.query.year);
+    const month = monthRaw >= 1 && monthRaw <= 12 ? monthRaw : undefined;
+    const year = yearRaw >= 2020 ? yearRaw : undefined;
+    const filterByMonth = Boolean(month && year);
+
+    const rows = await adminRepository.findBillingHistory(
+        filterByMonth ? month : undefined,
+        filterByMonth ? year : undefined
+    );
+
+    const entries = rows.map((r) => ({
+        id: r.id,
+        storeName: r.store.name,
+        sentToEmail: r.sentToEmail,
+        sentByEmail: r.sentBy?.email ?? null,
+        year: r.year,
+        month: r.month,
+        receiptCount: r.receiptCount,
+        feeRate: Number(r.feeRate),
+        amount: Number(r.amount),
+        sentAt: r.sentAt,
+    }));
+
+    res.status(200).json({ entries });
+});
+
 export const sendBillingNotice = asyncHandler(async (req: AuthRequest, res: Response) => {
     const storeId = req.params.storeId;
     const payload = sendBillingSchema.parse(req.body);
