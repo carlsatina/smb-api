@@ -7,6 +7,7 @@ import {
     reportLowStockQuerySchema,
     reportMarginQuerySchema,
     reportRangeSchema,
+    reportProductsSoldQuerySchema,
     reportPurchaseSpendQuerySchema,
     reportSalesByHourQuerySchema,
     reportSalesSummaryQuerySchema,
@@ -89,6 +90,28 @@ export const getPurchaseSpend = asyncHandler(async (req: AuthRequest, res: Respo
 
     const query = reportPurchaseSpendQuerySchema.parse(req.query);
     const data = await reportsService.getPurchaseSpend(storeId, query.from, query.to, query.limit);
+    res.status(200).json(data);
+});
+
+export const getProfitSummary = asyncHandler(async (req: AuthRequest, res: Response) => {
+    const storeId = req.params.storeId;
+    if (!storeId) {
+        throw new AppError('STORE_REQUIRED', 'Store is required', 400);
+    }
+
+    const query = reportRangeSchema.parse(req.query);
+    const data = await reportsService.getProfitSummary(storeId, query.from, query.to);
+    res.status(200).json(data);
+});
+
+export const getProductsSold = asyncHandler(async (req: AuthRequest, res: Response) => {
+    const storeId = req.params.storeId;
+    if (!storeId) {
+        throw new AppError('STORE_REQUIRED', 'Store is required', 400);
+    }
+
+    const query = reportProductsSoldQuerySchema.parse(req.query);
+    const data = await reportsService.getProductsSold(storeId, query.from, query.to, query.limit);
     res.status(200).json(data);
 });
 

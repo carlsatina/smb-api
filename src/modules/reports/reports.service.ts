@@ -45,6 +45,13 @@ type ProductMarginRow = {
     total: Prisma.Decimal | number | string | null;
 };
 
+type ProductsSoldRow = {
+    productId: string;
+    qty: Prisma.Decimal | number | string | null;
+    total: Prisma.Decimal | number | string | null;
+    orders: bigint | number | string;
+};
+
 type PurchaseSpendRow = {
     supplierId: string | null;
     supplier: string | null;
@@ -336,6 +343,164 @@ export const reportsService = {
                 to: endDate,
             },
             products,
+        };
+    },
+    getProductsSold: async (storeId: string, from: string | undefined, to: string | undefined, limit: number) => {
+        const store = await ensureStore(storeId);
+        const timeZone = store.timezone || 'UTC';
+        const { startDate, endDate } = buildDateRange(from, to, timeZone);
+
+        const rows = await prisma.$queryRaw<ProductsSoldRow[]>`
+            SELECT si."productId" AS "productId",
+                   SUM(si."qty") AS qty,
+                   SUM(si."total") AS total,
+                   COUNT(DISTINCT si."saleId") AS orders
+            FROM "SaleItem" si
+            JOIN "Sale" s ON s."id" = si."saleId"
+            WHERE s."storeId" = ${storeId}
+              AND s."status" = ${SaleStatus.FINALIZED}
+              AND s."deletedAt" IS NULL
+              AND timezone(${timeZone}, (COALESCE(s."finalizedAt", s."createdAt") AT TIME ZONE 'UTC')) >= ${startDate}::date
+              AND timezone(${timeZone}, (COALESCE(s."finalizedAt", s."createdAt") AT TIME ZONE 'UTC')) < (${endDate}::date + interval '1 day')
+            GROUP BY si."productId"
+            ORDER BY qty DESC
+            LIMIT ${limit}
+        `;
+
+        const productIds = rows.map((row) => row.productId);
+        const productRows = productIds.length
+            ? await prisma.product.findMany({
+                  where: { id: { in: productIds }, storeId, deletedAt: null },
+                  select: { id: true, name: true, sku: true, unit: true },
+              })
+            : [];
+
+        const productMap = new Map(productRows.map((product) => [product.id, product]));
+
+        const totalQty = rows.reduce((sum, row) => sum + normalizeNumber(row.qty), 0);
+
+        const products = rows.map((row) => {
+            const product = productMap.get(row.productId);
+            return {
+                productId: row.productId,
+                name: product?.name ?? 'Unknown',
+                sku: product?.sku ?? null,
+                unit: product?.unit ?? null,
+                qtySold: roundQty(normalizeNumber(row.qty)),
+                orderCount: normalizeNumber(row.orders),
+                totalSales: roundMoney(normalizeNumber(row.total)),
+            };
+        });
+
+        return {
+            range: {
+                from: startDate,
+                to: endDate,
+            },
+            summary: {
+                totalQty: roundQty(totalQty),
+                productCount: products.length,
+            },
+            products,
+        };
+    },
+    getProfitSummary: async (storeId: string, from?: string, to?: string) => {
+        const store = await ensureStore(storeId);
+        const timeZone = store.timezone || 'UTC';
+        const { startDate, endDate } = buildDateRange(from, to, timeZone);
+
+        const rows = await prisma.$queryRaw<ProductMarginRow[]>`
+            SELECT si."productId" AS "productId",
+                   SUM(si."qty") AS qty,
+                   SUM(si."total") AS total
+            FROM "SaleItem" si
+            JOIN "Sale" s ON s."id" = si."saleId"
+            WHERE s."storeId" = ${storeId}
+              AND s."status" = ${SaleStatus.FINALIZED}
+              AND s."deletedAt" IS NULL
+              AND timezone(${timeZone}, (COALESCE(s."finalizedAt", s."createdAt") AT TIME ZONE 'UTC')) >= ${startDate}::date
+              AND timezone(${timeZone}, (COALESCE(s."finalizedAt", s."createdAt") AT TIME ZONE 'UTC')) < (${endDate}::date + interval '1 day')
+            GROUP BY si."productId"
+        `;
+
+        const productIds = rows.map((row) => row.productId);
+        const products = productIds.length
+            ? await prisma.product.findMany({
+                  where: { id: { in: productIds }, storeId, deletedAt: null },
+                  select: { id: true, type: true, cost: true },
+              })
+            : [];
+
+        const recipeLines = productIds.length
+            ? await prisma.recipeLine.findMany({
+                  where: {
+                      recipe: {
+                          storeId,
+                          deletedAt: null,
+                          productId: { in: productIds },
+                      },
+                      ingredient: {
+                          deletedAt: null,
+                      },
+                  },
+                  select: {
+                      qtyPerProductUnit: true,
+                      ingredient: { select: { costPerUnit: true } },
+                      recipe: { select: { productId: true } },
+                  },
+              })
+            : [];
+
+        const recipeCostMap = new Map<string, number>();
+        recipeLines.forEach((line) => {
+            const cost = normalizeNumber(line.ingredient.costPerUnit) * normalizeNumber(line.qtyPerProductUnit);
+            const current = recipeCostMap.get(line.recipe.productId) ?? 0;
+            recipeCostMap.set(line.recipe.productId, current + cost);
+        });
+
+        const productMap = new Map(products.map((product) => [product.id, product]));
+
+        let totalRevenue = 0;
+        let totalCost = 0;
+        let itemsWithCost = 0;
+
+        rows.forEach((row) => {
+            const product = productMap.get(row.productId);
+            const qtySold = normalizeNumber(row.qty);
+            const revenue = normalizeNumber(row.total);
+            totalRevenue += revenue;
+
+            let costPerUnit: number | null = null;
+            if (product) {
+                if (product.type === ProductType.RECIPE) {
+                    costPerUnit = recipeCostMap.has(product.id) ? recipeCostMap.get(product.id) ?? 0 : null;
+                } else {
+                    costPerUnit = product.cost !== null ? normalizeNumber(product.cost) : null;
+                }
+            }
+
+            if (costPerUnit !== null) {
+                totalCost += qtySold * costPerUnit;
+                itemsWithCost += 1;
+            }
+        });
+
+        const totalProfit = totalRevenue - totalCost;
+        const marginPct = totalRevenue > 0 ? Math.round((totalProfit / totalRevenue) * 1000) / 10 : 0;
+
+        return {
+            range: {
+                from: startDate,
+                to: endDate,
+            },
+            summary: {
+                totalRevenue: roundMoney(totalRevenue),
+                totalCost: roundMoney(totalCost),
+                totalProfit: roundMoney(totalProfit),
+                marginPct,
+                itemsWithCost,
+                totalItems: rows.length,
+            },
         };
     },
     getProductMargins: async (storeId: string, from: string | undefined, to: string | undefined, limit: number) => {

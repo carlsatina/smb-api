@@ -51,6 +51,17 @@ export const reportTopProductsQuerySchema = reportRangeSchema.safeExtend({
     limit: limitValue(8),
 });
 
+const productsSoldLimitValue = z
+    .preprocess(
+        (value) => (value === undefined ? 100 : Number(value)),
+        z.number().int().min(1).max(500)
+    )
+    .default(100);
+
+export const reportProductsSoldQuerySchema = reportRangeSchema.safeExtend({
+    limit: productsSoldLimitValue,
+});
+
 export const reportIngredientUsageQuerySchema = reportRangeSchema.safeExtend({
     limit: limitValue(8),
 });
