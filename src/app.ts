@@ -38,6 +38,7 @@ export const createApp = () => {
                 return callback(null, env.corsOrigins.includes(origin));
             },
             credentials: true,
+            exposedHeaders: ['Content-Disposition'],
         })
     );
     app.use(requestId);
