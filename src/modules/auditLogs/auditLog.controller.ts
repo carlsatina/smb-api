@@ -4,6 +4,7 @@ import { asyncHandler } from '../../shared/asyncHandler';
 import { AppError } from '../../shared/errors';
 import { auditLogExportQuerySchema, auditLogQuerySchema } from './auditLog.schemas';
 import { auditLogService } from './auditLog.service';
+import { escapeCsvValue } from '../../shared/csv';
 
 export const listAuditLogs = asyncHandler(async (req: AuthRequest, res: Response) => {
     const storeId = req.params.storeId;
@@ -27,15 +28,6 @@ export const listAuditLogs = asyncHandler(async (req: AuthRequest, res: Response
 
     res.status(200).json(result);
 });
-
-const escapeCsvValue = (value: string | number | null | undefined) => {
-    if (value === null || value === undefined) return '';
-    const text = String(value);
-    if (/[",\n]/.test(text)) {
-        return `"${text.replace(/"/g, '""')}"`;
-    }
-    return text;
-};
 
 export const exportAuditLogs = asyncHandler(async (req: AuthRequest, res: Response) => {
     const storeId = req.params.storeId;

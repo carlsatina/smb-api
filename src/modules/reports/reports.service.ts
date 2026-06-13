@@ -52,6 +52,11 @@ type ProductsSoldRow = {
     orders: bigint | number | string;
 };
 
+type ProductsSoldTotalsRow = {
+    products: bigint | number | string;
+    qty: Prisma.Decimal | number | string | null;
+};
+
 type PurchaseSpendRow = {
     supplierId: string | null;
     supplier: string | null;
@@ -148,6 +153,61 @@ const ensureStore = async (storeId: string) => {
     }
 
     return store;
+};
+
+/**
+ * Loads product + recipe cost data for a set of products and returns a
+ * cost-per-unit resolver. Shared by the margin and profit reports so the
+ * costing rules (READY_MADE uses product.cost; RECIPE sums ingredient costs)
+ * live in one place.
+ */
+const loadProductCosting = async (storeId: string, productIds: string[]) => {
+    const products = productIds.length
+        ? await prisma.product.findMany({
+              where: { id: { in: productIds }, storeId, deletedAt: null },
+              select: { id: true, name: true, sku: true, unit: true, type: true, cost: true },
+          })
+        : [];
+
+    const recipeLines = productIds.length
+        ? await prisma.recipeLine.findMany({
+              where: {
+                  recipe: {
+                      storeId,
+                      deletedAt: null,
+                      productId: { in: productIds },
+                  },
+                  ingredient: {
+                      deletedAt: null,
+                  },
+              },
+              select: {
+                  qtyPerProductUnit: true,
+                  ingredient: { select: { costPerUnit: true } },
+                  recipe: { select: { productId: true } },
+              },
+          })
+        : [];
+
+    const recipeCostMap = new Map<string, number>();
+    recipeLines.forEach((line) => {
+        const cost = normalizeNumber(line.ingredient.costPerUnit) * normalizeNumber(line.qtyPerProductUnit);
+        const current = recipeCostMap.get(line.recipe.productId) ?? 0;
+        recipeCostMap.set(line.recipe.productId, current + cost);
+    });
+
+    const productMap = new Map(products.map((product) => [product.id, product]));
+
+    const costPerUnitOf = (productId: string): number | null => {
+        const product = productMap.get(productId);
+        if (!product) return null;
+        if (product.type === ProductType.RECIPE) {
+            return recipeCostMap.has(product.id) ? recipeCostMap.get(product.id) ?? 0 : null;
+        }
+        return product.cost !== null ? normalizeNumber(product.cost) : null;
+    };
+
+    return { productMap, costPerUnitOf };
 };
 
 export const reportsService = {
@@ -377,7 +437,21 @@ export const reportsService = {
 
         const productMap = new Map(productRows.map((product) => [product.id, product]));
 
-        const totalQty = rows.reduce((sum, row) => sum + normalizeNumber(row.qty), 0);
+        // True totals across all sold products in the range (not just the page)
+        const totalsRows = await prisma.$queryRaw<ProductsSoldTotalsRow[]>`
+            SELECT COUNT(DISTINCT si."productId") AS products,
+                   SUM(si."qty") AS qty
+            FROM "SaleItem" si
+            JOIN "Sale" s ON s."id" = si."saleId"
+            WHERE s."storeId" = ${storeId}
+              AND s."status" = ${SaleStatus.FINALIZED}
+              AND s."deletedAt" IS NULL
+              AND timezone(${timeZone}, (COALESCE(s."finalizedAt", s."createdAt") AT TIME ZONE 'UTC')) >= ${startDate}::date
+              AND timezone(${timeZone}, (COALESCE(s."finalizedAt", s."createdAt") AT TIME ZONE 'UTC')) < (${endDate}::date + interval '1 day')
+        `;
+
+        const productCount = normalizeNumber(totalsRows[0]?.products);
+        const totalQty = normalizeNumber(totalsRows[0]?.qty);
 
         const products = rows.map((row) => {
             const product = productMap.get(row.productId);
@@ -399,7 +473,9 @@ export const reportsService = {
             },
             summary: {
                 totalQty: roundQty(totalQty),
-                productCount: products.length,
+                productCount,
+                shown: products.length,
+                limited: products.length < productCount,
             },
             products,
         };
@@ -424,61 +500,18 @@ export const reportsService = {
         `;
 
         const productIds = rows.map((row) => row.productId);
-        const products = productIds.length
-            ? await prisma.product.findMany({
-                  where: { id: { in: productIds }, storeId, deletedAt: null },
-                  select: { id: true, type: true, cost: true },
-              })
-            : [];
-
-        const recipeLines = productIds.length
-            ? await prisma.recipeLine.findMany({
-                  where: {
-                      recipe: {
-                          storeId,
-                          deletedAt: null,
-                          productId: { in: productIds },
-                      },
-                      ingredient: {
-                          deletedAt: null,
-                      },
-                  },
-                  select: {
-                      qtyPerProductUnit: true,
-                      ingredient: { select: { costPerUnit: true } },
-                      recipe: { select: { productId: true } },
-                  },
-              })
-            : [];
-
-        const recipeCostMap = new Map<string, number>();
-        recipeLines.forEach((line) => {
-            const cost = normalizeNumber(line.ingredient.costPerUnit) * normalizeNumber(line.qtyPerProductUnit);
-            const current = recipeCostMap.get(line.recipe.productId) ?? 0;
-            recipeCostMap.set(line.recipe.productId, current + cost);
-        });
-
-        const productMap = new Map(products.map((product) => [product.id, product]));
+        const { costPerUnitOf } = await loadProductCosting(storeId, productIds);
 
         let totalRevenue = 0;
         let totalCost = 0;
         let itemsWithCost = 0;
 
         rows.forEach((row) => {
-            const product = productMap.get(row.productId);
             const qtySold = normalizeNumber(row.qty);
             const revenue = normalizeNumber(row.total);
             totalRevenue += revenue;
 
-            let costPerUnit: number | null = null;
-            if (product) {
-                if (product.type === ProductType.RECIPE) {
-                    costPerUnit = recipeCostMap.has(product.id) ? recipeCostMap.get(product.id) ?? 0 : null;
-                } else {
-                    costPerUnit = product.cost !== null ? normalizeNumber(product.cost) : null;
-                }
-            }
-
+            const costPerUnit = costPerUnitOf(row.productId);
             if (costPerUnit !== null) {
                 totalCost += qtySold * costPerUnit;
                 itemsWithCost += 1;
@@ -525,55 +558,14 @@ export const reportsService = {
         `;
 
         const productIds = rows.map((row) => row.productId);
-        const products = productIds.length
-            ? await prisma.product.findMany({
-                  where: { id: { in: productIds }, storeId, deletedAt: null },
-                  select: { id: true, name: true, sku: true, unit: true, type: true, cost: true },
-              })
-            : [];
+        const { productMap, costPerUnitOf } = await loadProductCosting(storeId, productIds);
 
-        const recipeLines = productIds.length
-            ? await prisma.recipeLine.findMany({
-                  where: {
-                      recipe: {
-                          storeId,
-                          deletedAt: null,
-                          productId: { in: productIds },
-                      },
-                      ingredient: {
-                          deletedAt: null,
-                      },
-                  },
-                  select: {
-                      qtyPerProductUnit: true,
-                      ingredient: { select: { costPerUnit: true } },
-                      recipe: { select: { productId: true } },
-                  },
-              })
-            : [];
-
-        const recipeCostMap = new Map<string, number>();
-        recipeLines.forEach((line) => {
-            const cost = normalizeNumber(line.ingredient.costPerUnit) * normalizeNumber(line.qtyPerProductUnit);
-            const current = recipeCostMap.get(line.recipe.productId) ?? 0;
-            recipeCostMap.set(line.recipe.productId, current + cost);
-        });
-
-        const productMap = new Map(products.map((product) => [product.id, product]));
         const items = rows.map((row) => {
             const product = productMap.get(row.productId);
             const qtySold = normalizeNumber(row.qty);
             const revenue = roundMoney(normalizeNumber(row.total));
 
-            let costPerUnit: number | null = null;
-            if (product) {
-                if (product.type === ProductType.RECIPE) {
-                    costPerUnit = recipeCostMap.has(product.id) ? recipeCostMap.get(product.id) ?? 0 : null;
-                } else {
-                    costPerUnit = product.cost !== null ? normalizeNumber(product.cost) : null;
-                }
-            }
-
+            const costPerUnit = costPerUnitOf(row.productId);
             const costKnown = costPerUnit !== null;
             const totalCost = costKnown ? roundMoney(qtySold * (costPerUnit ?? 0)) : null;
             const profit = costKnown ? roundMoney(revenue - (totalCost ?? 0)) : null;

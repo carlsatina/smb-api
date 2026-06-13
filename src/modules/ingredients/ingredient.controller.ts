@@ -4,45 +4,7 @@ import { AppError } from '../../shared/errors';
 import { AuthRequest } from '../../middlewares/auth';
 import { ingredientCreateSchema, ingredientUpdateSchema } from './ingredient.schemas';
 import { ingredientService } from './ingredient.service';
-
-const escapeCsvValue = (value: string | number | boolean | null | undefined): string => {
-    if (value === null || value === undefined) return '';
-    const text = String(value);
-    if (/[",\n]/.test(text)) return `"${text.replace(/"/g, '""')}"`;
-    return text;
-};
-
-const parseCSV = (text: string): string[][] => {
-    const rows: string[][] = [];
-    let row: string[] = [];
-    let field = '';
-    let inQuotes = false;
-
-    for (let i = 0; i < text.length; i++) {
-        const char = text[i];
-        const next = text[i + 1];
-        if (inQuotes) {
-            if (char === '"' && next === '"') { field += '"'; i++; }
-            else if (char === '"') { inQuotes = false; }
-            else { field += char; }
-        } else {
-            if (char === '"') { inQuotes = true; }
-            else if (char === ',') { row.push(field); field = ''; }
-            else if (char === '\n') {
-                row.push(field);
-                if (row.some((f) => f.trim() !== '')) rows.push(row);
-                row = []; field = '';
-            } else if (char === '\r') {
-                // skip \r
-            } else { field += char; }
-        }
-    }
-    if (field || row.length > 0) {
-        row.push(field);
-        if (row.some((f) => f.trim() !== '')) rows.push(row);
-    }
-    return rows;
-};
+import { escapeCsvValue, parseCSV } from '../../shared/csv';
 
 export const listIngredients = asyncHandler(async (req: AuthRequest, res: Response) => {
     const storeId = req.params.storeId;

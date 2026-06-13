@@ -1,5 +1,6 @@
 import { NextFunction, Request, Response } from 'express';
 import { ZodError } from 'zod';
+import { MulterError } from 'multer';
 import { AppError } from '../shared/errors';
 import { logger } from '../shared/logger';
 import { captureException } from '../shared/errorReporting';
@@ -61,6 +62,28 @@ export const errorHandler = (err: Error, req: Request, res: Response, next: Next
                 code: 'VALIDATION_ERROR',
                 message: 'Invalid request',
                 details: err.flatten(),
+            },
+            requestId,
+        });
+    }
+
+    if (err instanceof MulterError) {
+        const message =
+            err.code === 'LIMIT_FILE_SIZE'
+                ? 'File is too large (max 5 MB)'
+                : 'File upload failed';
+        logger.warn('upload_failed', {
+            requestId,
+            method: req.method,
+            path: req.originalUrl,
+            status: 400,
+            code: err.code,
+        });
+        return res.status(400).json({
+            error: {
+                code: 'UPLOAD_ERROR',
+                message,
+                details: { field: err.field },
             },
             requestId,
         });
