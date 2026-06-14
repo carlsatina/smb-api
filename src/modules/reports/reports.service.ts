@@ -823,4 +823,31 @@ export const reportsService = {
             employees,
         };
     },
+    getExpenseSummary: async (storeId: string, from?: string, to?: string) => {
+        const store = await ensureStore(storeId);
+        const timeZone = store.timezone || 'UTC';
+        const { startDate, endDate } = buildDateRange(from, to, timeZone);
+
+        const grouped = await prisma.expense.groupBy({
+            by: ['category'],
+            where: {
+                storeId,
+                deletedAt: null,
+                date: { gte: new Date(startDate), lte: new Date(endDate) },
+            },
+            _sum: { amount: true },
+        });
+
+        const byCategory = grouped
+            .map((row) => ({ category: row.category, total: roundMoney(normalizeNumber(row._sum.amount)) }))
+            .sort((a, b) => b.total - a.total);
+
+        const total = roundMoney(byCategory.reduce((sum, row) => sum + row.total, 0));
+
+        return {
+            range: { from: startDate, to: endDate },
+            total,
+            byCategory,
+        };
+    },
 };

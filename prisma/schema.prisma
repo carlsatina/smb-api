@@ -105,6 +105,7 @@ model User {
   dailySalesGoals      DailySalesGoal[]       @relation("DailySalesGoalCreatedBy")
   cashierEntries       DailySalesCashierEntry[] @relation("CashierEntryUser")
   billingNoticesSent   BillingNotice[]        @relation("BillingNoticeSentBy")
+  expenses             Expense[]              @relation("ExpenseCreatedBy")
 }
 
 model BillingNotice {
@@ -175,6 +176,7 @@ model Store {
   currency           String    @default("PHP")
   unitOptions        String[] @default([])
   categoryOptions    String[] @default([])
+  expenseCategoryOptions String[] @default([])
   allowNegativeStock          Boolean  @default(false)
   lowStockThreshold           Decimal  @default(0) @db.Decimal(12, 4)
   defaultTaxRate              Decimal  @default(0) @db.Decimal(5, 2)
@@ -199,6 +201,7 @@ model Store {
   dailySalesEntries  DailySalesEntry[]
   dailySalesGoals    DailySalesGoal[]
   billingNotices     BillingNotice[]
+  expenses           Expense[]
 }
 
 model StoreMember {
@@ -393,6 +396,25 @@ model Supplier {
   purchaseOrders PurchaseOrder[]
 
   @@unique([storeId, name])
+  @@index([storeId, createdAt])
+}
+
+model Expense {
+  id          String    @id @default(cuid())
+  storeId     String
+  date        DateTime  @db.Date
+  amount      Decimal   @db.Decimal(12, 2)
+  category    String
+  note        String?
+  createdById String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  store     Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  createdBy User  @relation("ExpenseCreatedBy", fields: [createdById], references: [id])
+
+  @@index([storeId, date])
   @@index([storeId, createdAt])
 }
 

@@ -5,6 +5,7 @@ import { requireStoreRole } from '../../middlewares/requireStoreRole';
 import { requirePlanFeature } from '../../middlewares/requirePlanFeature';
 import {
     getEmployeeSales,
+    getExpenseSummary,
     getIngredientUsage,
     getLowStock,
     getPaymentMethodBreakdown,
@@ -34,5 +35,6 @@ reportsRouter.get('/ingredient-usage', requireStoreRole(readRoles), requirePlanF
 reportsRouter.get('/purchase-spend', requireStoreRole(readRoles), requirePlanFeature('purchaseOrders'), getPurchaseSpend);
 reportsRouter.get('/product-margins', requireStoreRole(readRoles), getProductMargins);
 reportsRouter.get('/profit-summary', requireStoreRole(readRoles), getProfitSummary);
+reportsRouter.get('/expense-summary', requireStoreRole(readRoles), requirePlanFeature('expenses'), getExpenseSummary);
 reportsRouter.get('/payment-methods', requireStoreRole(readRoles), getPaymentMethodBreakdown);
 reportsRouter.get('/employee-sales', requireStoreRole(readRoles), getEmployeeSales);

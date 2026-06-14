@@ -39,6 +39,7 @@ export const createStoreSchema = z.object({
     defaultDiscount: optionalNumber,
     unitOptions: optionalStringArray,
     categoryOptions: optionalStringArray,
+    expenseCategoryOptions: optionalStringArray,
 });
 
 export const updateStoreSchema = z
@@ -53,6 +54,7 @@ export const updateStoreSchema = z
         defaultDiscount: optionalNumber,
         unitOptions: optionalStringArray,
         categoryOptions: optionalStringArray,
+        expenseCategoryOptions: optionalStringArray,
         cashierSalesHistoryLimit: optionalPositiveInt,
         paymentMethods: optionalPaymentMethods,
     })
@@ -68,6 +70,7 @@ export const updateStoreSchema = z
             data.defaultDiscount !== undefined ||
             data.unitOptions !== undefined ||
             data.categoryOptions !== undefined ||
+            data.expenseCategoryOptions !== undefined ||
             data.cashierSalesHistoryLimit !== undefined ||
             data.paymentMethods !== undefined,
         {

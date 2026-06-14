@@ -104,6 +104,17 @@ export const getProfitSummary = asyncHandler(async (req: AuthRequest, res: Respo
     res.status(200).json(data);
 });
 
+export const getExpenseSummary = asyncHandler(async (req: AuthRequest, res: Response) => {
+    const storeId = req.params.storeId;
+    if (!storeId) {
+        throw new AppError('STORE_REQUIRED', 'Store is required', 400);
+    }
+
+    const query = reportRangeSchema.parse(req.query);
+    const data = await reportsService.getExpenseSummary(storeId, query.from, query.to);
+    res.status(200).json(data);
+});
+
 export const getProductsSold = asyncHandler(async (req: AuthRequest, res: Response) => {
     const storeId = req.params.storeId;
     if (!storeId) {

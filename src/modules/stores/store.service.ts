@@ -2,7 +2,7 @@ import { Prisma, Role, StoreType } from '@prisma/client';
 import prisma from '../../../lib/prisma';
 import { getPlanConfig } from '../../config/plans';
 import { AppError } from '../../shared/errors';
-import { DEFAULT_CATEGORY_OPTIONS, DEFAULT_UNIT_OPTIONS } from './store.defaults';
+import { DEFAULT_CATEGORY_OPTIONS, DEFAULT_EXPENSE_CATEGORY_OPTIONS, DEFAULT_UNIT_OPTIONS } from './store.defaults';
 
 type CreateStoreInput = {
     name: string;
@@ -13,6 +13,7 @@ type CreateStoreInput = {
     lowStockThreshold?: number;
     unitOptions?: string[];
     categoryOptions?: string[];
+    expenseCategoryOptions?: string[];
     defaultTaxRate?: number;
     defaultDiscount?: number;
 };
@@ -26,6 +27,7 @@ type UpdateStoreInput = {
     lowStockThreshold?: number;
     unitOptions?: string[];
     categoryOptions?: string[];
+    expenseCategoryOptions?: string[];
     defaultTaxRate?: number;
     defaultDiscount?: number;
     cashierSalesHistoryLimit?: number | null;
@@ -106,6 +108,7 @@ export const storeService = {
                 lowStockThreshold: Number(membership.store.lowStockThreshold ?? 0),
                 unitOptions: membership.store.unitOptions,
                 categoryOptions: membership.store.categoryOptions,
+                expenseCategoryOptions: membership.store.expenseCategoryOptions,
                 defaultTaxRate: Number(membership.store.defaultTaxRate ?? 0),
                 defaultDiscount: Number(membership.store.defaultDiscount ?? 0),
                 cashierSalesHistoryLimit: membership.store.cashierSalesHistoryLimit ?? null,
@@ -179,6 +182,7 @@ export const storeService = {
                     lowStockThreshold: input.lowStockThreshold ?? 0,
                     unitOptions: normalizeOptions(input.unitOptions, DEFAULT_UNIT_OPTIONS),
                     categoryOptions: normalizeOptions(input.categoryOptions, DEFAULT_CATEGORY_OPTIONS),
+                    expenseCategoryOptions: normalizeOptions(input.expenseCategoryOptions, DEFAULT_EXPENSE_CATEGORY_OPTIONS),
                     defaultTaxRate: input.defaultTaxRate ?? 0,
                     defaultDiscount: input.defaultDiscount ?? 0,
                 },
@@ -231,6 +235,9 @@ export const storeService = {
         }
         if (input.categoryOptions !== undefined) {
             data.categoryOptions = normalizeOptions(input.categoryOptions, DEFAULT_CATEGORY_OPTIONS);
+        }
+        if (input.expenseCategoryOptions !== undefined) {
+            data.expenseCategoryOptions = normalizeOptions(input.expenseCategoryOptions, DEFAULT_EXPENSE_CATEGORY_OPTIONS);
         }
         if (input.defaultTaxRate !== undefined) {
             data.defaultTaxRate = input.defaultTaxRate;

@@ -25,3 +25,14 @@ export const DEFAULT_CATEGORY_OPTIONS = [
     'Supplies',
     'Merchandise',
 ];
+
+export const DEFAULT_EXPENSE_CATEGORY_OPTIONS = [
+    'Rent',
+    'Utilities',
+    'Supplies',
+    'Salaries',
+    'Maintenance',
+    'Transport',
+    'Marketing',
+    'Other',
+];
