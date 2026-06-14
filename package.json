@@ -1,7 +1,7 @@
 {
-  "name": "template",
+  "name": "sales-and-inventory-backend",
   "version": "0.1.0",
-  "description": "template backend API",
+  "description": "Express + Prisma API for the Sales & Inventory platform",
   "main": "dist/index.js",
   "engines": {
     "node": ">=22"
@@ -27,17 +27,21 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/carlsatina/template.git"
+    "url": "git+https://github.com/carlsatina/sales_and_inventory.git"
   },
   "keywords": [
-    "HealthRecords"
+    "sales",
+    "inventory",
+    "pos",
+    "express",
+    "prisma"
   ],
   "author": "RC Satina",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/carlsatina/template/issues"
+    "url": "https://github.com/carlsatina/sales_and_inventory/issues"
   },
-  "homepage": "https://github.com/carlsatina/tempate#readme",
+  "homepage": "https://github.com/carlsatina/sales_and_inventory#readme",
   "dependencies": {
     "@prisma/adapter-pg": "^7.2.0",
     "@prisma/client": "^7.2.0",
