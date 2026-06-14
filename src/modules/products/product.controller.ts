@@ -4,7 +4,51 @@ import { AppError } from '../../shared/errors';
 import { AuthRequest } from '../../middlewares/auth';
 import { productCreateSchema, productUpdateSchema } from './product.schemas';
 import { productService } from './product.service';
+import { recipeRepository } from '../recipes/recipe.repository';
+import { ingredientRepository } from '../ingredients/ingredient.repository';
 import { escapeCsvValue, parseCSV } from '../../shared/csv';
+
+// Recipe lines are encoded in a single "Recipe" CSV column as
+// "Ingredient Name:qty | Ingredient Name:qty". Names are resolved against the
+// store's ingredients on import.
+const RECIPE_LINE_SEPARATOR = '|';
+
+const serializeRecipeLines = (
+    lines: Array<{ ingredient: { name: string }; qtyPerProductUnit: unknown }>
+): string =>
+    lines
+        .map((line) => `${line.ingredient.name}:${Number(line.qtyPerProductUnit)}`)
+        .join(` ${RECIPE_LINE_SEPARATOR} `);
+
+const parseRecipeCell = (
+    cell: string,
+    ingredientsByName: Map<string, { id: string }>
+): Array<{ ingredientId: string; qtyPerProductUnit: number }> => {
+    const parts = cell
+        .split(RECIPE_LINE_SEPARATOR)
+        .map((p) => p.trim())
+        .filter((p) => p.length > 0);
+
+    return parts.map((part) => {
+        const sep = part.lastIndexOf(':');
+        if (sep === -1) {
+            throw new AppError('INVALID_RECIPE_LINE', `Recipe entry "${part}" must be in "Ingredient Name:qty" format.`, 400);
+        }
+        const name = part.slice(0, sep).trim();
+        const qty = Number(part.slice(sep + 1).trim());
+        if (!name) {
+            throw new AppError('INVALID_RECIPE_LINE', `Recipe entry "${part}" is missing an ingredient name.`, 400);
+        }
+        if (!Number.isFinite(qty) || qty <= 0) {
+            throw new AppError('INVALID_RECIPE_LINE', `Recipe entry "${part}" has an invalid quantity.`, 400);
+        }
+        const ingredient = ingredientsByName.get(name.toLowerCase());
+        if (!ingredient) {
+            throw new AppError('UNKNOWN_INGREDIENT', `Ingredient "${name}" was not found. Add it before importing this recipe.`, 400);
+        }
+        return { ingredientId: ingredient.id, qtyPerProductUnit: qty };
+    });
+};
 
 export const listProducts = asyncHandler(async (req: AuthRequest, res: Response) => {
     const storeId = req.params.storeId;
@@ -69,9 +113,15 @@ export const exportProducts = asyncHandler(async (req: AuthRequest, res: Respons
 
     const products = await productService.list(storeId);
 
+    // Map each recipe product to its serialized recipe lines for the Recipe column.
+    const recipes = await recipeRepository.listByStoreWithLines(storeId);
+    const recipeByProductId = new Map(
+        recipes.map((recipe) => [recipe.productId, serializeRecipeLines(recipe.lines)])
+    );
+
     const rows: Array<Array<string | number | boolean | null | undefined>> = [
-        ['Name', 'Type', 'SKU', 'Barcode', 'Price', 'Cost', 'Unit', 'Category', 'Active', 'Low Stock Threshold'],
-        ...products.map((p) => [p.name, p.type, p.sku, p.barcode, Number(p.price), p.cost != null ? Number(p.cost) : null, p.unit, p.category, p.active, p.lowStockThreshold != null ? Number(p.lowStockThreshold) : null]),
+        ['Name', 'Type', 'SKU', 'Barcode', 'Price', 'Cost', 'Unit', 'Category', 'Active', 'Low Stock Threshold', 'Recipe'],
+        ...products.map((p) => [p.name, p.type, p.sku, p.barcode, Number(p.price), p.cost != null ? Number(p.cost) : null, p.unit, p.category, p.active, p.lowStockThreshold != null ? Number(p.lowStockThreshold) : null, recipeByProductId.get(p.id) ?? '']),
     ];
 
     const csv = rows.map((row) => row.map(escapeCsvValue).join(',')).join('\n');
@@ -109,6 +159,11 @@ export const importProducts = asyncHandler(async (req: AuthRequest & { file?: Ex
     const existingProducts = await productService.list(storeId);
     const existingByName = new Map(existingProducts.map((p) => [p.name.toLowerCase().trim(), p]));
 
+    // Pre-load ingredients so the Recipe column can resolve names to IDs.
+    const ingredients = await ingredientRepository.listByStore(storeId);
+    const ingredientsByName = new Map(ingredients.map((ing) => [ing.name.toLowerCase().trim(), ing]));
+    const recipeCol = col('recipe');
+
     let imported = 0;
     let updated = 0;
     let failed = 0;
@@ -127,12 +182,20 @@ export const importProducts = asyncHandler(async (req: AuthRequest & { file?: Ex
                 cost: r[col('cost')]?.trim() ? Number(r[col('cost')]?.trim()) : null,
                 unit: r[col('unit')]?.trim() || 'pcs',
                 category: r[col('category')]?.trim() || null,
-                active: r[col('active')]?.trim().toLowerCase() === 'false' ? false : undefined,
+                active: (() => {
+                    const v = r[col('active')]?.trim().toLowerCase();
+                    return v === 'true' ? true : v === 'false' ? false : undefined;
+                })(),
                 lowStockThreshold: r[col('lowstockthreshold')]?.trim() ? Number(r[col('lowstockthreshold')]?.trim()) : null,
             };
 
             const payload = productCreateSchema.parse(raw);
-            const { recipeLines, ...productData } = payload;
+            const { recipeLines: _ignoredRecipeLines, ...productData } = payload;
+
+            // Recipe lines come from the dedicated Recipe column, resolved by name.
+            // An empty cell means "leave the recipe unchanged" rather than clearing it.
+            const recipeCell = recipeCol !== -1 ? (r[recipeCol]?.trim() ?? '') : '';
+            const recipeLines = recipeCell ? parseRecipeCell(recipeCell, ingredientsByName) : undefined;
 
             const existing = existingByName.get((raw.name ?? '').toLowerCase().trim());
             if (existing) {

@@ -38,6 +38,24 @@ export const recipeRepository = {
             },
         });
     },
+    listByStoreWithLines: async (storeId: string, client?: DbClient) => {
+        return getClient(client).recipe.findMany({
+            where: {
+                storeId,
+                deletedAt: null,
+            },
+            include: {
+                lines: {
+                    include: lineInclude,
+                    orderBy: {
+                        ingredient: {
+                            name: 'asc',
+                        },
+                    },
+                },
+            },
+        });
+    },
     upsertRecipe: async (storeId: string, productId: string, client?: DbClient) => {
         return getClient(client).recipe.upsert({
             where: {
