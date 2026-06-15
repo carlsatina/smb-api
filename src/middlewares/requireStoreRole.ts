@@ -36,6 +36,7 @@ export const requireStoreRole = (roles: Role[]) => {
             return next(new AppError('FORBIDDEN', 'Insufficient role', 403));
         }
 
+        req.storeRole = membership.role;
         return next();
     };
 };

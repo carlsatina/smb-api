@@ -12,7 +12,7 @@ export const listExpenses = asyncHandler(async (req: AuthRequest, res: Response)
     }
 
     const query = listExpensesQuerySchema.parse(req.query);
-    const expenses = await expenseService.list(storeId, query);
+    const expenses = await expenseService.list(storeId, req.storeRole, query);
     res.status(200).json({ expenses });
 });
 
@@ -23,7 +23,7 @@ export const getExpense = asyncHandler(async (req: AuthRequest, res: Response) =
         throw new AppError('BAD_REQUEST', 'Store and expense are required', 400);
     }
 
-    const expense = await expenseService.get(storeId, expenseId);
+    const expense = await expenseService.get(storeId, req.storeRole, expenseId);
     res.status(200).json({ expense });
 });
 

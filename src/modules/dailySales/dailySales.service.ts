@@ -1,6 +1,10 @@
-import { Prisma, SaleStatus } from '@prisma/client';
+import { Prisma, Role, SaleStatus } from '@prisma/client';
 import prisma from '../../../lib/prisma';
 import { AppError } from '../../shared/errors';
+import { expenseRepository } from '../expenses/expense.repository';
+import { canViewRestrictedExpenses } from '../expenses/expense.constants';
+
+const dateKey = (d: Date) => d.toISOString().slice(0, 10);
 
 const toNum = (v: Prisma.Decimal | null | undefined) => Number(v ?? 0);
 
@@ -77,7 +81,7 @@ const getActiveGoal = async (storeId: string, asOfDate: Date): Promise<number> =
 };
 
 export const dailySalesService = {
-    listMonth: async (storeId: string, year: number, month: number) => {
+    listMonth: async (storeId: string, year: number, month: number, role?: Role) => {
         const store = await prisma.store.findFirst({
             where: { id: storeId, deletedAt: null },
             select: { timezone: true },
@@ -86,6 +90,14 @@ export const dailySalesService = {
 
         const monthStart = new Date(Date.UTC(year, month - 1, 1));
         const monthEnd = new Date(Date.UTC(year, month, 0)); // last day of month
+
+        // Itemized expenses summed per date for the month, role-filtered (cashiers et al.
+        // don't see Rent/Salaries, so their derived expense excludes them too).
+        const derivedRows = await expenseRepository.sumByDateForRange(
+            storeId, monthStart, monthEnd, !canViewRestrictedExpenses(role)
+        );
+        const derivedByDate = new Map<string, number>();
+        derivedRows.forEach((r) => derivedByDate.set(dateKey(r.date), toNum(r._sum.amount)));
 
         const entries = await prisma.dailySalesEntry.findMany({
             where: {
@@ -118,7 +130,8 @@ export const dailySalesService = {
         const rowMap = new Map<string, ReturnType<typeof buildRow>>();
         chronological.forEach((entry, idx) => {
             const { pos, seniorDiscount } = chronoAgg[idx];
-            const row = buildRow(entry, pos, seniorDiscount, goal, cumulativeSalesNeeded);
+            const derivedExpense = derivedByDate.get(dateKey(entry.date)) ?? 0;
+            const row = buildRow(entry, pos, seniorDiscount, goal, cumulativeSalesNeeded, derivedExpense);
             cumulativeSalesNeeded = row.salesNeeded;
             rowMap.set(entry.id, row);
         });
@@ -155,7 +168,7 @@ export const dailySalesService = {
     createEntry: async (
         storeId: string,
         createdById: string,
-        data: { date: string; expense: number; actualCoh?: number | null }
+        data: { date: string; expense?: number | null; actualCoh?: number | null }
     ) => {
         const [y, m, d] = data.date.split('-').map(Number);
         const date = new Date(Date.UTC(y, m - 1, d));
@@ -174,7 +187,7 @@ export const dailySalesService = {
                 where: { id: existing.id },
                 data: {
                     deletedAt: null,
-                    expense: new Prisma.Decimal(data.expense),
+                    expense: data.expense != null ? new Prisma.Decimal(data.expense) : null,
                     actualCoh: data.actualCoh != null ? new Prisma.Decimal(data.actualCoh) : null,
                     createdById,
                 },
@@ -186,7 +199,7 @@ export const dailySalesService = {
             data: {
                 storeId,
                 date,
-                expense: new Prisma.Decimal(data.expense),
+                expense: data.expense != null ? new Prisma.Decimal(data.expense) : null,
                 actualCoh: data.actualCoh != null ? new Prisma.Decimal(data.actualCoh) : null,
                 createdById,
             },
@@ -197,7 +210,7 @@ export const dailySalesService = {
     updateEntry: async (
         storeId: string,
         entryId: string,
-        data: { expense?: number; actualCoh?: number | null }
+        data: { expense?: number | null; actualCoh?: number | null }
     ) => {
         const entry = await prisma.dailySalesEntry.findFirst({
             where: { id: entryId, storeId, deletedAt: null },
@@ -207,7 +220,10 @@ export const dailySalesService = {
         return prisma.dailySalesEntry.update({
             where: { id: entryId },
             data: {
-                ...(data.expense !== undefined && { expense: new Prisma.Decimal(data.expense) }),
+                // null ⇒ clear the override (revert to derived).
+                ...(data.expense !== undefined && {
+                    expense: data.expense != null ? new Prisma.Decimal(data.expense) : null,
+                }),
                 ...(data.actualCoh !== undefined && {
                     actualCoh: data.actualCoh != null ? new Prisma.Decimal(data.actualCoh) : null,
                 }),
@@ -300,17 +316,26 @@ type CashierEntryWithUser = {
 type EntryWithCashiers = {
     id: string;
     date: Date;
-    expense: Prisma.Decimal;
+    expense: Prisma.Decimal | null;
     seniorDiscount: Prisma.Decimal;
     actualCoh: Prisma.Decimal | null;
     cashierEntries: CashierEntryWithUser[];
 };
 
-function buildRow(entry: EntryWithCashiers, pos: number, seniorDiscount: number, goal: number, prevSalesNeeded: number) {
+function buildRow(
+    entry: EntryWithCashiers,
+    pos: number,
+    seniorDiscount: number,
+    goal: number,
+    prevSalesNeeded: number,
+    derivedExpense: number
+) {
     const totalCoh = entry.cashierEntries.reduce((s, c) => s + toNum(c.cashAmount), 0);
     const totalGcash = entry.cashierEntries.reduce((s, c) => s + toNum(c.gcashAmount), 0);
     const totalSenior = seniorDiscount;
-    const expense = toNum(entry.expense);
+    // null override ⇒ use the derived itemized sum.
+    const expenseOverride = entry.expense != null ? toNum(entry.expense) : null;
+    const expense = expenseOverride != null ? expenseOverride : derivedExpense;
     const totalSales = totalCoh + totalGcash + totalSenior + expense;
     const actualCoh = entry.actualCoh != null ? toNum(entry.actualCoh) : totalCoh;
     const kulangRemit = totalCoh - actualCoh;
@@ -321,6 +346,8 @@ function buildRow(entry: EntryWithCashiers, pos: number, seniorDiscount: number,
         id: entry.id,
         date: entry.date,
         expense,
+        expenseDerived: derivedExpense,
+        expenseOverride,
         actualCoh,
         cashierEntries: entry.cashierEntries.map((c) => ({
             id: c.id,

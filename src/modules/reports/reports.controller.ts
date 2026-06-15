@@ -111,7 +111,7 @@ export const getExpenseSummary = asyncHandler(async (req: AuthRequest, res: Resp
     }
 
     const query = reportRangeSchema.parse(req.query);
-    const data = await reportsService.getExpenseSummary(storeId, query.from, query.to);
+    const data = await reportsService.getExpenseSummary(storeId, req.storeRole, query.from, query.to);
     res.status(200).json(data);
 });
 

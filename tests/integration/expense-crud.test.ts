@@ -101,4 +101,34 @@ describe('expense CRUD', () => {
         );
         expect(create.status).toBe(403);
     });
+
+    it('hides Rent/Salaries from non-privileged roles but shows them to owner/admin', async () => {
+        const { user: owner, password: ownerPw } = await createUser({ planTier: PlanTier.STANDARD });
+        const store = await createStoreWithOwner(owner.id);
+        const { user: cashier, password: cashierPw } = await createUser();
+        await prisma.storeMember.create({ data: { storeId: store.id, userId: cashier.id, role: Role.CASHIER } });
+
+        const ownerAgent = createTestApp();
+        const ownerToken = await login(ownerAgent, owner.email, ownerPw);
+        const asOwner = (req: any) => req.set('Authorization', `Bearer ${ownerToken}`);
+
+        await asOwner(ownerAgent.post(`/api/v1/stores/${store.id}/expenses`).send({ date: '2026-06-10', amount: 500, category: 'Rent' }));
+        await asOwner(ownerAgent.post(`/api/v1/stores/${store.id}/expenses`).send({ date: '2026-06-10', amount: 80, category: 'Salaries' }));
+        await asOwner(ownerAgent.post(`/api/v1/stores/${store.id}/expenses`).send({ date: '2026-06-10', amount: 30, category: 'Supplies' }));
+
+        const ownerList = await asOwner(ownerAgent.get(`/api/v1/stores/${store.id}/expenses`));
+        expect(ownerList.body.expenses).toHaveLength(3);
+
+        const cashierAgent = createTestApp();
+        const cashierToken = await login(cashierAgent, cashier.email, cashierPw);
+        const asCashier = (req: any) => req.set('Authorization', `Bearer ${cashierToken}`);
+
+        const cashierList = await asCashier(cashierAgent.get(`/api/v1/stores/${store.id}/expenses`));
+        expect(cashierList.body.expenses).toHaveLength(1);
+        expect(cashierList.body.expenses[0].category).toBe('Supplies');
+
+        // Filtering by a restricted category returns nothing for the cashier.
+        const cashierRent = await asCashier(cashierAgent.get(`/api/v1/stores/${store.id}/expenses?category=Rent`));
+        expect(cashierRent.body.expenses).toHaveLength(0);
+    });
 });

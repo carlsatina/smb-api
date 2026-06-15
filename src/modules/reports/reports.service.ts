@@ -1,7 +1,8 @@
-import { ItemType, MovementType, PaymentMethod, Prisma, ProductType, SaleStatus } from '@prisma/client';
+import { ItemType, MovementType, PaymentMethod, Prisma, ProductType, Role, SaleStatus } from '@prisma/client';
 import prisma from '../../../lib/prisma';
 import { AppError } from '../../shared/errors';
 import { inventoryService } from '../inventory/inventory.service';
+import { canViewRestrictedExpenses, RESTRICTED_EXPENSE_CATEGORIES } from '../expenses/expense.constants';
 
 type SalesByDayRow = {
     day: string;
@@ -823,7 +824,7 @@ export const reportsService = {
             employees,
         };
     },
-    getExpenseSummary: async (storeId: string, from?: string, to?: string) => {
+    getExpenseSummary: async (storeId: string, role: Role | undefined, from?: string, to?: string) => {
         const store = await ensureStore(storeId);
         const timeZone = store.timezone || 'UTC';
         const { startDate, endDate } = buildDateRange(from, to, timeZone);
@@ -834,6 +835,9 @@ export const reportsService = {
                 storeId,
                 deletedAt: null,
                 date: { gte: new Date(startDate), lte: new Date(endDate) },
+                ...(canViewRestrictedExpenses(role)
+                    ? {}
+                    : { NOT: RESTRICTED_EXPENSE_CATEGORIES.map((c) => ({ category: { equals: c, mode: 'insensitive' as const } })) }),
             },
             _sum: { amount: true },
         });

@@ -1,4 +1,5 @@
 import { NextFunction, Request, Response } from 'express';
+import { Role } from '@prisma/client';
 import jwt from 'jsonwebtoken';
 import { env } from '../config/env';
 import { AppError } from '../shared/errors';
@@ -12,6 +13,8 @@ export type AuthUser = {
 
 export type AuthRequest = Request & {
     user?: AuthUser;
+    // Populated by requireStoreRole once membership is verified for the route's :storeId.
+    storeRole?: Role;
 };
 
 export const authMiddleware = (req: AuthRequest, res: Response, next: NextFunction) => {

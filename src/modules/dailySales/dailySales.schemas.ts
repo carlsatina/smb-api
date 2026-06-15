@@ -7,12 +7,14 @@ export const listDailySalesQuerySchema = z.object({
 
 export const createDailySalesEntrySchema = z.object({
     date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD'),
-    expense: z.number().min(0).default(0),
+    // null/omitted ⇒ derive expense from that day's itemized expenses.
+    expense: z.number().min(0).nullable().optional(),
     actualCoh: z.number().min(0).nullable().optional(),
 });
 
 export const updateDailySalesEntrySchema = z.object({
-    expense: z.number().min(0).optional(),
+    // null ⇒ clear the manual override and revert to the derived value.
+    expense: z.number().min(0).nullable().optional(),
     actualCoh: z.number().min(0).nullable().optional(),
 });
 
