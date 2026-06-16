@@ -42,6 +42,11 @@ enum StoreType {
   WAREHOUSE
 }
 
+enum AiProvider {
+  OPENAI
+  ANTHROPIC
+}
+
 enum SaleStatus {
   DRAFT
   FINALIZED
@@ -183,6 +188,10 @@ model Store {
   defaultDiscount             Decimal  @default(0) @db.Decimal(12, 2)
   cashierSalesHistoryLimit    Int?
   paymentMethods              String[] @default(["CASH", "CARD", "TRANSFER", "GCASH", "MAYA", "OTHER"])
+  aiProvider                  AiProvider?
+  aiModel                     String?
+  aiApiKeyEncrypted           String?
+  aiApiKeyLast4               String?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
   deletedAt          DateTime?

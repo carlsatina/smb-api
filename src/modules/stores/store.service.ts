@@ -1,8 +1,24 @@
-import { Prisma, Role, StoreType } from '@prisma/client';
+import { AiProvider, Prisma, Role, Store, StoreType } from '@prisma/client';
 import prisma from '../../../lib/prisma';
 import { getPlanConfig } from '../../config/plans';
 import { AppError } from '../../shared/errors';
+import { decryptSecret, encryptSecret } from '../../shared/crypto';
+import { listAiModels, testAiConnection } from '../../shared/aiClient';
 import { DEFAULT_CATEGORY_OPTIONS, DEFAULT_EXPENSE_CATEGORY_OPTIONS, DEFAULT_UNIT_OPTIONS } from './store.defaults';
+
+// Maps a raw Store row to a client-safe shape. The encrypted AI API key is never
+// exposed — only whether a key is configured and its last 4 characters.
+const toStoreDto = (store: Store) => {
+    const { aiApiKeyEncrypted, aiApiKeyLast4, ...rest } = store;
+    return {
+        ...rest,
+        lowStockThreshold: Number(store.lowStockThreshold ?? 0),
+        defaultTaxRate: Number(store.defaultTaxRate ?? 0),
+        defaultDiscount: Number(store.defaultDiscount ?? 0),
+        aiApiKeySet: Boolean(aiApiKeyEncrypted),
+        aiApiKeyLast4: aiApiKeyLast4 ?? null,
+    };
+};
 
 type CreateStoreInput = {
     name: string;
@@ -113,6 +129,10 @@ export const storeService = {
                 defaultDiscount: Number(membership.store.defaultDiscount ?? 0),
                 cashierSalesHistoryLimit: membership.store.cashierSalesHistoryLimit ?? null,
                 paymentMethods: membership.store.paymentMethods,
+                aiProvider: membership.store.aiProvider ?? null,
+                aiModel: membership.store.aiModel ?? null,
+                aiApiKeySet: Boolean(membership.store.aiApiKeyEncrypted),
+                aiApiKeyLast4: membership.store.aiApiKeyLast4 ?? null,
                 role: membership.role,
                 ownerPlanTier: owner?.planTier ?? 'STARTER',
                 ownerSubscriptionActive: owner?.subscriptionActive ?? false,
@@ -196,7 +216,7 @@ export const storeService = {
                 },
             });
 
-            return store;
+            return toStoreDto(store);
         });
     },
     updateStore: async (storeId: string, input: UpdateStoreInput) => {
@@ -252,10 +272,91 @@ export const storeService = {
             data.paymentMethods = input.paymentMethods;
         }
 
-        return prisma.store.update({
+        const updated = await prisma.store.update({
             where: { id: storeId },
             data,
         });
+        return toStoreDto(updated);
+    },
+    updateAiSettings: async (
+        storeId: string,
+        input: { aiProvider?: AiProvider | null; aiModel?: string | null; aiApiKey?: string | null }
+    ) => {
+        const existing = await prisma.store.findFirst({
+            where: { id: storeId, deletedAt: null },
+        });
+        if (!existing) {
+            return null;
+        }
+
+        const data: Prisma.StoreUpdateInput = {};
+        if (input.aiProvider !== undefined) {
+            data.aiProvider = input.aiProvider;
+        }
+        if (input.aiModel !== undefined) {
+            const trimmed = input.aiModel?.trim();
+            data.aiModel = trimmed ? trimmed : null;
+        }
+        // Write-only key: a provided non-empty value replaces it; empty/null clears
+        // it; omitting the field entirely leaves the stored key untouched.
+        if (input.aiApiKey !== undefined) {
+            const key = input.aiApiKey?.trim();
+            if (key) {
+                data.aiApiKeyEncrypted = encryptSecret(key);
+                data.aiApiKeyLast4 = key.slice(-4);
+            } else {
+                data.aiApiKeyEncrypted = null;
+                data.aiApiKeyLast4 = null;
+            }
+        }
+
+        const updated = await prisma.store.update({
+            where: { id: storeId },
+            data,
+        });
+        return toStoreDto(updated);
+    },
+    testAiConnection: async (storeId: string) => {
+        const store = await prisma.store.findFirst({
+            where: { id: storeId, deletedAt: null },
+            select: { aiProvider: true, aiModel: true, aiApiKeyEncrypted: true },
+        });
+        if (!store) {
+            throw new AppError('NOT_FOUND', 'Store not found', 404);
+        }
+        if (!store.aiProvider) {
+            throw new AppError('AI_NOT_CONFIGURED', 'Select an AI provider before testing the connection.', 400);
+        }
+        if (!store.aiApiKeyEncrypted) {
+            throw new AppError('AI_KEY_MISSING', 'Save an API key before testing the connection.', 400);
+        }
+        const apiKey = decryptSecret(store.aiApiKeyEncrypted);
+        if (!apiKey) {
+            throw new AppError('AI_KEY_UNREADABLE', 'The stored API key could not be decrypted. Re-enter and save it.', 400);
+        }
+
+        return testAiConnection(store.aiProvider, apiKey, store.aiModel);
+    },
+    listAiModels: async (storeId: string) => {
+        const store = await prisma.store.findFirst({
+            where: { id: storeId, deletedAt: null },
+            select: { aiProvider: true, aiApiKeyEncrypted: true },
+        });
+        if (!store) {
+            throw new AppError('NOT_FOUND', 'Store not found', 404);
+        }
+        if (!store.aiProvider) {
+            throw new AppError('AI_NOT_CONFIGURED', 'Select an AI provider first.', 400);
+        }
+        if (!store.aiApiKeyEncrypted) {
+            throw new AppError('AI_KEY_MISSING', 'Save an API key first.', 400);
+        }
+        const apiKey = decryptSecret(store.aiApiKeyEncrypted);
+        if (!apiKey) {
+            throw new AppError('AI_KEY_UNREADABLE', 'The stored API key could not be decrypted. Re-enter and save it.', 400);
+        }
+
+        return listAiModels(store.aiProvider, apiKey);
     },
     deleteStore: async (storeId: string) => {
         const existing = await prisma.store.findFirst({

@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { Role } from '@prisma/client';
 import { authMiddleware } from '../../middlewares/auth';
 import { requireStoreRole } from '../../middlewares/requireStoreRole';
-import { createStore, deleteStore, listStores, updateStore } from './store.controller';
+import { createStore, deleteStore, listAiModels, listStores, testAiConnection, updateAiSettings, updateStore } from './store.controller';
 
 export const storeRouter = Router();
 
@@ -15,4 +15,7 @@ export const storeRouter = Router();
 storeRouter.get('/', authMiddleware, listStores);
 storeRouter.post('/', authMiddleware, createStore);
 storeRouter.patch('/:storeId', authMiddleware, requireStoreRole([Role.OWNER, Role.ADMIN]), updateStore);
+storeRouter.patch('/:storeId/ai-settings', authMiddleware, requireStoreRole([Role.OWNER, Role.ADMIN]), updateAiSettings);
+storeRouter.post('/:storeId/ai-settings/test', authMiddleware, requireStoreRole([Role.OWNER, Role.ADMIN]), testAiConnection);
+storeRouter.get('/:storeId/ai-settings/models', authMiddleware, requireStoreRole([Role.OWNER, Role.ADMIN]), listAiModels);
 storeRouter.delete('/:storeId', authMiddleware, requireStoreRole([Role.OWNER]), deleteStore);

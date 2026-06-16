@@ -1,4 +1,4 @@
-import { StoreType } from '@prisma/client';
+import { AiProvider, StoreType } from '@prisma/client';
 import { z } from 'zod';
 
 const optionalString = z.string().min(1).optional();
@@ -77,3 +77,11 @@ export const updateStoreSchema = z
             message: 'Provide at least one field to update.',
         }
     );
+
+// AI integration settings. The API key is write-only: an empty string or null
+// clears the stored key; omitting it leaves the existing key untouched.
+export const updateAiSettingsSchema = z.object({
+    aiProvider: z.nativeEnum(AiProvider).nullable().optional(),
+    aiModel: z.string().trim().max(120).nullable().optional(),
+    aiApiKey: z.string().max(500).nullable().optional(),
+});

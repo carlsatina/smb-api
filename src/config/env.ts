@@ -40,6 +40,7 @@ export const env = {
     port: Number(getEnv('PORT', '3500')),
     accessTokenSecret: getEnv('ACCESS_TOKEN_SECRET', 'dev_access_secret') as string,
     refreshTokenSecret: getEnv('REFRESH_TOKEN_SECRET', 'dev_refresh_secret') as string,
+    aiEncryptionKey: getEnv('AI_ENCRYPTION_KEY'),
     accessTokenExpiresIn: getEnv('ACCESS_TOKEN_EXPIRES_IN', '15m') as string,
     refreshTokenExpiresIn: getEnv('REFRESH_TOKEN_EXPIRES_IN', '7d') as string,
     passwordResetExpiresIn: getEnv('PASSWORD_RESET_EXPIRES_IN', '1h') as string,
