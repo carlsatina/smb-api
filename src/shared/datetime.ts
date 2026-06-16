@@ -23,7 +23,10 @@ const getTimezoneOffsetMs = (instant: Date, timeZone: string): number => {
     // Intl can emit hour "24" for midnight in some locales/zones.
     const hour = map.hour === 24 ? 0 : map.hour;
     const asUTC = Date.UTC(map.year, map.month - 1, map.day, hour, map.minute, map.second);
-    return asUTC - instant.getTime();
+    // The formatter resolves only to whole seconds, so subtracting an instant
+    // that carries milliseconds would skew the result. Zone offsets are always
+    // whole minutes, so round to the nearest minute to stay exact.
+    return Math.round((asUTC - instant.getTime()) / 60000) * 60000;
 };
 
 /**
