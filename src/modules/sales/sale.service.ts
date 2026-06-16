@@ -9,6 +9,7 @@ import {
 } from '@prisma/client';
 import prisma from '../../../lib/prisma';
 import { AppError } from '../../shared/errors';
+import { parseImportDate } from '../../shared/datetime';
 import { saleRepository } from './sale.repository';
 
 type SaleItemInput = {
@@ -706,6 +707,15 @@ export const saleService = {
             'bank transfer': PaymentMethod.TRANSFER,
         };
 
+        const store = await prisma.store.findFirst({
+            where: { id: storeId, deletedAt: null },
+            select: { timezone: true },
+        });
+        if (!store) {
+            throw new AppError('NOT_FOUND', 'Store not found', 404);
+        }
+        const timeZone = store.timezone || 'Asia/Manila';
+
         const storeProducts = await prisma.product.findMany({
             where: { storeId, deletedAt: null },
             select: { id: true, name: true },
@@ -758,10 +768,10 @@ export const saleService = {
 
             if (!groups.has(saleId)) {
                 const paymentMethod = PAYMENT_MODE_MAP[row.paymentMode.toLowerCase().trim()] ?? PaymentMethod.OTHER;
-                const parsedDate = new Date(row.date);
+                const parsedDate = parseImportDate(row.date, timeZone);
                 const cashierId = (row.staff ? cashierByName.get(row.staff.toLowerCase().trim()) : undefined) ?? importerId;
                 groups.set(saleId, {
-                    date: isNaN(parsedDate.getTime()) ? new Date() : parsedDate,
+                    date: parsedDate ?? new Date(),
                     paymentMethod,
                     cashierId,
                     discount: row.seniorDiscount ?? 0,
