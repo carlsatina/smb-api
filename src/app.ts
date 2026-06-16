@@ -6,6 +6,7 @@ import { requestId } from './middlewares/requestId';
 import { requestLogger } from './middlewares/requestLogger';
 import { securityHeaders } from './middlewares/securityHeaders';
 import { captureHealthCheck } from './shared/errorReporting';
+import { aiRouter } from './modules/ai/ai.routes';
 import { auditLogRouter } from './modules/auditLogs/auditLog.routes';
 import { dailySalesRouter } from './modules/dailySales/dailySales.routes';
 import { expenseRouter } from './modules/expenses/expense.routes';
@@ -79,6 +80,7 @@ export const createApp = () => {
     app.use('/api/v1/stores/:storeId/invites', storeInviteRouter);
     app.use('/api/v1/stores/:storeId/daily-sales', dailySalesRouter);
     app.use('/api/v1/stores/:storeId/expenses', expenseRouter);
+    app.use('/api/v1/stores/:storeId/ai', aiRouter);
 
     app.use(errorHandler);
 
