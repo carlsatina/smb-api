@@ -49,19 +49,38 @@ const zonedWallTimeToUtc = (
     return new Date(utcGuess - refined);
 };
 
+const fromComponents = (
+    year: number,
+    month: number,
+    day: number,
+    hour: number,
+    minute: number,
+    second: number,
+    timeZone: string
+): Date | null => {
+    const parsed = zonedWallTimeToUtc(year, month, day, hour, minute, second, timeZone);
+    return isNaN(parsed.getTime()) ? null : parsed;
+};
+
 // Matches an explicit UTC/offset suffix: trailing "Z" or "+HH:MM" / "-HH:MM" / "+HHMM".
 const HAS_EXPLICIT_OFFSET = /(?:Z|[+-]\d{2}:?\d{2})$/i;
 
 // Matches a naive ISO-like date or datetime with no zone information.
 const NAIVE_ISO = /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?$/;
 
+// Matches slash/dash/dot-separated spreadsheet/locale dates with an optional
+// time and AM/PM — e.g. "7/31/2025, 8:36:55 PM", "31/7/2025 20:36", "7-31-2025".
+// Excel/Sheets emit these after opening an exported CSV, and they carry no zone.
+const SLASH_DATETIME =
+    /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})(?:[ ,T]+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*([AaPp][Mm])?)?$/;
+
 /**
  * Parses a date string for CSV import, interpreting timezone-less values as
  * wall-clock time in the given store `timeZone`.
  *
  * - Strings with an explicit offset/Z (e.g. our own exports) parse as-is.
- * - Naive ISO-like strings ("2026-06-15", "2026-06-15 14:30") are interpreted
- *   in `timeZone`.
+ * - Naive ISO strings ("2025-07-31", "2025-07-31 20:36") and locale/spreadsheet
+ *   strings ("7/31/2025, 8:36:55 PM") are interpreted in `timeZone`.
  * - Anything else falls back to the native Date parser.
  *
  * Returns null when the value cannot be parsed into a valid date.
@@ -70,21 +89,34 @@ export const parseImportDate = (value: string, timeZone: string): Date | null =>
     const trimmed = value.trim();
     if (!trimmed) return null;
 
-    if (!HAS_EXPLICIT_OFFSET.test(trimmed)) {
-        const match = NAIVE_ISO.exec(trimmed);
-        if (match) {
-            const [, y, mo, d, h, mi, s] = match;
-            const parsed = zonedWallTimeToUtc(
-                Number(y),
-                Number(mo),
-                Number(d),
-                h ? Number(h) : 0,
-                mi ? Number(mi) : 0,
-                s ? Number(s) : 0,
-                timeZone
-            );
-            return isNaN(parsed.getTime()) ? null : parsed;
+    // Explicit timezone present (our ISO exports) — trust the native parser.
+    if (HAS_EXPLICIT_OFFSET.test(trimmed)) {
+        const explicit = new Date(trimmed);
+        return isNaN(explicit.getTime()) ? null : explicit;
+    }
+
+    const iso = NAIVE_ISO.exec(trimmed);
+    if (iso) {
+        const [, y, mo, d, h, mi, s] = iso;
+        return fromComponents(Number(y), Number(mo), Number(d), h ? Number(h) : 0, mi ? Number(mi) : 0, s ? Number(s) : 0, timeZone);
+    }
+
+    const slash = SLASH_DATETIME.exec(trimmed);
+    if (slash) {
+        let month = Number(slash[1]);
+        let day = Number(slash[2]);
+        // Disambiguate D/M vs M/D: a first field > 12 can only be the day.
+        if (month > 12 && day <= 12) {
+            [month, day] = [day, month];
         }
+        const year = Number(slash[3]);
+        let hour = slash[4] ? Number(slash[4]) : 0;
+        const minute = slash[5] ? Number(slash[5]) : 0;
+        const second = slash[6] ? Number(slash[6]) : 0;
+        const meridiem = slash[7]?.toLowerCase();
+        if (meridiem === 'pm' && hour < 12) hour += 12;
+        if (meridiem === 'am' && hour === 12) hour = 0;
+        return fromComponents(year, month, day, hour, minute, second, timeZone);
     }
 
     const fallback = new Date(trimmed);

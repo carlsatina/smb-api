@@ -31,6 +31,18 @@ describe('parseImportDate', () => {
         expect(utc).toBe('2026-06-15T20:00:00.000Z');
     });
 
+    it('interprets en-US spreadsheet datetimes (M/D/YYYY, h:mm:ss AM/PM) in the store timezone', () => {
+        // 8:36:55 PM Manila on Jul 31 = 12:36:55 UTC — must NOT be read as UTC (+8h bug).
+        expect(parseImportDate('7/31/2025, 8:36:55 PM', MANILA)?.toISOString()).toBe('2025-07-31T12:36:55.000Z');
+        // 3:09 PM Manila → 07:09 UTC (regression: previously showed as 11:09 PM).
+        expect(parseImportDate('7/24/2025, 3:09:54 PM', MANILA)?.toISOString()).toBe('2025-07-24T07:09:54.000Z');
+    });
+
+    it('handles 24-hour and day-first slash dates', () => {
+        expect(parseImportDate('31/7/2025 20:36', MANILA)?.toISOString()).toBe('2025-07-31T12:36:00.000Z');
+        expect(parseImportDate('7/31/2025 20:36:00', MANILA)?.toISOString()).toBe('2025-07-31T12:36:00.000Z');
+    });
+
     it('returns null for unparseable or empty input', () => {
         expect(parseImportDate('garbage', MANILA)).toBeNull();
         expect(parseImportDate('', MANILA)).toBeNull();
