@@ -5,6 +5,9 @@ export const registerSchema = z.object({
     password: z.string().min(8),
     fullName: z.string().min(1).optional(),
     plan: z.enum(['STANDARD', 'GROWTH']).optional(),
+    // When registering to accept a store invite, the invite token proves the user
+    // controls this inbox — so the account is created already email-verified.
+    inviteToken: z.string().min(1).optional(),
 });
 
 export const loginSchema = z.object({

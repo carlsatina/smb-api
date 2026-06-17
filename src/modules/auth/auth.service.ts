@@ -132,6 +132,19 @@ const createEmailVerificationToken = async (userId: string) => {
     return { token, expiresAt };
 };
 
+// True when the token matches a pending (unaccepted, unexpired) store invite
+// addressed to this email — i.e. proof the user controls the inbox.
+const isInviteForEmail = async (token: string, normalizedEmail: string): Promise<boolean> => {
+    const invite = await prisma.storeInvite.findUnique({
+        where: { tokenHash: hashToken(token) },
+        select: { email: true, acceptedAt: true, expiresAt: true },
+    });
+    if (!invite || invite.acceptedAt || invite.expiresAt <= new Date()) {
+        return false;
+    }
+    return normalizeEmail(invite.email) === normalizedEmail;
+};
+
 const sendVerificationForUser = async (user: { id: string; email: string; emailVerifiedAt: Date | null }) => {
     if (user.emailVerifiedAt) {
         return { sent: false };
@@ -147,12 +160,24 @@ const sendVerificationForUser = async (user: { id: string; email: string; emailV
 };
 
 export const authService = {
-    register: async (email: string, password: string, fullName?: string, plan?: 'STANDARD' | 'GROWTH') => {
+    register: async (
+        email: string,
+        password: string,
+        fullName?: string,
+        plan?: 'STANDARD' | 'GROWTH',
+        inviteToken?: string
+    ) => {
         const normalizedEmail = normalizeEmail(email);
         const existing = await prisma.user.findUnique({ where: { email: normalizedEmail } });
         if (existing) {
             throw new AppError('EMAIL_IN_USE', 'Email already registered', 409);
         }
+
+        // A valid invite token (emailed to this address) proves inbox ownership, so
+        // the account can be created already verified and skip the verification email.
+        const invitePreVerified = inviteToken
+            ? await isInviteForEmail(inviteToken, normalizedEmail)
+            : false;
 
         const passwordHash = await bcrypt.hash(password, 10);
         const trialEndsAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
@@ -162,6 +187,7 @@ export const authService = {
                 passwordHash,
                 fullName,
                 subscriptionActive: true,
+                ...(invitePreVerified && { emailVerifiedAt: new Date() }),
                 ...(plan && { grantedPlan: plan, grantedUntil: trialEndsAt }),
             },
         });
@@ -169,7 +195,10 @@ export const authService = {
         const accessToken = signAccessToken(user.id, user.email, user.isSuperAdmin);
         const refreshToken = signRefreshToken(user.id);
         await storeRefreshToken(user.id, refreshToken);
-        await sendVerificationForUser(user);
+        // Already-verified invite users don't need (and shouldn't get) a verification email.
+        if (!invitePreVerified) {
+            await sendVerificationForUser(user);
+        }
 
         return {
             user: {

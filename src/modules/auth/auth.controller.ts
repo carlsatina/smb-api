@@ -30,7 +30,7 @@ import {
 
 export const register = asyncHandler(async (req: Request, res: Response) => {
     const payload = registerSchema.parse(req.body);
-    const result = await authService.register(payload.email, payload.password, payload.fullName, payload.plan);
+    const result = await authService.register(payload.email, payload.password, payload.fullName, payload.plan, payload.inviteToken);
     setRefreshTokenCookie(res, result.refreshToken);
     const csrfToken = generateCsrfToken();
     setCsrfTokenCookie(res, csrfToken);
