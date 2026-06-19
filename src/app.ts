@@ -15,6 +15,7 @@ import { authRouter } from './modules/auth/auth.routes';
 import { ingredientRouter } from './modules/ingredients/ingredient.routes';
 import { inventoryRouter } from './modules/inventory/inventory.routes';
 import { productRouter } from './modules/products/product.routes';
+import { productPackagingRouter } from './modules/productPackaging/productPackaging.routes';
 import { purchaseOrderRouter } from './modules/purchaseOrders/purchaseOrder.routes';
 import { recipeRouter } from './modules/recipes/recipe.routes';
 import { reportsRouter } from './modules/reports/reports.routes';
@@ -70,6 +71,7 @@ export const createApp = () => {
     app.use('/api/v1/stores/:storeId/products', productRouter);
     app.use('/api/v1/stores/:storeId/ingredients', ingredientRouter);
     app.use('/api/v1/stores/:storeId/products/:productId/recipe-lines', recipeRouter);
+    app.use('/api/v1/stores/:storeId/products/:productId/packaging', productPackagingRouter);
     app.use('/api/v1/stores/:storeId/inventory', inventoryRouter);
     app.use('/api/v1/stores/:storeId/sales', saleRouter);
     app.use('/api/v1/stores/:storeId/reports', reportsRouter);

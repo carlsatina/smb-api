@@ -53,6 +53,11 @@ enum SaleStatus {
   VOIDED
 }
 
+enum OrderType {
+  DINE_IN
+  TAKEOUT
+}
+
 enum PaymentMethod {
   CASH
   CARD
@@ -95,22 +100,22 @@ model User {
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
-  memberships   StoreMember[]
-  invites       StoreInvite[]  @relation("InvitedBy")
-  refreshTokens RefreshToken[]
-  passwordResetTokens PasswordResetToken[]
+  memberships             StoreMember[]
+  invites                 StoreInvite[]            @relation("InvitedBy")
+  refreshTokens           RefreshToken[]
+  passwordResetTokens     PasswordResetToken[]
   emailVerificationTokens EmailVerificationToken[]
-  auditLogs     AuditLog[]     @relation("Actor")
-  sales         Sale[]         @relation("Cashier")
-  receipts      PurchaseReceipt[] @relation("ReceivedBy")
-  movements     InventoryMovement[] @relation("CreatedBy")
-  userFeatures         UserFeature[]          @relation("UserFeatureUser")
-  grantedUserFeatures  UserFeature[]          @relation("UserFeatureGrantedBy")
-  dailySalesEntries    DailySalesEntry[]      @relation("DailySalesCreatedBy")
-  dailySalesGoals      DailySalesGoal[]       @relation("DailySalesGoalCreatedBy")
-  cashierEntries       DailySalesCashierEntry[] @relation("CashierEntryUser")
-  billingNoticesSent   BillingNotice[]        @relation("BillingNoticeSentBy")
-  expenses             Expense[]              @relation("ExpenseCreatedBy")
+  auditLogs               AuditLog[]               @relation("Actor")
+  sales                   Sale[]                   @relation("Cashier")
+  receipts                PurchaseReceipt[]        @relation("ReceivedBy")
+  movements               InventoryMovement[]      @relation("CreatedBy")
+  userFeatures            UserFeature[]            @relation("UserFeatureUser")
+  grantedUserFeatures     UserFeature[]            @relation("UserFeatureGrantedBy")
+  dailySalesEntries       DailySalesEntry[]        @relation("DailySalesCreatedBy")
+  dailySalesGoals         DailySalesGoal[]         @relation("DailySalesGoalCreatedBy")
+  cashierEntries          DailySalesCashierEntry[] @relation("CashierEntryUser")
+  billingNoticesSent      BillingNotice[]          @relation("BillingNoticeSentBy")
+  expenses                Expense[]                @relation("ExpenseCreatedBy")
 }
 
 model BillingNotice {
@@ -135,12 +140,12 @@ model BillingNotice {
 }
 
 model RefreshToken {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   userId    String
-  tokenHash String   @unique
+  tokenHash String    @unique
   expiresAt DateTime
   revokedAt DateTime?
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -148,12 +153,12 @@ model RefreshToken {
 }
 
 model PasswordResetToken {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   userId    String
-  tokenHash String   @unique
+  tokenHash String    @unique
   expiresAt DateTime
   usedAt    DateTime?
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -161,12 +166,12 @@ model PasswordResetToken {
 }
 
 model EmailVerificationToken {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   userId    String
-  tokenHash String   @unique
+  tokenHash String    @unique
   expiresAt DateTime
   usedAt    DateTime?
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -174,27 +179,27 @@ model EmailVerificationToken {
 }
 
 model Store {
-  id                 String    @id @default(cuid())
-  name               String
-  storeType          StoreType @default(RETAIL)
-  timezone           String    @default("Asia/Manila")
-  currency           String    @default("PHP")
-  unitOptions        String[] @default([])
-  categoryOptions    String[] @default([])
-  expenseCategoryOptions String[] @default([])
-  allowNegativeStock          Boolean  @default(false)
-  lowStockThreshold           Decimal  @default(0) @db.Decimal(12, 4)
-  defaultTaxRate              Decimal  @default(0) @db.Decimal(5, 2)
-  defaultDiscount             Decimal  @default(0) @db.Decimal(12, 2)
-  cashierSalesHistoryLimit    Int?
-  paymentMethods              String[] @default(["CASH", "CARD", "TRANSFER", "GCASH", "MAYA", "OTHER"])
-  aiProvider                  AiProvider?
-  aiModel                     String?
-  aiApiKeyEncrypted           String?
-  aiApiKeyLast4               String?
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
-  deletedAt          DateTime?
+  id                       String      @id @default(cuid())
+  name                     String
+  storeType                StoreType   @default(RETAIL)
+  timezone                 String      @default("Asia/Manila")
+  currency                 String      @default("PHP")
+  unitOptions              String[]    @default([])
+  categoryOptions          String[]    @default([])
+  expenseCategoryOptions   String[]    @default([])
+  allowNegativeStock       Boolean     @default(false)
+  lowStockThreshold        Decimal     @default(0) @db.Decimal(12, 4)
+  defaultTaxRate           Decimal     @default(0) @db.Decimal(5, 2)
+  defaultDiscount          Decimal     @default(0) @db.Decimal(12, 2)
+  cashierSalesHistoryLimit Int?
+  paymentMethods           String[]    @default(["CASH", "CARD", "TRANSFER", "GCASH", "MAYA", "OTHER"])
+  aiProvider               AiProvider?
+  aiModel                  String?
+  aiApiKeyEncrypted        String?
+  aiApiKeyLast4            String?
+  createdAt                DateTime    @default(now())
+  updatedAt                DateTime    @updatedAt
+  deletedAt                DateTime?
 
   members            StoreMember[]
   invites            StoreInvite[]
@@ -214,11 +219,11 @@ model Store {
 }
 
 model StoreMember {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   storeId   String
   userId    String
   role      Role
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
   deletedAt DateTime?
 
   store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
@@ -230,15 +235,15 @@ model StoreMember {
 }
 
 model StoreInvite {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   storeId     String
   email       String
   role        Role
-  tokenHash   String   @unique
+  tokenHash   String    @unique
   expiresAt   DateTime
   acceptedAt  DateTime?
   invitedById String
-  createdAt   DateTime @default(now())
+  createdAt   DateTime  @default(now())
 
   store     Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
   invitedBy User  @relation("InvitedBy", fields: [invitedById], references: [id], onDelete: Cascade)
@@ -259,15 +264,16 @@ model Product {
   unit              String
   category          String?
   active            Boolean     @default(true)
-  lowStockThreshold Decimal? @db.Decimal(12, 4)
+  lowStockThreshold Decimal?    @db.Decimal(12, 4)
   createdAt         DateTime    @default(now())
   updatedAt         DateTime    @updatedAt
   deletedAt         DateTime?
 
-  store     Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  recipe    Recipe?
-  saleItems SaleItem[]
-  purchaseOrderItems PurchaseOrderItem[]
+  store                Store                 @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  recipe               Recipe?
+  saleItems            SaleItem[]
+  packagingLines       ProductPackaging[]
+  purchaseOrderItems   PurchaseOrderItem[]
   purchaseReceiptItems PurchaseReceiptItem[]
 
   @@unique([storeId, sku])
@@ -290,9 +296,10 @@ model Ingredient {
   updatedAt         DateTime           @updatedAt
   deletedAt         DateTime?
 
-  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  lines RecipeLine[]
-  purchaseOrderItems PurchaseOrderItem[]
+  store                Store                 @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  lines                RecipeLine[]
+  packagingLines       ProductPackaging[]
+  purchaseOrderItems   PurchaseOrderItem[]
   purchaseReceiptItems PurchaseReceiptItem[]
 
   @@unique([storeId, name])
@@ -300,15 +307,15 @@ model Ingredient {
 }
 
 model Recipe {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   storeId   String
-  productId String   @unique
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  productId String    @unique
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  store   Store   @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  store   Store        @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  product Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
   lines   RecipeLine[]
 
   @@index([storeId, createdAt])
@@ -326,21 +333,34 @@ model RecipeLine {
   @@unique([recipeId, ingredientId])
 }
 
+model ProductPackaging {
+  id           String  @id @default(cuid())
+  productId    String
+  ingredientId String
+  qtyPerUnit   Decimal @db.Decimal(12, 4)
+
+  product    Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
+  ingredient Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, ingredientId])
+  @@index([productId])
+}
+
 model InventoryMovement {
-  id                   String       @id @default(cuid())
-  storeId              String
-  itemType             ItemType
-  itemId               String
-  qtyDelta             Decimal      @db.Decimal(12, 4)
-  unitCost             Decimal?     @db.Decimal(12, 4)
-  type                 MovementType
-  referenceType        String?
-  referenceId          String?
-  note                 String?
-  createdById          String?
-  counterpartStoreId   String?
+  id                    String       @id @default(cuid())
+  storeId               String
+  itemType              ItemType
+  itemId                String
+  qtyDelta              Decimal      @db.Decimal(12, 4)
+  unitCost              Decimal?     @db.Decimal(12, 4)
+  type                  MovementType
+  referenceType         String?
+  referenceId           String?
+  note                  String?
+  createdById           String?
+  counterpartStoreId    String?
   counterpartMovementId String?
-  createdAt            DateTime     @default(now())
+  createdAt             DateTime     @default(now())
 
   store     Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
   createdBy User? @relation("CreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
@@ -350,23 +370,24 @@ model InventoryMovement {
 }
 
 model Sale {
-  id            String      @id @default(cuid())
+  id            String        @id @default(cuid())
   storeId       String
   cashierId     String
-  status        SaleStatus  @default(DRAFT)
+  status        SaleStatus    @default(DRAFT)
   receiptNumber Int?
-  subtotal      Decimal     @db.Decimal(12, 2)
-  discount      Decimal     @db.Decimal(12, 2)
-  tax           Decimal     @db.Decimal(12, 2)
-  total         Decimal     @db.Decimal(12, 2)
+  subtotal      Decimal       @db.Decimal(12, 2)
+  discount      Decimal       @db.Decimal(12, 2)
+  tax           Decimal       @db.Decimal(12, 2)
+  total         Decimal       @db.Decimal(12, 2)
   paymentMethod PaymentMethod
-  createdAt     DateTime    @default(now())
+  orderType     OrderType     @default(DINE_IN)
+  createdAt     DateTime      @default(now())
   finalizedAt   DateTime?
   voidedAt      DateTime?
   deletedAt     DateTime?
 
-  store   Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  cashier User  @relation("Cashier", fields: [cashierId], references: [id])
+  store   Store      @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  cashier User       @relation("Cashier", fields: [cashierId], references: [id])
   items   SaleItem[]
 
   @@unique([storeId, receiptNumber])
@@ -375,14 +396,14 @@ model Sale {
 }
 
 model SaleItem {
-  id           String   @id @default(cuid())
+  id           String  @id @default(cuid())
   saleId       String
   productId    String
-  qty          Decimal  @db.Decimal(12, 4)
-  unitPrice    Decimal  @db.Decimal(12, 2)
-  discount     Decimal  @db.Decimal(12, 2)
-  tax          Decimal  @db.Decimal(12, 2)
-  total        Decimal  @db.Decimal(12, 2)
+  qty          Decimal @db.Decimal(12, 4)
+  unitPrice    Decimal @db.Decimal(12, 2)
+  discount     Decimal @db.Decimal(12, 2)
+  tax          Decimal @db.Decimal(12, 2)
+  total        Decimal @db.Decimal(12, 2)
   nameSnapshot String
 
   sale    Sale    @relation(fields: [saleId], references: [id], onDelete: Cascade)
@@ -392,16 +413,16 @@ model SaleItem {
 }
 
 model Supplier {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   storeId   String
   name      String
   email     String?
   phone     String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  store          Store          @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  store          Store           @relation(fields: [storeId], references: [id], onDelete: Cascade)
   purchaseOrders PurchaseOrder[]
 
   @@unique([storeId, name])
@@ -438,8 +459,8 @@ model PurchaseOrder {
   updatedAt    DateTime            @updatedAt
   deletedAt    DateTime?
 
-  store    Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  supplier Supplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  store    Store               @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  supplier Supplier?           @relation(fields: [supplierId], references: [id], onDelete: SetNull)
   items    PurchaseOrderItem[]
   receipts PurchaseReceipt[]
 
@@ -448,14 +469,14 @@ model PurchaseOrder {
 }
 
 model PurchaseOrderItem {
-  id              String  @id @default(cuid())
+  id              String   @id @default(cuid())
   purchaseOrderId String
   itemType        ItemType @default(PRODUCT)
   productId       String?
   ingredientId    String?
-  qtyOrdered      Decimal @db.Decimal(12, 4)
-  qtyReceived     Decimal @db.Decimal(12, 4) @default(0)
-  unitCost        Decimal @db.Decimal(12, 4)
+  qtyOrdered      Decimal  @db.Decimal(12, 4)
+  qtyReceived     Decimal  @default(0) @db.Decimal(12, 4)
+  unitCost        Decimal  @db.Decimal(12, 4)
 
   purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
   product       Product?      @relation(fields: [productId], references: [id])
@@ -466,7 +487,7 @@ model PurchaseOrderItem {
 }
 
 model PurchaseReceipt {
-  id             String   @id @default(cuid())
+  id              String   @id @default(cuid())
   storeId         String
   purchaseOrderId String?
   invoiceNumber   String?
@@ -474,26 +495,26 @@ model PurchaseReceipt {
   receivedAt      DateTime @default(now())
   totalCost       Decimal  @db.Decimal(12, 2)
 
-  store         Store          @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  purchaseOrder PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id], onDelete: SetNull)
-  receivedBy    User           @relation("ReceivedBy", fields: [receivedById], references: [id])
+  store         Store                 @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  purchaseOrder PurchaseOrder?        @relation(fields: [purchaseOrderId], references: [id], onDelete: SetNull)
+  receivedBy    User                  @relation("ReceivedBy", fields: [receivedById], references: [id])
   items         PurchaseReceiptItem[]
 
   @@index([storeId, receivedAt])
 }
 
 model PurchaseReceiptItem {
-  id          String  @id @default(cuid())
-  receiptId   String
-  itemType    ItemType @default(PRODUCT)
-  productId   String?
+  id           String   @id @default(cuid())
+  receiptId    String
+  itemType     ItemType @default(PRODUCT)
+  productId    String?
   ingredientId String?
-  qtyReceived Decimal @db.Decimal(12, 4)
-  unitCost    Decimal @db.Decimal(12, 4)
+  qtyReceived  Decimal  @db.Decimal(12, 4)
+  unitCost     Decimal  @db.Decimal(12, 4)
 
-  receipt PurchaseReceipt @relation(fields: [receiptId], references: [id], onDelete: Cascade)
-  product Product?        @relation(fields: [productId], references: [id])
-  ingredient Ingredient?  @relation(fields: [ingredientId], references: [id])
+  receipt    PurchaseReceipt @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  product    Product?        @relation(fields: [productId], references: [id])
+  ingredient Ingredient?     @relation(fields: [ingredientId], references: [id])
 
   @@index([receiptId])
 }
@@ -554,10 +575,10 @@ model DailySalesEntry {
   seniorDiscount Decimal   @default(0) @db.Decimal(12, 2)
   actualCoh      Decimal?  @db.Decimal(12, 2)
   createdById    String
-  createdBy   User      @relation("DailySalesCreatedBy", fields: [createdById], references: [id])
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  deletedAt   DateTime?
+  createdBy      User      @relation("DailySalesCreatedBy", fields: [createdById], references: [id])
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
 
   cashierEntries DailySalesCashierEntry[]
 

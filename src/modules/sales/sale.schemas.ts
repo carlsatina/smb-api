@@ -1,4 +1,4 @@
-import { PaymentMethod, SaleStatus } from '@prisma/client';
+import { OrderType, PaymentMethod, SaleStatus } from '@prisma/client';
 import { z } from 'zod';
 
 const optionalString = z.string().min(1).optional();
@@ -43,6 +43,7 @@ export const saleItemSchema = z.object({
 export const saleFinalizeSchema = z.object({
     items: z.array(saleItemSchema).min(1),
     paymentMethod: z.nativeEnum(PaymentMethod),
+    orderType: z.nativeEnum(OrderType).default(OrderType.DINE_IN),
 });
 
 export const saleListQuerySchema = z.object({

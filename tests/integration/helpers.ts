@@ -37,6 +37,7 @@ export const resetDb = async () => {
     await prisma.purchaseReceiptItem.deleteMany();
     await prisma.purchaseOrderItem.deleteMany();
     await prisma.recipeLine.deleteMany();
+    await prisma.productPackaging.deleteMany();
     await prisma.inventoryMovement.deleteMany();
     await prisma.sale.deleteMany();
     await prisma.purchaseReceipt.deleteMany();

@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto';
 import {
     ItemType,
     MovementType,
+    OrderType,
     PaymentMethod,
     Prisma,
     ProductType,
@@ -29,6 +30,11 @@ type MovementDelta = {
 type RecipeLine = {
     ingredientId: string;
     qtyPerProductUnit: number;
+};
+
+type PackagingLine = {
+    ingredientId: string;
+    qtyPerUnit: number;
 };
 
 const normalizeDecimal = (value: Prisma.Decimal | null | undefined) => Number(value ?? 0);
@@ -92,6 +98,44 @@ const loadRecipeLines = async (storeId: string, productIds: string[]) => {
             qtyPerProductUnit: normalizeDecimal(line.qtyPerProductUnit),
         });
         map.set(productId, existing);
+    });
+
+    return map;
+};
+
+const loadPackagingLines = async (storeId: string, productIds: string[]) => {
+    if (productIds.length === 0) {
+        return new Map<string, PackagingLine[]>();
+    }
+
+    const lines = await prisma.productPackaging.findMany({
+        where: {
+            product: {
+                storeId,
+                deletedAt: null,
+            },
+            productId: {
+                in: productIds,
+            },
+            ingredient: {
+                deletedAt: null,
+            },
+        },
+        select: {
+            productId: true,
+            ingredientId: true,
+            qtyPerUnit: true,
+        },
+    });
+
+    const map = new Map<string, PackagingLine[]>();
+    lines.forEach((line) => {
+        const existing = map.get(line.productId) ?? [];
+        existing.push({
+            ingredientId: line.ingredientId,
+            qtyPerUnit: normalizeDecimal(line.qtyPerUnit),
+        });
+        map.set(line.productId, existing);
     });
 
     return map;
@@ -168,7 +212,9 @@ const buildMovementDeltas = (
         type: ProductType;
     }>,
     recipeLinesByProduct: Map<string, RecipeLine[]>,
-    direction: 1 | -1
+    direction: 1 | -1,
+    orderType: OrderType,
+    packagingLinesByProduct: Map<string, PackagingLine[]>
 ) => {
     const productMap = new Map(products.map((product) => [product.id, product]));
     const deltaMap = new Map<string, MovementDelta>();
@@ -187,6 +233,17 @@ const buildMovementDeltas = (
         const product = productMap.get(item.productId);
         if (!product) {
             throw new AppError('PRODUCT_NOT_FOUND', 'Product not found', 404);
+        }
+
+        if (orderType === OrderType.TAKEOUT) {
+            const packagingLines = packagingLinesByProduct.get(product.id) ?? [];
+            packagingLines.forEach((line) => {
+                addDelta(
+                    ItemType.INGREDIENT,
+                    line.ingredientId,
+                    direction * -1 * item.qty * line.qtyPerUnit
+                );
+            });
         }
 
         if (product.type === ProductType.READY_MADE) {
@@ -304,6 +361,7 @@ const mapSaleSummary = (
     tax: normalizeDecimal(sale.tax),
     total: normalizeDecimal(sale.total),
     paymentMethod: sale.paymentMethod,
+    orderType: sale.orderType,
     createdAt: sale.createdAt,
     finalizedAt: sale.finalizedAt,
     voidedAt: sale.voidedAt,
@@ -336,6 +394,7 @@ const mapSaleDetail = (
     tax: normalizeDecimal(sale.tax),
     total: normalizeDecimal(sale.total),
     paymentMethod: sale.paymentMethod,
+    orderType: sale.orderType,
     createdAt: sale.createdAt,
     finalizedAt: sale.finalizedAt,
     voidedAt: sale.voidedAt,
@@ -411,7 +470,11 @@ export const saleService = {
 
         return mapSaleDetail(sale);
     },
-    finalize: async (storeId: string, userId: string, payload: { items: SaleItemInput[]; paymentMethod: PaymentMethod }) => {
+    finalize: async (
+        storeId: string,
+        userId: string,
+        payload: { items: SaleItemInput[]; paymentMethod: PaymentMethod; orderType: OrderType }
+    ) => {
         if (!payload.items.length) {
             throw new AppError('INVALID_ITEMS', 'Sale must include at least one item.', 400);
         }
@@ -461,13 +524,20 @@ export const saleService = {
             }
         });
 
+        const packagingLinesByProduct =
+            payload.orderType === OrderType.TAKEOUT
+                ? await loadPackagingLines(storeId, uniqueProductIds)
+                : new Map<string, PackagingLine[]>();
+
         const { saleItems, totals } = calculateSaleItems(payload.items, new Map(products.map((p) => [p.id, { name: p.name }])));
 
         const movementDeltas = buildMovementDeltas(
             payload.items,
             products.map((product) => ({ id: product.id, type: product.type })),
             recipeLinesByProduct,
-            1
+            1,
+            payload.orderType,
+            packagingLinesByProduct
         );
 
         const ingredientIds = movementDeltas
@@ -518,6 +588,7 @@ export const saleService = {
                     tax: new Prisma.Decimal(totals.tax),
                     total: new Prisma.Decimal(totals.total),
                     paymentMethod: payload.paymentMethod,
+                    orderType: payload.orderType,
                     finalizedAt: new Date(),
                 },
             });
@@ -602,11 +673,18 @@ export const saleService = {
 
         const recipeLinesByProduct = await loadRecipeLines(storeId, recipeProductIds);
 
+        const packagingLinesByProduct =
+            sale.orderType === OrderType.TAKEOUT
+                ? await loadPackagingLines(storeId, products.map((product) => product.id))
+                : new Map<string, PackagingLine[]>();
+
         const movementDeltas = buildMovementDeltas(
             items,
             products.map((product) => ({ id: product.id, type: product.type })),
             recipeLinesByProduct,
-            -1
+            -1,
+            sale.orderType,
+            packagingLinesByProduct
         );
 
         const ingredientIds = movementDeltas
