@@ -201,6 +201,79 @@ const buildMovementResponse = async (
     });
 };
 
+// Resolve the destination-store ingredient that a transfer should land on,
+// creating a matching copy from the source ingredient when none exists.
+// Ingredient name is unique per store (@@unique([storeId, name])), so we match
+// by name and revive a soft-deleted match rather than hitting that constraint.
+const findOrCreateDestinationIngredientId = async (
+    tx: Prisma.TransactionClient,
+    destStoreId: string,
+    source: Prisma.IngredientGetPayload<{}>
+): Promise<string> => {
+    const existing = await tx.ingredient.findFirst({
+        where: { storeId: destStoreId, name: source.name },
+        select: { id: true, deletedAt: true },
+    });
+    if (existing) {
+        if (existing.deletedAt) {
+            await tx.ingredient.update({
+                where: { id: existing.id },
+                data: { deletedAt: null, active: true },
+            });
+        }
+        return existing.id;
+    }
+    const created = await tx.ingredient.create({
+        data: {
+            store: { connect: { id: destStoreId } },
+            name: source.name,
+            unit: source.unit,
+            category: source.category,
+            costPerUnit: source.costPerUnit,
+            purchaseUnit: source.purchaseUnit,
+            purchaseUnitSize: source.purchaseUnitSize,
+            lowStockThreshold: source.lowStockThreshold,
+        },
+        select: { id: true },
+    });
+    return created.id;
+};
+
+// Resolve the destination-store product for a transfer. Products have no unique
+// name, so match an active READY_MADE product by name; otherwise create one.
+// sku/barcode are left null to avoid the per-store unique constraints colliding
+// with unrelated destination products.
+const findOrCreateDestinationProductId = async (
+    tx: Prisma.TransactionClient,
+    destStoreId: string,
+    source: Prisma.ProductGetPayload<{}>
+): Promise<string> => {
+    const existing = await tx.product.findFirst({
+        where: {
+            storeId: destStoreId,
+            name: source.name,
+            type: ProductType.READY_MADE,
+            deletedAt: null,
+        },
+        select: { id: true },
+    });
+    if (existing) return existing.id;
+    const created = await tx.product.create({
+        data: {
+            store: { connect: { id: destStoreId } },
+            name: source.name,
+            type: ProductType.READY_MADE,
+            price: source.price,
+            cost: source.cost,
+            unit: source.unit,
+            category: source.category,
+            lowStockThreshold: source.lowStockThreshold,
+        },
+        select: { id: true },
+    });
+    return created.id;
+};
+
 export const inventoryService = {
     getStock: async (storeId: string, itemType?: ItemType, itemId?: string) => {
         return buildStockItems(storeId, itemType, itemId);
@@ -396,23 +469,23 @@ export const inventoryService = {
         if (!destStore) throw new AppError('NOT_FOUND', 'Destination store not found', 404);
 
         let itemName = '';
+        let sourceProduct: Prisma.ProductGetPayload<{}> | null = null;
+        let sourceIngredient: Prisma.IngredientGetPayload<{}> | null = null;
         if (data.itemType === ItemType.PRODUCT) {
-            const product = await prisma.product.findFirst({
+            sourceProduct = await prisma.product.findFirst({
                 where: { id: data.itemId, storeId: sourceStoreId, deletedAt: null },
-                select: { name: true, type: true },
             });
-            if (!product) throw new AppError('NOT_FOUND', 'Product not found', 404);
-            if (product.type !== ProductType.READY_MADE) {
+            if (!sourceProduct) throw new AppError('NOT_FOUND', 'Product not found', 404);
+            if (sourceProduct.type !== ProductType.READY_MADE) {
                 throw new AppError('INVALID_PRODUCT_TYPE', 'Recipe products cannot be transferred directly.', 400);
             }
-            itemName = product.name;
+            itemName = sourceProduct.name;
         } else {
-            const ingredient = await prisma.ingredient.findFirst({
+            sourceIngredient = await prisma.ingredient.findFirst({
                 where: { id: data.itemId, storeId: sourceStoreId, deletedAt: null },
-                select: { name: true },
             });
-            if (!ingredient) throw new AppError('NOT_FOUND', 'Ingredient not found', 404);
-            itemName = ingredient.name;
+            if (!sourceIngredient) throw new AppError('NOT_FOUND', 'Ingredient not found', 404);
+            itemName = sourceIngredient.name;
         }
 
         const currentQty = normalizeDecimal(
@@ -442,11 +515,19 @@ export const inventoryService = {
                 include: { createdBy: { select: { id: true, fullName: true, email: true } } },
             });
 
+            // The destination store keeps its own item catalog, so land the
+            // incoming stock on a matching destination item (created if needed)
+            // rather than the source store's item id.
+            const destItemId =
+                data.itemType === ItemType.PRODUCT
+                    ? await findOrCreateDestinationProductId(tx, data.destinationStoreId, sourceProduct!)
+                    : await findOrCreateDestinationIngredientId(tx, data.destinationStoreId, sourceIngredient!);
+
             const inMov = await tx.inventoryMovement.create({
                 data: {
                     store: { connect: { id: data.destinationStoreId } },
                     itemType: data.itemType,
-                    itemId: data.itemId,
+                    itemId: destItemId,
                     qtyDelta: new Prisma.Decimal(data.qty),
                     type: MovementType.TRANSFER_IN,
                     counterpartStoreId: sourceStoreId,
@@ -472,6 +553,7 @@ export const inventoryService = {
                     meta: {
                         itemType: data.itemType,
                         itemId: data.itemId,
+                        destinationItemId: destItemId,
                         itemName,
                         qty: data.qty,
                         destinationStoreId: data.destinationStoreId,
@@ -530,27 +612,29 @@ export const inventoryService = {
             itemName: string;
             qty: number;
             currentQty: number;
+            sourceProduct: Prisma.ProductGetPayload<{}> | null;
+            sourceIngredient: Prisma.IngredientGetPayload<{}> | null;
         }> = [];
 
         for (const item of data.items) {
             let itemName = '';
+            let sourceProduct: Prisma.ProductGetPayload<{}> | null = null;
+            let sourceIngredient: Prisma.IngredientGetPayload<{}> | null = null;
             if (item.itemType === ItemType.PRODUCT) {
-                const product = await prisma.product.findFirst({
+                sourceProduct = await prisma.product.findFirst({
                     where: { id: item.itemId, storeId: sourceStoreId, deletedAt: null },
-                    select: { name: true, type: true },
                 });
-                if (!product) throw new AppError('NOT_FOUND', `Product ${item.itemId} not found`, 404);
-                if (product.type !== ProductType.READY_MADE) {
-                    throw new AppError('INVALID_PRODUCT_TYPE', `"${product.name}" is a recipe product and cannot be transferred directly.`, 400);
+                if (!sourceProduct) throw new AppError('NOT_FOUND', `Product ${item.itemId} not found`, 404);
+                if (sourceProduct.type !== ProductType.READY_MADE) {
+                    throw new AppError('INVALID_PRODUCT_TYPE', `"${sourceProduct.name}" is a recipe product and cannot be transferred directly.`, 400);
                 }
-                itemName = product.name;
+                itemName = sourceProduct.name;
             } else {
-                const ingredient = await prisma.ingredient.findFirst({
+                sourceIngredient = await prisma.ingredient.findFirst({
                     where: { id: item.itemId, storeId: sourceStoreId, deletedAt: null },
-                    select: { name: true },
                 });
-                if (!ingredient) throw new AppError('NOT_FOUND', `Ingredient ${item.itemId} not found`, 404);
-                itemName = ingredient.name;
+                if (!sourceIngredient) throw new AppError('NOT_FOUND', `Ingredient ${item.itemId} not found`, 404);
+                itemName = sourceIngredient.name;
             }
 
             const currentQty = normalizeDecimal(
@@ -565,7 +649,7 @@ export const inventoryService = {
                 );
             }
 
-            itemDetails.push({ ...item, itemName, currentQty });
+            itemDetails.push({ ...item, itemName, currentQty, sourceProduct, sourceIngredient });
         }
 
         const outMovements = await prisma.$transaction(async (tx) => {
@@ -588,11 +672,18 @@ export const inventoryService = {
                     include: { createdBy: { select: { id: true, fullName: true, email: true } } },
                 });
 
+                // Land incoming stock on a matching destination-store item
+                // (created if needed) instead of the source store's item id.
+                const destItemId =
+                    item.itemType === ItemType.PRODUCT
+                        ? await findOrCreateDestinationProductId(tx, data.destinationStoreId, item.sourceProduct!)
+                        : await findOrCreateDestinationIngredientId(tx, data.destinationStoreId, item.sourceIngredient!);
+
                 const inMov = await tx.inventoryMovement.create({
                     data: {
                         store: { connect: { id: data.destinationStoreId } },
                         itemType: item.itemType,
-                        itemId: item.itemId,
+                        itemId: destItemId,
                         qtyDelta: new Prisma.Decimal(item.qty),
                         type: MovementType.TRANSFER_IN,
                         counterpartStoreId: sourceStoreId,
