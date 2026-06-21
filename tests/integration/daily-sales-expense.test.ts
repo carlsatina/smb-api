@@ -26,12 +26,12 @@ const addExpense = (storeId: string, createdById: string, date: string, amount: 
 const findDay = (rows: any[], date: string) =>
     rows.find((r) => String(r.date).slice(0, 10) === date);
 
-describe('daily-sales expense derivation', () => {
+describe('daily-sales expense (add-only, stored on the entry)', () => {
     beforeEach(async () => {
         await resetDb();
     });
 
-    it('derives expense from itemized expenses, role-filtered, and honors overrides', async () => {
+    it('reports the stored entry expense and never reads itemized Expense records', async () => {
         const { user: owner, password: ownerPw } = await createUser({ planTier: PlanTier.STANDARD });
         const store = await createStoreWithOwner(owner.id, { timezone: 'UTC' });
         await grantDailySales(owner.id, owner.id);
@@ -41,10 +41,11 @@ describe('daily-sales expense derivation', () => {
         await grantDailySales(cashier.id, owner.id);
 
         const date = '2026-06-10';
+        // Itemized expenses exist for the day but must NOT flow into daily sales.
         await addExpense(store.id, owner.id, date, 500, 'Rent');
         await addExpense(store.id, owner.id, date, 30, 'Supplies');
 
-        // Daily-sales entry with no override (expense = null ⇒ derive).
+        // Entry with expense=null ⇒ daily-sales expense is 0 (no derivation).
         await prisma.dailySalesEntry.create({
             data: { storeId: store.id, date: new Date(Date.UTC(2026, 5, 10)), expense: null, createdById: owner.id },
         });
@@ -56,22 +57,20 @@ describe('daily-sales expense derivation', () => {
             .set('Authorization', `Bearer ${ownerToken}`);
         expect(ownerRes.status).toBe(200);
         const ownerRow = findDay(ownerRes.body.rows, date);
-        expect(ownerRow.expenseOverride).toBeNull();
-        expect(ownerRow.expenseDerived).toBe(530); // Rent + Supplies
-        expect(ownerRow.expense).toBe(530);
+        expect(ownerRow.expense).toBe(0); // itemized expenses are ignored
+        expect(ownerRow.expenseDerived).toBeUndefined();
+        expect(ownerRow.expenseOverride).toBeUndefined();
 
-        // Cashier: Rent excluded from the derived value.
+        // Cashier sees the same stored value (no role-filtered derivation anymore).
         const cashierAgent = createTestApp();
         const cashierToken = await login(cashierAgent, cashier.email, cashierPw);
         const cashierRes = await cashierAgent
             .get(`/api/v1/stores/${store.id}/daily-sales?year=2026&month=6`)
             .set('Authorization', `Bearer ${cashierToken}`);
         expect(cashierRes.status).toBe(200);
-        const cashierRow = findDay(cashierRes.body.rows, date);
-        expect(cashierRow.expenseDerived).toBe(30); // Supplies only
-        expect(cashierRow.expense).toBe(30);
+        expect(findDay(cashierRes.body.rows, date).expense).toBe(0);
 
-        // Owner sets a manual override → it wins over the derived value.
+        // Setting the expense stores it directly on the entry.
         const entryId = ownerRow.id;
         const patch = await ownerAgent
             .patch(`/api/v1/stores/${store.id}/daily-sales/${entryId}`)
@@ -82,9 +81,18 @@ describe('daily-sales expense derivation', () => {
         const afterRes = await ownerAgent
             .get(`/api/v1/stores/${store.id}/daily-sales?year=2026&month=6`)
             .set('Authorization', `Bearer ${ownerToken}`);
-        const afterRow = findDay(afterRes.body.rows, date);
-        expect(afterRow.expenseOverride).toBe(999);
-        expect(afterRow.expense).toBe(999);
-        expect(afterRow.expenseDerived).toBe(530);
+        expect(findDay(afterRes.body.rows, date).expense).toBe(999);
+
+        // Clearing it (null) returns to 0.
+        const clear = await ownerAgent
+            .patch(`/api/v1/stores/${store.id}/daily-sales/${entryId}`)
+            .set('Authorization', `Bearer ${ownerToken}`)
+            .send({ expense: null });
+        expect(clear.status).toBe(200);
+
+        const clearedRes = await ownerAgent
+            .get(`/api/v1/stores/${store.id}/daily-sales?year=2026&month=6`)
+            .set('Authorization', `Bearer ${ownerToken}`);
+        expect(findDay(clearedRes.body.rows, date).expense).toBe(0);
     });
 });

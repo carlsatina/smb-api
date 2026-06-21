@@ -17,7 +17,7 @@ export const listDailySales = asyncHandler(async (req: AuthRequest, res: Respons
     if (!storeId) throw new AppError('STORE_REQUIRED', 'Store is required', 400);
 
     const { year, month } = listDailySalesQuerySchema.parse(req.query);
-    const data = await dailySalesService.listMonth(storeId, year, month, req.storeRole);
+    const data = await dailySalesService.listMonth(storeId, year, month);
     res.status(200).json(data);
 });
 

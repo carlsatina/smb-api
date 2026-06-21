@@ -70,6 +70,34 @@ describe('expense CRUD', () => {
         expect(byCategory.body.expenses.every((e: any) => e.category === 'Rent')).toBe(true);
     });
 
+    it('defaults source to MANUAL and filters by source', async () => {
+        const { user, password } = await createUser({ planTier: PlanTier.STANDARD });
+        const store = await createStoreWithOwner(user.id);
+        const agent = createTestApp();
+        const token = await login(agent, user.email, password);
+        const auth = (req: any) => req.set('Authorization', `Bearer ${token}`);
+
+        const manual = await auth(
+            agent.post(`/api/v1/stores/${store.id}/expenses`).send({ date: '2026-06-10', amount: 100, category: 'Utilities' })
+        );
+        expect(manual.status).toBe(201);
+        expect(manual.body.expense.source).toBe('MANUAL');
+
+        const fromDailySales = await auth(
+            agent.post(`/api/v1/stores/${store.id}/expenses`).send({ date: '2026-06-10', amount: 50, category: 'Supplies', source: 'DAILY_SALES' })
+        );
+        expect(fromDailySales.status).toBe(201);
+        expect(fromDailySales.body.expense.source).toBe('DAILY_SALES');
+
+        const dsOnly = await auth(agent.get(`/api/v1/stores/${store.id}/expenses?source=DAILY_SALES`));
+        expect(dsOnly.body.expenses).toHaveLength(1);
+        expect(dsOnly.body.expenses[0].category).toBe('Supplies');
+
+        const manualOnly = await auth(agent.get(`/api/v1/stores/${store.id}/expenses?source=MANUAL`));
+        expect(manualOnly.body.expenses).toHaveLength(1);
+        expect(manualOnly.body.expenses[0].category).toBe('Utilities');
+    });
+
     it('blocks a STARTER plan owner via requirePlanFeature', async () => {
         const { user, password } = await createUser({ planTier: PlanTier.STARTER });
         const store = await createStoreWithOwner(user.id);

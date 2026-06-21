@@ -47,6 +47,11 @@ enum AiProvider {
   ANTHROPIC
 }
 
+enum ExpenseSource {
+  MANUAL
+  DAILY_SALES
+}
+
 enum SaleStatus {
   DRAFT
   FINALIZED
@@ -436,6 +441,7 @@ model Expense {
   amount      Decimal   @db.Decimal(12, 2)
   category    String
   note        String?
+  source      ExpenseSource @default(MANUAL)
   createdById String
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt

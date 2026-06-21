@@ -1,4 +1,4 @@
-import { Prisma, Role } from '@prisma/client';
+import { ExpenseSource, Prisma, Role } from '@prisma/client';
 import { AppError } from '../../shared/errors';
 import prisma from '../../../lib/prisma';
 import { expenseRepository, type ExpenseListFilters } from './expense.repository';
@@ -9,6 +9,7 @@ type ExpenseInput = {
     amount: number;
     category: string;
     note?: string | null;
+    source?: ExpenseSource;
 };
 
 const toDateOnly = (value: string) => new Date(`${value}T00:00:00.000Z`);
@@ -57,6 +58,7 @@ export const expenseService = {
             amount: new Prisma.Decimal(data.amount),
             category: data.category,
             note: data.note ?? null,
+            source: data.source,
             createdById: userId,
         });
     },
