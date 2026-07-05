@@ -543,7 +543,9 @@ export const purchaseOrderService = {
                   ${filters.from ? Prisma.sql`AND pr."receivedAt" >= ${filters.from}` : Prisma.sql``}
                   ${filters.to ? Prisma.sql`AND pr."receivedAt" <= ${filters.to}` : Prisma.sql``}
                   ${supplierFilterSql}
-                GROUP BY category
+                -- GROUP BY the select position: "category" would resolve to the
+                -- Product.category input column, not the CASE alias (42803).
+                GROUP BY 1
                 ORDER BY total DESC
                 LIMIT 6
             `,
