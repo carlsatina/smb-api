@@ -1,6 +1,7 @@
 import { ItemType, MovementType, Prisma, ProductType, StoreType } from '@prisma/client';
 import prisma from '../../../lib/prisma';
 import { AppError } from '../../shared/errors';
+import { parseImportDate } from '../../shared/datetime';
 import { inventoryRepository, MovementFilters } from './inventory.repository';
 
 type StockItem = {
@@ -36,6 +37,21 @@ const ensureStore = async (storeId: string) => {
     }
 
     return store;
+};
+
+// Resolves an optional backdated transfer date (YYYY-MM-DD) to midnight in the
+// source store's timezone, so catch-up transfers land on the intended day.
+// Returns undefined when no date is given, letting createdAt default to now.
+const resolveTransferDate = (transferDate: string | null | undefined, timezone: string): Date | undefined => {
+    if (!transferDate) return undefined;
+    const parsed = parseImportDate(transferDate, timezone || 'Asia/Manila');
+    if (!parsed) {
+        throw new AppError('INVALID_TRANSFER_DATE', 'Transfer date is invalid.', 400);
+    }
+    if (parsed.getTime() > Date.now()) {
+        throw new AppError('INVALID_TRANSFER_DATE', 'Transfer date cannot be in the future.', 400);
+    }
+    return parsed;
 };
 
 const buildStockItems = async (
@@ -445,6 +461,7 @@ export const inventoryService = {
             itemId: string;
             qty: number;
             note?: string | null;
+            transferDate?: string | null;
         }
     ) => {
         if (!userId) {
@@ -457,7 +474,7 @@ export const inventoryService = {
         const [sourceStore, destStore] = await Promise.all([
             prisma.store.findFirst({
                 where: { id: sourceStoreId, deletedAt: null },
-                select: { id: true, name: true, allowNegativeStock: true, storeType: true },
+                select: { id: true, name: true, allowNegativeStock: true, storeType: true, timezone: true },
             }),
             prisma.store.findFirst({
                 where: { id: data.destinationStoreId, deletedAt: null },
@@ -467,6 +484,8 @@ export const inventoryService = {
 
         if (!sourceStore) throw new AppError('NOT_FOUND', 'Source store not found', 404);
         if (!destStore) throw new AppError('NOT_FOUND', 'Destination store not found', 404);
+
+        const movementDate = resolveTransferDate(data.transferDate, sourceStore.timezone);
 
         let itemName = '';
         let sourceProduct: Prisma.ProductGetPayload<{}> | null = null;
@@ -511,6 +530,7 @@ export const inventoryService = {
                     counterpartStoreId: data.destinationStoreId,
                     note: data.note ?? null,
                     createdBy: { connect: { id: userId } },
+                    ...(movementDate ? { createdAt: movementDate } : {}),
                 },
                 include: { createdBy: { select: { id: true, fullName: true, email: true } } },
             });
@@ -534,6 +554,7 @@ export const inventoryService = {
                     counterpartMovementId: outMov.id,
                     note: data.note ?? null,
                     createdBy: { connect: { id: userId } },
+                    ...(movementDate ? { createdAt: movementDate } : {}),
                 },
                 include: { createdBy: { select: { id: true, fullName: true, email: true } } },
             });
@@ -559,6 +580,7 @@ export const inventoryService = {
                         destinationStoreId: data.destinationStoreId,
                         destinationStoreName: destStore.name,
                         note: data.note ?? null,
+                        transferDate: data.transferDate ?? null,
                         currentQty,
                         nextQty: currentQty - data.qty,
                     },
@@ -582,6 +604,7 @@ export const inventoryService = {
             destinationStoreId: string;
             items: Array<{ itemType: ItemType; itemId: string; qty: number }>;
             note?: string | null;
+            transferDate?: string | null;
         }
     ) => {
         if (!userId) {
@@ -594,7 +617,7 @@ export const inventoryService = {
         const [sourceStore, destStore] = await Promise.all([
             prisma.store.findFirst({
                 where: { id: sourceStoreId, deletedAt: null },
-                select: { id: true, name: true, allowNegativeStock: true, storeType: true },
+                select: { id: true, name: true, allowNegativeStock: true, storeType: true, timezone: true },
             }),
             prisma.store.findFirst({
                 where: { id: data.destinationStoreId, deletedAt: null },
@@ -604,6 +627,8 @@ export const inventoryService = {
 
         if (!sourceStore) throw new AppError('NOT_FOUND', 'Source store not found', 404);
         if (!destStore) throw new AppError('NOT_FOUND', 'Destination store not found', 404);
+
+        const movementDate = resolveTransferDate(data.transferDate, sourceStore.timezone);
 
         // Validate all items and fetch their names + current quantities
         const itemDetails: Array<{
@@ -668,6 +693,7 @@ export const inventoryService = {
                         counterpartStoreId: data.destinationStoreId,
                         note: data.note ?? null,
                         createdBy: { connect: { id: userId } },
+                        ...(movementDate ? { createdAt: movementDate } : {}),
                     },
                     include: { createdBy: { select: { id: true, fullName: true, email: true } } },
                 });
@@ -690,6 +716,7 @@ export const inventoryService = {
                         counterpartMovementId: outMov.id,
                         note: data.note ?? null,
                         createdBy: { connect: { id: userId } },
+                        ...(movementDate ? { createdAt: movementDate } : {}),
                     },
                     include: { createdBy: { select: { id: true, fullName: true, email: true } } },
                 });
@@ -714,6 +741,7 @@ export const inventoryService = {
                         destinationStoreId: data.destinationStoreId,
                         destinationStoreName: destStore.name,
                         note: data.note ?? null,
+                        transferDate: data.transferDate ?? null,
                         items: itemDetails.map((i) => ({
                             itemType: i.itemType,
                             itemId: i.itemId,

@@ -148,12 +148,19 @@ export const stockAdjustmentSchema = z
         }
     });
 
+const transferDateSchema = z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Transfer date must be in YYYY-MM-DD format.')
+    .optional()
+    .nullable();
+
 export const transferStockSchema = z.object({
     destinationStoreId: z.string().min(1),
     itemType: z.nativeEnum(ItemType),
     itemId: z.string().min(1),
     qty: z.number().positive(),
     note: z.string().max(500).optional().nullable(),
+    transferDate: transferDateSchema,
 });
 
 export const batchTransferStockSchema = z.object({
@@ -168,4 +175,5 @@ export const batchTransferStockSchema = z.object({
         )
         .min(1, 'At least one item is required.'),
     note: z.string().max(500).optional().nullable(),
+    transferDate: transferDateSchema,
 });
