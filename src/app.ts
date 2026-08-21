@@ -9,6 +9,7 @@ import { captureHealthCheck } from './shared/errorReporting';
 import { aiRouter } from './modules/ai/ai.routes';
 import { auditLogRouter } from './modules/auditLogs/auditLog.routes';
 import { dailySalesRouter } from './modules/dailySales/dailySales.routes';
+import { scheduleRouter } from './modules/schedules/schedule.routes';
 import { expenseRouter } from './modules/expenses/expense.routes';
 import { adminRouter } from './modules/admin/admin.routes';
 import { authRouter } from './modules/auth/auth.routes';
@@ -81,6 +82,7 @@ export const createApp = () => {
     app.use('/api/v1/stores/:storeId/members', storeMemberRouter);
     app.use('/api/v1/stores/:storeId/invites', storeInviteRouter);
     app.use('/api/v1/stores/:storeId/daily-sales', dailySalesRouter);
+    app.use('/api/v1/stores/:storeId/schedule', scheduleRouter);
     app.use('/api/v1/stores/:storeId/expenses', expenseRouter);
     app.use('/api/v1/stores/:storeId/ai', aiRouter);
 

@@ -121,6 +121,9 @@ model User {
   cashierEntries          DailySalesCashierEntry[] @relation("CashierEntryUser")
   billingNoticesSent      BillingNotice[]          @relation("BillingNoticeSentBy")
   expenses                Expense[]                @relation("ExpenseCreatedBy")
+  staffCompensations      StaffCompensation[]      @relation("StaffCompensationCreatedBy")
+  scheduleWeeks           ScheduleWeek[]           @relation("ScheduleWeekCreatedBy")
+  cashAdvances            CashAdvance[]            @relation("CashAdvanceCreatedBy")
 }
 
 model BillingNotice {
@@ -221,6 +224,10 @@ model Store {
   dailySalesGoals    DailySalesGoal[]
   billingNotices     BillingNotice[]
   expenses           Expense[]
+  shiftPresets       ShiftPreset[]
+  staffCompensations StaffCompensation[]
+  scheduleWeeks      ScheduleWeek[]
+  cashAdvances       CashAdvance[]
 }
 
 model StoreMember {
@@ -233,6 +240,10 @@ model StoreMember {
 
   store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
   user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  compensations    StaffCompensation[]
+  scheduleWeekRows ScheduleWeekRow[]
+  cashAdvances     CashAdvance[]
 
   @@unique([storeId, userId])
   @@index([storeId, createdAt])
@@ -435,16 +446,16 @@ model Supplier {
 }
 
 model Expense {
-  id          String    @id @default(cuid())
+  id          String        @id @default(cuid())
   storeId     String
-  date        DateTime  @db.Date
-  amount      Decimal   @db.Decimal(12, 2)
+  date        DateTime      @db.Date
+  amount      Decimal       @db.Decimal(12, 2)
   category    String
   note        String?
   source      ExpenseSource @default(MANUAL)
   createdById String
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
   deletedAt   DateTime?
 
   store     Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
@@ -612,4 +623,167 @@ model DailySalesCashierEntry {
 
   @@unique([dailySalesEntryId, userId])
   @@index([dailySalesEntryId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Staff scheduling & weekly payout
+//
+// Weeks are materialised rather than derived from a recurrence rule: rest days
+// and shifts move around week to week, and each week carries its own OT, cash
+// advance deductions and payout. `ShiftPreset` + "copy last week" cover the
+// "usual pattern" need without recurrence machinery.
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum ScheduleWeekStatus {
+  DRAFT
+  PUBLISHED
+}
+
+// Named shift patterns (e.g. "9AM - 6PM") so filling the grid is one click.
+model ShiftPreset {
+  id          String    @id @default(cuid())
+  storeId     String
+  store       Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  label       String
+  // Presentation token (see SHIFT_ICONS), not a raw icon name — the glyph
+  // vocabulary is a UI concern and grows without a migration.
+  icon        String    @default("none")
+  startMinute Int
+  endMinute   Int
+  sortOrder   Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  shifts ScheduleShift[]
+
+  @@index([storeId, sortOrder])
+}
+
+// Per-member pay rates, effective-dated so a raise never rewrites history.
+model StaffCompensation {
+  id            String      @id @default(cuid())
+  storeId       String
+  store         Store       @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  storeMemberId String
+  storeMember   StoreMember @relation(fields: [storeMemberId], references: [id], onDelete: Cascade)
+  dailyRate     Decimal     @db.Decimal(12, 2)
+  // Hourly OT rate = (dailyRate / hoursPerDay) * otMultiplier.
+  hoursPerDay   Decimal     @default(8) @db.Decimal(4, 2)
+  otMultiplier  Decimal     @default(1) @db.Decimal(4, 2)
+  effectiveFrom DateTime    @db.Date
+  effectiveTo   DateTime?   @db.Date
+  createdById   String
+  createdBy     User        @relation("StaffCompensationCreatedBy", fields: [createdById], references: [id])
+  createdAt     DateTime    @default(now())
+
+  @@index([storeMemberId, effectiveFrom])
+  @@index([storeId])
+}
+
+model ScheduleWeek {
+  id          String             @id @default(cuid())
+  storeId     String
+  store       Store              @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  // Always the store's configured week start day (Sunday by default).
+  weekStart   DateTime           @db.Date
+  status      ScheduleWeekStatus @default(DRAFT)
+  publishedAt DateTime?
+  createdById String
+  createdBy   User               @relation("ScheduleWeekCreatedBy", fields: [createdById], references: [id])
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  deletedAt   DateTime?
+
+  rows ScheduleWeekRow[]
+
+  @@unique([storeId, weekStart])
+  @@index([storeId, weekStart])
+}
+
+// One staff member's line in a week: the shift cells plus the payout columns.
+model ScheduleWeekRow {
+  id             String       @id @default(cuid())
+  scheduleWeekId String
+  scheduleWeek   ScheduleWeek @relation(fields: [scheduleWeekId], references: [id], onDelete: Cascade)
+  storeMemberId  String
+  storeMember    StoreMember  @relation(fields: [storeMemberId], references: [id], onDelete: Cascade)
+  // OT is entered by the owner, not derived — identical shift patterns can carry
+  // different OT. The UI shows a computed suggestion alongside the input.
+  otHours        Decimal      @default(0) @db.Decimal(6, 2)
+  remarks        String?
+  sortOrder      Int          @default(0)
+  // Rates are snapshotted on publish so a later raise cannot retroactively
+  // change a settled week. Null while the week is still DRAFT.
+  dailyRate      Decimal?     @db.Decimal(12, 2)
+  otHourlyRate   Decimal?     @db.Decimal(12, 2)
+  daysWorked     Int?
+  lessCa         Decimal?     @db.Decimal(12, 2)
+  payout         Decimal?     @db.Decimal(12, 2)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  shifts       ScheduleShift[]
+  caDeductions CashAdvanceDeduction[]
+
+  @@unique([scheduleWeekId, storeMemberId])
+  @@index([scheduleWeekId])
+  @@index([storeMemberId])
+}
+
+model ScheduleShift {
+  id                String          @id @default(cuid())
+  scheduleWeekRowId String
+  scheduleWeekRow   ScheduleWeekRow @relation(fields: [scheduleWeekRowId], references: [id], onDelete: Cascade)
+  date              DateTime        @db.Date
+  // The red "RD" cell. Explicit, so "deliberately off" is distinguishable from
+  // "not scheduled yet" (no row).
+  isRestDay         Boolean         @default(false)
+  // Minutes from local midnight in the store's timezone. endMinute may exceed
+  // 1440 for overnight shifts. Null when isRestDay.
+  startMinute       Int?
+  endMinute         Int?
+  presetId          String?
+  preset            ShiftPreset?    @relation(fields: [presetId], references: [id], onDelete: SetNull)
+
+  @@unique([scheduleWeekRowId, date])
+  @@index([scheduleWeekRowId])
+}
+
+// Cash advance ledger — replaces the hand-maintained "ca bal: …" remark.
+model CashAdvance {
+  id            String      @id @default(cuid())
+  storeId       String
+  store         Store       @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  storeMemberId String
+  storeMember   StoreMember @relation(fields: [storeMemberId], references: [id], onDelete: Cascade)
+  amount        Decimal     @db.Decimal(12, 2)
+  takenOn       DateTime    @db.Date
+  note          String?
+  createdById   String
+  createdBy     User        @relation("CashAdvanceCreatedBy", fields: [createdById], references: [id])
+  createdAt     DateTime    @default(now())
+  deletedAt     DateTime?
+
+  deductions CashAdvanceDeduction[]
+
+  @@index([storeId, storeMemberId])
+  @@index([storeMemberId, takenOn])
+}
+
+model CashAdvanceDeduction {
+  id                String          @id @default(cuid())
+  cashAdvanceId     String
+  cashAdvance       CashAdvance     @relation(fields: [cashAdvanceId], references: [id], onDelete: Cascade)
+  scheduleWeekRowId String
+  scheduleWeekRow   ScheduleWeekRow @relation(fields: [scheduleWeekRowId], references: [id], onDelete: Cascade)
+  amount            Decimal         @db.Decimal(12, 2)
+  // A deliberately skipped week is recorded as amount 0 with a reason, so the
+  // decision is visible rather than looking like missing data.
+  skipped           Boolean         @default(false)
+  reason            String?
+  createdAt         DateTime        @default(now())
+
+  @@unique([cashAdvanceId, scheduleWeekRowId])
+  @@index([scheduleWeekRowId])
 }
