@@ -1,6 +1,6 @@
 {
   "name": "sales-and-inventory-backend",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Express + Prisma API for the Sales & Inventory platform",
   "main": "dist/index.js",
   "engines": {
