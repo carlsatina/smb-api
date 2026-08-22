@@ -670,6 +670,9 @@ model StaffCompensation {
   dailyRate     Decimal     @db.Decimal(12, 2)
   // Hourly OT rate = (dailyRate / hoursPerDay) * otMultiplier.
   hoursPerDay   Decimal     @default(8) @db.Decimal(4, 2)
+  // Unpaid break deducted from each worked day when OT is computed from the
+  // roster. 0 keeps scheduled hours as-is.
+  breakMinutes  Int         @default(0)
   otMultiplier  Decimal     @default(1) @db.Decimal(4, 2)
   effectiveFrom DateTime    @db.Date
   effectiveTo   DateTime?   @db.Date
@@ -708,9 +711,11 @@ model ScheduleWeekRow {
   scheduleWeek   ScheduleWeek @relation(fields: [scheduleWeekId], references: [id], onDelete: Cascade)
   storeMemberId  String
   storeMember    StoreMember  @relation(fields: [storeMemberId], references: [id], onDelete: Cascade)
-  // OT is entered by the owner, not derived — identical shift patterns can carry
-  // different OT. The UI shows a computed suggestion alongside the input.
+  // Derived from the roster when otAuto, otherwise a manual override for this
+  // week. Both are kept because identical shift patterns can legitimately carry
+  // different OT — the owner overrides the computed figure when they do.
   otHours        Decimal      @default(0) @db.Decimal(6, 2)
+  otAuto         Boolean      @default(true)
   remarks        String?
   sortOrder      Int          @default(0)
   // Rates are snapshotted on publish so a later raise cannot retroactively

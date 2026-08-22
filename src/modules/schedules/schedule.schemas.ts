@@ -58,6 +58,8 @@ export const upsertWeekSchema = z.object({
             z.object({
                 storeMemberId: z.string().min(1),
                 otHours: z.number().min(0).max(200).default(0),
+                // true = derive from the roster; false = otHours is an override.
+                otAuto: z.boolean().default(true),
                 remarks: z.string().max(500).nullable().optional(),
                 sortOrder: z.number().int().min(0).default(0),
                 shifts: z.array(shiftSchema).max(7),
@@ -90,6 +92,7 @@ export const upsertPresetSchema = z.object({
 export const upsertCompensationSchema = z.object({
     dailyRate: z.number().min(0),
     hoursPerDay: z.number().min(1).max(24).default(8),
+    breakMinutes: z.number().int().min(0).max(480).default(0),
     otMultiplier: z.number().min(0).max(5).default(1),
     effectiveFrom: dateString,
 });

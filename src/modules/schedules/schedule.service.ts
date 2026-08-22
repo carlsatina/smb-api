@@ -2,7 +2,7 @@ import { Prisma, Role, ScheduleWeekStatus } from '@prisma/client';
 import prisma from '../../../lib/prisma';
 import { AppError } from '../../shared/errors';
 import { PresetData, scheduleRepository, ScheduleWeekWithRows } from './schedule.repository';
-import { computePayout, countDaysWorked, otHourlyRate, suggestedOtHours } from './schedule.payroll';
+import { computeOtHours, computePayout, countDaysWorked, otHourlyRate } from './schedule.payroll';
 
 // The week grid runs Sunday → Saturday, matching the payroll sheet this
 // replaces. If stores ever need a different start day this becomes a Store
@@ -53,6 +53,7 @@ type CompRow = {
     otMultiplier: Prisma.Decimal;
     effectiveFrom: Date;
     effectiveTo: Date | null;
+    breakMinutes: number;
 };
 
 // Resolves the rate in force on a date from a prefetched list. Callers load the
@@ -90,7 +91,10 @@ type RowPay = {
     otHourlyRate: number;
     lessCa: number;
     payout: number;
-    suggestedOtHours: number;
+    otAuto: boolean;
+    computedOtHours: number;
+    hoursPerDay: number;
+    breakMinutes: number;
     remarks: string | null;
     caBalance: number;
     deductions: { id: string; cashAdvanceId: string; amount: number; skipped: boolean; reason: string | null }[];
@@ -117,23 +121,32 @@ const buildRowPay = (
     comps: CompRow[]
 ): RowPay => {
     const daysWorked = countDaysWorked(row.shifts);
-    const otHours = toNum(row.otHours);
     const lessCa = row.caDeductions.reduce((sum, d) => sum + toNum(d.amount), 0);
 
     let dailyRate: number;
     let rowOtHourlyRate: number;
     let hoursPerDay = 8;
+    let breakMinutes = 0;
+
+    const comp = compensationOn(comps, row.storeMemberId, weekStart);
+    if (comp) {
+        hoursPerDay = toNum(comp.hoursPerDay) || 8;
+        breakMinutes = comp.breakMinutes;
+    }
 
     if (published && row.dailyRate !== null && row.otHourlyRate !== null) {
         // Settled week: use the frozen rates so history cannot drift.
         dailyRate = toNum(row.dailyRate);
         rowOtHourlyRate = toNum(row.otHourlyRate);
     } else {
-        const comp = compensationOn(comps, row.storeMemberId, weekStart);
         dailyRate = comp ? toNum(comp.dailyRate) : 0;
         rowOtHourlyRate = comp ? otHourlyRateFrom(comp) : 0;
-        if (comp) hoursPerDay = toNum(comp.hoursPerDay) || 8;
     }
+
+    const computedOt = computeOtHours(row.shifts, hoursPerDay, breakMinutes);
+    // A published row keeps whatever OT it was settled with; a draft on auto
+    // tracks the roster, and a manual row keeps the owner's number.
+    const otHours = published || !row.otAuto ? toNum(row.otHours) : computedOt;
 
     return {
         daysWorked,
@@ -142,7 +155,10 @@ const buildRowPay = (
         otHourlyRate: rowOtHourlyRate,
         lessCa,
         payout: computePayout({ daysWorked, dailyRate, otHours, otHourlyRate: rowOtHourlyRate, lessCa }),
-        suggestedOtHours: suggestedOtHours(row.shifts, hoursPerDay),
+        otAuto: row.otAuto,
+        computedOtHours: computedOt,
+        hoursPerDay,
+        breakMinutes,
         remarks: row.remarks,
         caBalance,
         deductions: row.caDeductions.map((d) => ({
@@ -279,6 +295,7 @@ export const scheduleService = {
             rows: {
                 storeMemberId: string;
                 otHours: number;
+                otAuto: boolean;
                 remarks?: string | null;
                 sortOrder: number;
                 shifts: { date: string; isRestDay: boolean; startMinute?: number | null; endMinute?: number | null; presetId?: string | null }[];
@@ -330,11 +347,13 @@ export const scheduleService = {
                         scheduleWeekId: week.id,
                         storeMemberId: row.storeMemberId,
                         otHours: new Prisma.Decimal(row.otHours),
+                        otAuto: row.otAuto,
                         remarks: row.remarks ?? null,
                         sortOrder: row.sortOrder,
                     },
                     update: {
                         otHours: new Prisma.Decimal(row.otHours),
+                        otAuto: row.otAuto,
                         remarks: row.remarks ?? null,
                         sortOrder: row.sortOrder,
                     },
@@ -402,10 +421,13 @@ export const scheduleService = {
             const dailyRate = toNum(comp.dailyRate);
             const rowOtHourlyRate = otHourlyRateFrom(comp);
             const lessCa = row.caDeductions.reduce((sum, d) => sum + toNum(d.amount), 0);
+            const otHours = row.otAuto
+                ? computeOtHours(row.shifts, toNum(comp.hoursPerDay) || 8, comp.breakMinutes)
+                : toNum(row.otHours);
             const payout = computePayout({
                 daysWorked,
                 dailyRate,
-                otHours: toNum(row.otHours),
+                otHours,
                 otHourlyRate: rowOtHourlyRate,
                 lessCa,
             });
@@ -415,6 +437,7 @@ export const scheduleService = {
                     where: { id: row.id },
                     data: {
                         daysWorked,
+                        otHours: new Prisma.Decimal(otHours),
                         dailyRate: new Prisma.Decimal(dailyRate),
                         otHourlyRate: new Prisma.Decimal(rowOtHourlyRate),
                         lessCa: new Prisma.Decimal(lessCa),
@@ -481,6 +504,7 @@ export const scheduleService = {
             rows: source.rows.map((row) => ({
                 storeMemberId: row.storeMemberId,
                 otHours: 0,
+                otAuto: true,
                 remarks: null,
                 sortOrder: row.sortOrder,
                 shifts: row.shifts.map((shift) => ({
@@ -569,6 +593,7 @@ export const scheduleService = {
                     ? {
                           dailyRate: toNum(current.dailyRate),
                           hoursPerDay: toNum(current.hoursPerDay),
+                          breakMinutes: current.breakMinutes,
                           otMultiplier: toNum(current.otMultiplier),
                           otHourlyRate: otHourlyRateFrom(current),
                           effectiveFrom: toDateString(current.effectiveFrom),
@@ -584,7 +609,7 @@ export const scheduleService = {
         storeId: string,
         storeMemberId: string,
         userId: string,
-        data: { dailyRate: number; hoursPerDay: number; otMultiplier: number; effectiveFrom: string }
+        data: { dailyRate: number; hoursPerDay: number; otMultiplier: number; breakMinutes: number; effectiveFrom: string }
     ) => {
         const member = await prisma.storeMember.findFirst({ where: { id: storeMemberId, storeId, deletedAt: null } });
         if (!member) throw new AppError('MEMBER_NOT_FOUND', 'Staff member not found in this store', 404);
@@ -606,6 +631,7 @@ export const scheduleService = {
                     storeMemberId,
                     dailyRate: new Prisma.Decimal(data.dailyRate),
                     hoursPerDay: new Prisma.Decimal(data.hoursPerDay),
+                    breakMinutes: data.breakMinutes,
                     otMultiplier: new Prisma.Decimal(data.otMultiplier),
                     effectiveFrom,
                     createdById: userId,
@@ -703,7 +729,7 @@ export const scheduleService = {
             );
         }
 
-        return prisma.cashAdvanceDeduction.upsert({
+        const saved = await prisma.cashAdvanceDeduction.upsert({
             where: {
                 cashAdvanceId_scheduleWeekRowId: { cashAdvanceId: data.cashAdvanceId, scheduleWeekRowId: rowId },
             },
@@ -720,6 +746,16 @@ export const scheduleService = {
                 reason: data.reason ?? null,
             },
         });
+
+        // Serialised in the same shape as the deductions on a week row, so the
+        // client can fold it straight into the grid instead of refetching.
+        return {
+            id: saved.id,
+            cashAdvanceId: saved.cashAdvanceId,
+            amount: toNum(saved.amount),
+            skipped: saved.skipped,
+            reason: saved.reason,
+        };
     },
 
     removeDeduction: async (storeId: string, rowId: string, deductionId: string) => {

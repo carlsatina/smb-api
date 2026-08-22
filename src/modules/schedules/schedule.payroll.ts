@@ -43,12 +43,23 @@ export const scheduledMinutes = (shifts: { isRestDay: boolean; startMinute: numb
         return total + (shift.endMinute - shift.startMinute);
     }, 0);
 
-export const suggestedOtHours = (
+// OT derived from the roster:
+//   (scheduled minutes − unpaid breaks) − (worked days × a regular day)
+//
+// The break matters: a 9AM-6PM shift is 9 scheduled hours, but with a 1-hour
+// unpaid break it is exactly one 8-hour day and generates no OT. Without it
+// every ordinary day would look like an hour of overtime.
+export const computeOtHours = (
     shifts: { isRestDay: boolean; startMinute: number | null; endMinute: number | null }[],
-    hoursPerDay: number
+    hoursPerDay: number,
+    breakMinutes = 0
 ): number => {
     const worked = countDaysWorked(shifts);
+    const paidMinutes = scheduledMinutes(shifts) - worked * Math.max(0, breakMinutes);
     const regularMinutes = worked * (hoursPerDay || 8) * 60;
-    const overMinutes = scheduledMinutes(shifts) - regularMinutes;
+    const overMinutes = paidMinutes - regularMinutes;
     return overMinutes > 0 ? Math.round((overMinutes / 60) * 100) / 100 : 0;
 };
+
+// Kept as the previous name for the "suggestion" reading; identical maths.
+export const suggestedOtHours = computeOtHours;

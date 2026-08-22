@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+    computeOtHours,
     computePayout,
     countDaysWorked,
     otHourlyRate,
@@ -97,5 +98,44 @@ describe('scheduledMinutes / suggestedOtHours', () => {
 
     it('never suggests negative OT', () => {
         expect(suggestedOtHours([NINE_TO_6, RD], 9)).toBe(0);
+    });
+});
+
+
+describe('computeOtHours — derived from the roster', () => {
+    // Mary's week: 12NN-9PM, RD, RD, 9AM-9PM, 9AM-9PM, 12NN-9PM, 12NN-9PM
+    const week = [NOON_TO_9, RD, RD, NINE_TO_9, NINE_TO_9, NOON_TO_9, NOON_TO_9];
+
+    it('with a 60-minute unpaid break, reproduces the sheet OT of 6', () => {
+        expect(computeOtHours(week, 8, 60)).toBe(6);
+    });
+
+    it('without a break, every 9-hour day reads as an extra hour of OT', () => {
+        expect(computeOtHours(week, 8, 0)).toBe(11);
+    });
+
+    it('a 9AM-6PM day with a 60-minute break is exactly a regular day', () => {
+        expect(computeOtHours([NINE_TO_6], 8, 60)).toBe(0);
+    });
+
+    it('rest days contribute no hours and no break deduction', () => {
+        expect(computeOtHours([RD, RD], 8, 60)).toBe(0);
+    });
+
+    it('never returns negative OT when shifts are shorter than a regular day', () => {
+        expect(computeOtHours([{ isRestDay: false, startMinute: at(9), endMinute: at(13) }], 8, 60)).toBe(0);
+    });
+
+    it('counts overnight shifts, whose end minute passes 1440', () => {
+        // 22:00 -> 06:00 is 8 scheduled hours; a 60-min break leaves 7 paid.
+        expect(computeOtHours([{ isRestDay: false, startMinute: at(22), endMinute: at(22) + 480 }], 8, 60)).toBe(0);
+        expect(computeOtHours([{ isRestDay: false, startMinute: at(22), endMinute: at(22) + 660 }], 8, 60)).toBe(2);
+    });
+
+    it('payout follows the derived OT', () => {
+        const ot = computeOtHours(week, 8, 60);
+        expect(
+            computePayout({ daysWorked: 5, dailyRate: 500, otHours: ot, otHourlyRate: 62.5, lessCa: 875 })
+        ).toBe(2000);
     });
 });
