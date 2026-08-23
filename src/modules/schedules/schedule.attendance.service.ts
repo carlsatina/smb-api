@@ -4,7 +4,7 @@ import { toZonedDateString, zonedStartOfDay } from '../../shared/datetime';
 import { RangeShiftRow, scheduleRepository, TimeEntryRow } from './schedule.repository';
 import { compensationOn } from './schedule.payroll';
 import { ClockPair, DayReconciliation, reconcileDay, ShiftPlan, sumWeek, toHours } from './schedule.attendance';
-import { Viewer } from './schedule.service';
+import { isSchedulableStaff, Viewer } from './schedule.service';
 
 // Tolerance before a punch is badged late/early. Zero keeps the badge honest —
 // the owner reconciles payroll from these numbers, so a 3-minute late punch
@@ -265,6 +265,10 @@ export const attendanceService = {
         }
 
         const targets = members.filter((m) => {
+            // The owner runs the store rather than working a rostered shift, so
+            // they stay out of the grid — the same rule the roster and the
+            // pay-rate list use.
+            if (!isSchedulableStaff(m.role)) return false;
             if (!isManager(viewer)) return m.id === viewerMember?.id;
             return storeMemberId ? m.id === storeMemberId : true;
         });

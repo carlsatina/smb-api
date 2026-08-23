@@ -124,6 +124,10 @@ describe('time clock', () => {
         expect(res.status).toBe(200);
         expect(res.body.attendance.canEdit).toBe(true);
 
+        // The owner runs the store rather than working a shift, so they are not
+        // a row in the grid — same rule the roster uses.
+        expect(res.body.attendance.rows.map((r: any) => r.role)).toEqual(['CASHIER']);
+
         const row = res.body.attendance.rows.find((r: any) => r.storeMemberId === member.id);
         const day = row.days.find((d: any) => d.date === WORK_DATE);
         expect(day.status).toBe('LATE');

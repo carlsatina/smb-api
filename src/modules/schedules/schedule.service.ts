@@ -45,7 +45,7 @@ const isManager = (viewer: Viewer) => MANAGER_ROLES.includes(viewer.role);
 // the presentation edge, not in the repository: `upsertWeek` validates against
 // the full membership list so a week that already contains an owner row still
 // saves. ADMIN stays in — an admin may well work shifts.
-const isSchedulableStaff = (role: Role) => role !== Role.OWNER;
+export const isSchedulableStaff = (role: Role) => role !== Role.OWNER;
 
 type CompRow = {
     storeMemberId: string;
