@@ -31,7 +31,7 @@ const parseConnectionConfig = (raw: string) => {
 
 const { connectionString: baseUrl, schema } = parseConnectionConfig(connectionString);
 const pool = new Pool({ connectionString: baseUrl });
-const adapter = new PrismaPg(pool);
+const adapter = new PrismaPg(pool, schema ? { schema } : undefined);
 const prisma = new PrismaClient({ adapter });
 
 export default prisma;

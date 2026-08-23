@@ -124,6 +124,7 @@ model User {
   staffCompensations      StaffCompensation[]      @relation("StaffCompensationCreatedBy")
   scheduleWeeks           ScheduleWeek[]           @relation("ScheduleWeekCreatedBy")
   cashAdvances            CashAdvance[]            @relation("CashAdvanceCreatedBy")
+  timeEntriesEdited       TimeEntry[]              @relation("TimeEntryEditedBy")
 }
 
 model BillingNotice {
@@ -228,6 +229,7 @@ model Store {
   staffCompensations StaffCompensation[]
   scheduleWeeks      ScheduleWeek[]
   cashAdvances       CashAdvance[]
+  timeEntries        TimeEntry[]
 }
 
 model StoreMember {
@@ -244,6 +246,7 @@ model StoreMember {
   compensations    StaffCompensation[]
   scheduleWeekRows ScheduleWeekRow[]
   cashAdvances     CashAdvance[]
+  timeEntries      TimeEntry[]
 
   @@unique([storeId, userId])
   @@index([storeId, createdAt])
@@ -751,6 +754,8 @@ model ScheduleShift {
   presetId          String?
   preset            ShiftPreset?    @relation(fields: [presetId], references: [id], onDelete: SetNull)
 
+  timeEntries TimeEntry[]
+
   @@unique([scheduleWeekRowId, date])
   @@index([scheduleWeekRowId])
 }
@@ -791,4 +796,47 @@ model CashAdvanceDeduction {
 
   @@unique([cashAdvanceId, scheduleWeekRowId])
   @@index([scheduleWeekRowId])
+}
+
+enum TimeEntrySource {
+  // Punched by the staff member from the Time In/Out button.
+  SELF
+  // Created or corrected by an owner/admin on the Attendance tab.
+  MANAGER
+}
+
+// One punch pair: a staff member's actual time in and time out for a work day.
+// Deliberately separate from ScheduleShift — the roster is the plan, this is
+// what happened, and reconciliation is the comparison of the two.
+model TimeEntry {
+  id              String          @id @default(cuid())
+  storeId         String
+  store           Store           @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  storeMemberId   String
+  storeMember     StoreMember     @relation(fields: [storeMemberId], references: [id], onDelete: Cascade)
+  // The shift this punch belongs to, resolved in the store's timezone at clock
+  // IN and then frozen. An overnight shift clocking out at 1AM must stay on the
+  // day it started, so this is never re-derived from clockOutAt.
+  workDate        DateTime        @db.Date
+  clockInAt       DateTime
+  // Null while the member is still clocked in — the open-entry marker.
+  clockOutAt      DateTime?
+  // Matched at clock-in when the roster has a shift that day. Null for an
+  // unscheduled punch, which reconciliation reports rather than rejects.
+  scheduleShiftId String?
+  scheduleShift   ScheduleShift?  @relation(fields: [scheduleShiftId], references: [id], onDelete: SetNull)
+  source          TimeEntrySource @default(SELF)
+  note            String?
+  // Set whenever a manager creates or corrects the entry, so an adjusted row is
+  // distinguishable from a punch the staff member made themselves.
+  editedById      String?
+  editedBy        User?           @relation("TimeEntryEditedBy", fields: [editedById], references: [id])
+  editedAt        DateTime?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  deletedAt       DateTime?
+
+  @@index([storeId, workDate])
+  @@index([storeMemberId, workDate])
+  @@index([scheduleShiftId])
 }

@@ -12,9 +12,21 @@ export default async () => {
         throw new Error('Integration tests are disabled. Set RUN_INTEGRATION_TESTS=true to run.');
     }
 
-    const baseUrl = process.env.DATABASE_URL;
+    const baseUrl = process.env.DATABASE_URL_TEST;
     if (!baseUrl) {
-        throw new Error('DATABASE_URL must be set to run integration tests.');
+        throw new Error('DATABASE_URL_TEST must be set to run integration tests.');
+    }
+
+    if (process.env.DATABASE_URL) {
+        const devDb = new URL(process.env.DATABASE_URL);
+        const testDb = new URL(baseUrl);
+        const sameServer = devDb.host === testDb.host;
+        const sameDatabase = devDb.pathname === testDb.pathname;
+        if (sameServer && sameDatabase) {
+            throw new Error(
+                'DATABASE_URL_TEST must point to a different database than DATABASE_URL.'
+            );
+        }
     }
 
     const schema = `test_${crypto.randomUUID().replace(/-/g, '')}`;

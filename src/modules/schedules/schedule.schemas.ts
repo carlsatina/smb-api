@@ -110,3 +110,25 @@ export const setDeductionSchema = z.object({
     skipped: z.boolean().default(false),
     reason: z.string().max(500).nullable().optional(),
 });
+
+// ── Time clock ───────────────────────────────────────────────────────────────
+
+export const attendanceRangeQuerySchema = z.object({
+    from: dateString,
+    to: dateString,
+    storeMemberId: z.string().min(1).optional(),
+});
+
+export const punchSchema = z.object({
+    note: z.string().max(500).nullable().optional(),
+});
+
+// Manager correction. Times are minutes from the work day's local midnight, the
+// same axis the roster uses, so an overnight punch-out is a value past 1440.
+export const upsertTimeEntrySchema = z.object({
+    storeMemberId: z.string().min(1),
+    workDate: dateString,
+    clockInMinute: minuteOfDay,
+    clockOutMinute: minuteOfDay.nullable().default(null),
+    note: z.string().max(500).nullable().optional(),
+});

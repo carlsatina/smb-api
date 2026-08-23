@@ -63,3 +63,27 @@ export const computeOtHours = (
 
 // Kept as the previous name for the "suggestion" reading; identical maths.
 export const suggestedOtHours = computeOtHours;
+
+// Effective-dated rate lookup. Generic over the row shape so it stays free of
+// Prisma types: callers load the store's compensation rows once and resolve in
+// memory, because a per-row query turns any multi-week view into an N+1.
+export type EffectiveDated = {
+    storeMemberId: string;
+    effectiveFrom: Date;
+    effectiveTo: Date | null;
+};
+
+export const compensationOn = <T extends EffectiveDated>(
+    comps: T[],
+    storeMemberId: string,
+    onDate: Date
+): T | null => {
+    let best: T | null = null;
+    for (const c of comps) {
+        if (c.storeMemberId !== storeMemberId) continue;
+        if (c.effectiveFrom > onDate) continue;
+        if (c.effectiveTo !== null && c.effectiveTo < onDate) continue;
+        if (!best || c.effectiveFrom > best.effectiveFrom) best = c;
+    }
+    return best;
+};

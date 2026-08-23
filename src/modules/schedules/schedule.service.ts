@@ -2,7 +2,8 @@ import { Prisma, Role, ScheduleWeekStatus } from '@prisma/client';
 import prisma from '../../../lib/prisma';
 import { AppError } from '../../shared/errors';
 import { PresetData, scheduleRepository, ScheduleWeekWithRows } from './schedule.repository';
-import { computeOtHours, computePayout, countDaysWorked, otHourlyRate } from './schedule.payroll';
+import { compensationOn, computeOtHours, computePayout, countDaysWorked, otHourlyRate } from './schedule.payroll';
+import { otHoursFromActual, toHours } from './schedule.attendance';
 
 // The week grid runs Sunday → Saturday, matching the payroll sheet this
 // replaces. If stores ever need a different start day this becomes a Store
@@ -56,20 +57,6 @@ type CompRow = {
     breakMinutes: number;
 };
 
-// Resolves the rate in force on a date from a prefetched list. Callers load the
-// store's compensation rows once and resolve in memory — a per-row query here
-// turns any multi-week view into an N+1.
-const compensationOn = (comps: CompRow[], storeMemberId: string, onDate: Date): CompRow | null => {
-    let best: CompRow | null = null;
-    for (const c of comps) {
-        if (c.storeMemberId !== storeMemberId) continue;
-        if (c.effectiveFrom > onDate) continue;
-        if (c.effectiveTo !== null && c.effectiveTo < onDate) continue;
-        if (!best || c.effectiveFrom > best.effectiveFrom) best = c;
-    }
-    return best;
-};
-
 // Payout math lives in ./schedule.payroll (pure, unit-tested). This adapts the
 // Prisma Decimal columns onto it.
 
@@ -97,6 +84,12 @@ type RowPay = {
     breakMinutes: number;
     remarks: string | null;
     caBalance: number;
+    // What the time clock actually recorded for the week, beside the roster's
+    // figures. Suggestions only — never written to the stored columns.
+    actualDaysWorked: number;
+    actualHours: number;
+    actualOtHours: number;
+    hasAttendance: boolean;
     deductions: { id: string; cashAdvanceId: string; amount: number; skipped: boolean; reason: string | null }[];
 };
 
@@ -113,12 +106,15 @@ const serialiseShift = (shift: ScheduleWeekWithRows['rows'][number]['shifts'][nu
     presetLabel: shift.preset?.label ?? null,
 });
 
+export type ActualWork = { minutes: number; daysWorked: number };
+
 const buildRowPay = (
     row: ScheduleWeekWithRows['rows'][number],
     weekStart: Date,
     published: boolean,
     caBalance: number,
-    comps: CompRow[]
+    comps: CompRow[],
+    actual: ActualWork | undefined
 ): RowPay => {
     const daysWorked = countDaysWorked(row.shifts);
     const lessCa = row.caDeductions.reduce((sum, d) => sum + toNum(d.amount), 0);
@@ -161,6 +157,12 @@ const buildRowPay = (
         breakMinutes,
         remarks: row.remarks,
         caBalance,
+        actualDaysWorked: actual?.daysWorked ?? 0,
+        actualHours: toHours(actual?.minutes ?? 0),
+        actualOtHours: otHoursFromActual(actual?.minutes ?? 0, actual?.daysWorked ?? 0, hoursPerDay),
+        // Separates "the clock recorded nothing" from "they worked zero hours",
+        // so the UI can stay quiet for stores that don't use the time clock.
+        hasAttendance: actual !== undefined,
         deductions: row.caDeductions.map((d) => ({
             id: d.id,
             cashAdvanceId: d.cashAdvanceId,
@@ -178,7 +180,8 @@ const serialiseWeek = (
     week: ScheduleWeekWithRows,
     viewer: Viewer,
     balances: Map<string, number>,
-    comps: CompRow[]
+    comps: CompRow[],
+    actuals: Map<string, ActualWork> = new Map()
 ) => {
     const published = week.status === ScheduleWeekStatus.PUBLISHED;
     const viewerMemberIds = new Set(
@@ -198,7 +201,14 @@ const serialiseWeek = (
             shifts: row.shifts.map(serialiseShift),
         };
         if (!canSeePay) return { ...base, pay: null };
-        const pay = buildRowPay(row, week.weekStart, published, balances.get(row.storeMemberId) ?? 0, comps);
+        const pay = buildRowPay(
+            row,
+            week.weekStart,
+            published,
+            balances.get(row.storeMemberId) ?? 0,
+            comps,
+            actuals.get(row.storeMemberId)
+        );
         return { ...base, pay };
     });
 
@@ -224,6 +234,41 @@ const cashAdvanceBalances = async (storeId: string): Promise<Map<string, number>
         balances.set(advance.storeMemberId, (balances.get(advance.storeMemberId) ?? 0) + outstanding);
     }
     return balances;
+};
+
+// Actual work per member across a date range, from the time clock. Durations
+// come straight from the punch instants (no timezone needed); only the day a
+// punch belongs to is timezone-sensitive, and that was frozen onto workDate at
+// clock-in. The unpaid break is deducted once per worked day, matching how the
+// roster side is measured.
+const actualWorkByMember = async (
+    storeId: string,
+    from: Date,
+    to: Date,
+    comps: CompRow[]
+): Promise<Map<string, ActualWork>> => {
+    const entries = await scheduleRepository.listTimeEntries(storeId, from, to);
+    const perDay = new Map<string, number>();
+
+    for (const entry of entries) {
+        if (!entry.clockOutAt) continue; // still on the clock — no total yet
+        const minutes = Math.max(0, (entry.clockOutAt.getTime() - entry.clockInAt.getTime()) / 60000);
+        const key = `${entry.storeMemberId}|${toDateString(entry.workDate)}`;
+        perDay.set(key, (perDay.get(key) ?? 0) + minutes);
+    }
+
+    const totals = new Map<string, ActualWork>();
+    for (const [key, rawMinutes] of perDay) {
+        const [storeMemberId, date] = key.split('|');
+        const comp = compensationOn(comps, storeMemberId, toUtcDate(date));
+        const minutes = Math.max(0, rawMinutes - Math.max(0, comp?.breakMinutes ?? 0));
+        const current = totals.get(storeMemberId) ?? { minutes: 0, daysWorked: 0 };
+        totals.set(storeMemberId, {
+            minutes: current.minutes + minutes,
+            daysWorked: current.daysWorked + (minutes > 0 ? 1 : 0),
+        });
+    }
+    return totals;
 };
 
 // ── Service ───────────────────────────────────────────────────────────────────
@@ -267,7 +312,8 @@ export const scheduleService = {
             };
         }
 
-        return { ...serialiseWeek(week, viewer, balances, comps), viewerMemberId };
+        const actuals = await actualWorkByMember(storeId, weekStart, addDays(weekStart, 6), comps);
+        return { ...serialiseWeek(week, viewer, balances, comps, actuals), viewerMemberId };
     },
 
     listWeeks: async (storeId: string, viewer: Viewer, from?: string, to?: string, limit = 12) => {
@@ -811,7 +857,9 @@ export const scheduleService = {
 
         for (const week of published) {
             for (const row of week.rows) {
-                const pay = buildRowPay(row, week.weekStart, true, 0, comps);
+                // Month totals read the settled payout columns only; attendance
+                // is a per-week reconciliation and is not aggregated here.
+                const pay = buildRowPay(row, week.weekStart, true, 0, comps, undefined);
                 let entry = totals.get(row.storeMemberId);
                 if (!entry) {
                     entry = {

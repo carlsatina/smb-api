@@ -172,4 +172,92 @@ export const scheduleRepository = {
             where: { id: cashAdvanceId, storeId, deletedAt: null },
             data: { deletedAt: new Date() },
         }),
+
+    // ── Time clock ────────────────────────────────────────────────────────────
+
+    // Punches carry instants, but every reconciliation is expressed in the
+    // store's local day — so the timezone is needed on every attendance path.
+    findStoreTimezone: (storeId: string) =>
+        prisma.store.findFirst({ where: { id: storeId, deletedAt: null }, select: { timezone: true } }),
+
+    // Rostered shifts for a whole store over a range, for the attendance grid.
+    listShiftsInRange: (storeId: string, from: Date, to: Date) =>
+        prisma.scheduleShift.findMany({
+            where: {
+                date: { gte: from, lte: to },
+                scheduleWeekRow: { scheduleWeek: { storeId, deletedAt: null } },
+            },
+            include: {
+                preset: { select: { label: true, icon: true } },
+                scheduleWeekRow: {
+                    select: {
+                        storeMemberId: true,
+                        scheduleWeek: { select: { status: true } },
+                    },
+                },
+            },
+            orderBy: { date: 'asc' },
+        }),
+
+    // At most one punch may be open per member; the service enforces that, and
+    // this is how it checks.
+    findOpenTimeEntry: (storeId: string, storeMemberId: string) =>
+        prisma.timeEntry.findFirst({
+            where: { storeId, storeMemberId, clockOutAt: null, deletedAt: null },
+            orderBy: { clockInAt: 'desc' },
+        }),
+
+    findTimeEntry: (storeId: string, id: string) =>
+        prisma.timeEntry.findFirst({ where: { id, storeId, deletedAt: null } }),
+
+    listTimeEntries: (storeId: string, from: Date, to: Date, storeMemberIds?: string[]) =>
+        prisma.timeEntry.findMany({
+            where: {
+                storeId,
+                deletedAt: null,
+                workDate: { gte: from, lte: to },
+                ...(storeMemberIds ? { storeMemberId: { in: storeMemberIds } } : {}),
+            },
+            include: { editedBy: { select: { fullName: true, email: true } } },
+            orderBy: [{ workDate: 'asc' }, { clockInAt: 'asc' }],
+        }),
+
+    createTimeEntry: (data: Prisma.TimeEntryUncheckedCreateInput) => prisma.timeEntry.create({ data }),
+
+    // Clock-in guarded against a double punch: the check and the insert share a
+    // transaction, so a double-tapped button cannot leave two open entries.
+    // Returns null when the member already has one open.
+    createTimeEntryIfIdle: (data: Prisma.TimeEntryUncheckedCreateInput) =>
+        prisma.$transaction(async (tx) => {
+            const open = await tx.timeEntry.findFirst({
+                where: {
+                    storeId: data.storeId,
+                    storeMemberId: data.storeMemberId,
+                    clockOutAt: null,
+                    deletedAt: null,
+                },
+            });
+            if (open) return null;
+            return tx.timeEntry.create({ data });
+        }),
+
+    updateTimeEntry: (id: string, data: Prisma.TimeEntryUncheckedUpdateInput) =>
+        prisma.timeEntry.update({ where: { id }, data }),
+
+    softDeleteTimeEntry: (storeId: string, id: string) =>
+        prisma.timeEntry.updateMany({
+            where: { id, storeId, deletedAt: null },
+            data: { deletedAt: new Date() },
+        }),
 };
+
+export type TimeEntryRow = Prisma.TimeEntryGetPayload<{
+    include: { editedBy: { select: { fullName: true; email: true } } };
+}>;
+
+export type RangeShiftRow = Prisma.ScheduleShiftGetPayload<{
+    include: {
+        preset: { select: { label: true; icon: true } };
+        scheduleWeekRow: { select: { storeMemberId: true; scheduleWeek: { select: { status: true } } } };
+    };
+}>;

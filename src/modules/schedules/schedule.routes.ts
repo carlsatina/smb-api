@@ -3,16 +3,22 @@ import { Role } from '@prisma/client';
 import { authMiddleware } from '../../middlewares/auth';
 import { requireStoreRole } from '../../middlewares/requireStoreRole';
 import {
+    clockIn,
+    clockOut,
     copyWeek,
     createCashAdvance,
     createPreset,
+    createTimeEntry,
     deleteCashAdvance,
     deletePreset,
+    deleteTimeEntry,
     deleteWeek,
     getMemberMonth,
     getMonthSummary,
+    getMyAttendance,
     getStackedMonth,
     getWeek,
+    listAttendance,
     listCashAdvances,
     listCompensations,
     listMembers,
@@ -23,6 +29,7 @@ import {
     setCompensation,
     setDeduction,
     updatePreset,
+    updateTimeEntry,
     upsertWeek,
 } from './schedule.controller';
 
@@ -74,3 +81,17 @@ scheduleRouter.delete('/cash-advances/:cashAdvanceId', ...managers, deleteCashAd
 // Per-week deductions against an advance
 scheduleRouter.put('/rows/:rowId/deduction', ...managers, setDeduction);
 scheduleRouter.delete('/rows/:rowId/deduction/:deductionId', ...managers, removeDeduction);
+
+// ── Time clock ───────────────────────────────────────────────────────────────
+// Punching is self-service: any member clocks themselves in and out, and the
+// service resolves *which* member from the session — never from the body.
+scheduleRouter.get('/attendance/me', ...anyMember, getMyAttendance);
+scheduleRouter.post('/attendance/clock-in', ...anyMember, clockIn);
+scheduleRouter.post('/attendance/clock-out', ...anyMember, clockOut);
+
+// Attendance is pay-adjacent, so the service returns only the viewer's own rows
+// to staff. Corrections are manager-only — otherwise the clock is decorative.
+scheduleRouter.get('/attendance', ...anyMember, listAttendance);
+scheduleRouter.post('/attendance', ...managers, createTimeEntry);
+scheduleRouter.put('/attendance/:entryId', ...managers, updateTimeEntry);
+scheduleRouter.delete('/attendance/:entryId', ...managers, deleteTimeEntry);

@@ -49,6 +49,25 @@ const zonedWallTimeToUtc = (
     return new Date(utcGuess - refined);
 };
 
+/**
+ * The calendar date (YYYY-MM-DD) an instant falls on in `timeZone`. Used to
+ * decide which work day a punch belongs to — the store's day, not UTC's.
+ */
+export const toZonedDateString = (instant: Date, timeZone: string): string => {
+    const offset = getTimezoneOffsetMs(instant, timeZone);
+    return new Date(instant.getTime() + offset).toISOString().slice(0, 10);
+};
+
+/**
+ * The UTC instant of local midnight on `dateString` (YYYY-MM-DD) in `timeZone`.
+ * Minutes measured from here can exceed 1440, which is exactly what an
+ * overnight shift needs.
+ */
+export const zonedStartOfDay = (dateString: string, timeZone: string): Date => {
+    const [year, month, day] = dateString.split('-').map(Number);
+    return zonedWallTimeToUtc(year, month, day, 0, 0, 0, timeZone);
+};
+
 const fromComponents = (
     year: number,
     month: number,

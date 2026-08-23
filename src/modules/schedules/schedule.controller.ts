@@ -4,6 +4,7 @@ import { AuthRequest } from '../../middlewares/auth';
 import { asyncHandler } from '../../shared/asyncHandler';
 import { AppError } from '../../shared/errors';
 import {
+    attendanceRangeQuerySchema,
     copyWeekSchema,
     createCashAdvanceSchema,
     getWeekQuerySchema,
@@ -11,12 +12,15 @@ import {
     memberMonthQuerySchema,
     monthQuerySchema,
     publishWeekSchema,
+    punchSchema,
     setDeductionSchema,
     upsertCompensationSchema,
     upsertPresetSchema,
+    upsertTimeEntrySchema,
     upsertWeekSchema,
 } from './schedule.schemas';
 import { scheduleService, Viewer } from './schedule.service';
+import { attendanceService } from './schedule.attendance.service';
 
 // Every handler resolves the viewer from the authenticated session, never from
 // the request body — the service uses it to decide which pay columns to return.
@@ -187,5 +191,58 @@ export const removeDeduction = asyncHandler(async (req: AuthRequest, res: Respon
     const { rowId, deductionId } = req.params;
     if (!rowId || !deductionId) throw new AppError('BAD_REQUEST', 'Row and deduction are required', 400);
     await scheduleService.removeDeduction(storeId, rowId, deductionId);
+    res.status(204).send();
+});
+
+// ── Time clock ───────────────────────────────────────────────────────────────
+
+export const getMyAttendance = asyncHandler(async (req: AuthRequest, res: Response) => {
+    const { storeId, viewer } = requireContext(req);
+    const state = await attendanceService.current(storeId, viewer);
+    res.status(200).json({ attendance: state });
+});
+
+export const clockIn = asyncHandler(async (req: AuthRequest, res: Response) => {
+    const { storeId, viewer } = requireContext(req);
+    const { note } = punchSchema.parse(req.body ?? {});
+    const state = await attendanceService.clockIn(storeId, viewer, note);
+    res.status(201).json({ attendance: state });
+});
+
+export const clockOut = asyncHandler(async (req: AuthRequest, res: Response) => {
+    const { storeId, viewer } = requireContext(req);
+    const { note } = punchSchema.parse(req.body ?? {});
+    const state = await attendanceService.clockOut(storeId, viewer, note);
+    res.status(200).json({ attendance: state });
+});
+
+export const listAttendance = asyncHandler(async (req: AuthRequest, res: Response) => {
+    const { storeId, viewer } = requireContext(req);
+    const { from, to, storeMemberId } = attendanceRangeQuerySchema.parse(req.query);
+    const attendance = await attendanceService.list(storeId, viewer, from, to, storeMemberId);
+    res.status(200).json({ attendance });
+});
+
+export const createTimeEntry = asyncHandler(async (req: AuthRequest, res: Response) => {
+    const { storeId, viewer } = requireContext(req);
+    const body = upsertTimeEntrySchema.parse(req.body);
+    const entry = await attendanceService.upsertEntry(storeId, viewer, body);
+    res.status(201).json({ entry });
+});
+
+export const updateTimeEntry = asyncHandler(async (req: AuthRequest, res: Response) => {
+    const { storeId, viewer } = requireContext(req);
+    const entryId = req.params.entryId;
+    if (!entryId) throw new AppError('BAD_REQUEST', 'Time entry is required', 400);
+    const body = upsertTimeEntrySchema.parse(req.body);
+    const entry = await attendanceService.upsertEntry(storeId, viewer, { ...body, entryId });
+    res.status(200).json({ entry });
+});
+
+export const deleteTimeEntry = asyncHandler(async (req: AuthRequest, res: Response) => {
+    const { storeId } = requireContext(req);
+    const entryId = req.params.entryId;
+    if (!entryId) throw new AppError('BAD_REQUEST', 'Time entry is required', 400);
+    await attendanceService.deleteEntry(storeId, entryId);
     res.status(204).send();
 });
