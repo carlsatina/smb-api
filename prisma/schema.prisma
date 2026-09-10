@@ -52,6 +52,12 @@ enum ExpenseSource {
   DAILY_SALES
 }
 
+enum DailyInventoryReportType {
+  TAKOYAKI
+  BUKO
+  CUSTOM
+}
+
 enum SaleStatus {
   DRAFT
   FINALIZED
@@ -125,6 +131,7 @@ model User {
   scheduleWeeks           ScheduleWeek[]           @relation("ScheduleWeekCreatedBy")
   cashAdvances            CashAdvance[]            @relation("CashAdvanceCreatedBy")
   timeEntriesEdited       TimeEntry[]              @relation("TimeEntryEditedBy")
+  dailyInventoryReports   DailyInventoryReport[]   @relation("DailyInventoryCreatedBy")
 }
 
 model BillingNotice {
@@ -230,6 +237,7 @@ model Store {
   scheduleWeeks      ScheduleWeek[]
   cashAdvances       CashAdvance[]
   timeEntries        TimeEntry[]
+  dailyInventoryReports DailyInventoryReport[]
 }
 
 model StoreMember {
@@ -839,4 +847,41 @@ model TimeEntry {
   @@index([storeId, workDate])
   @@index([storeMemberId, workDate])
   @@index([scheduleShiftId])
+}
+
+model DailyInventoryReport {
+  id          String                   @id @default(cuid())
+  storeId     String
+  store       Store                    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  reportType  DailyInventoryReportType @default(TAKOYAKI)
+  date        DateTime                 @db.Date
+  createdById String
+  createdBy   User                     @relation("DailyInventoryCreatedBy", fields: [createdById], references: [id])
+  createdAt   DateTime                 @default(now())
+  updatedAt   DateTime                 @updatedAt
+
+  items       DailyInventoryReportItem[]
+
+  @@unique([storeId, reportType, date])
+  @@index([storeId, reportType, date])
+}
+
+model DailyInventoryReportItem {
+  id               String               @id @default(cuid())
+  reportId         String
+  report           DailyInventoryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  section          String?
+  particulars      String
+  unit             String
+  openingInventory Decimal              @default(0) @db.Decimal(12, 4)
+  delivery         Decimal              @default(0) @db.Decimal(12, 4)
+  endingInventory  Decimal?             @db.Decimal(12, 4)
+  reminders        String?
+  sortOrder        Int                  @default(0)
+  itemType         ItemType?
+  itemId           String?
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+
+  @@index([reportId])
 }

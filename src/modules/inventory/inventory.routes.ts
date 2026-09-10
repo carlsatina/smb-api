@@ -6,7 +6,7 @@ import { batchTransferStock, createStockAdjustment, listMovements, listStock, tr
 
 export const inventoryRouter = Router({ mergeParams: true });
 
-const readRoles = [Role.OWNER, Role.ADMIN, Role.INVENTORY_MANAGER, Role.VIEWER];
+const readRoles = [Role.OWNER, Role.ADMIN, Role.INVENTORY_MANAGER, Role.VIEWER, Role.CASHIER];
 const writeRoles = [Role.OWNER, Role.ADMIN, Role.INVENTORY_MANAGER];
 
 inventoryRouter.use(authMiddleware);
