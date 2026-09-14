@@ -246,7 +246,16 @@ model StoreMember {
   userId    String
   role      Role
   createdAt DateTime  @default(now())
-  deletedAt DateTime?
+  // Access revoked without losing the membership. A suspended member keeps their
+  // history — past sales, attendance, payroll rows all still point here — but is
+  // refused at requireStoreRole and stops consuming a plan seat. Distinct from
+  // deletedAt, which is the irreversible removal.
+  //
+  // Who suspended them is recorded in AuditLog rather than here: this column is
+  // the authority on access, the log is the history. Losing the log costs the
+  // "suspended by" line in the UI, never the suspension itself.
+  suspendedAt DateTime?
+  deletedAt   DateTime?
 
   store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
   user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)

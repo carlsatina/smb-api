@@ -68,6 +68,9 @@ export const storeService = {
             where: {
                 userId,
                 deletedAt: null,
+                // A suspended member is refused at every store route, so listing
+                // the store would only offer them a door that does not open.
+                suspendedAt: null,
                 store: {
                     deletedAt: null,
                 },

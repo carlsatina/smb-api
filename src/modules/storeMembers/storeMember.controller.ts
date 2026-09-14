@@ -6,6 +6,7 @@ import { AppError } from '../../shared/errors';
 import {
     acceptInviteSchema,
     createInviteSchema,
+    setMemberSuspensionSchema,
     updateMemberRoleSchema,
 } from './storeMember.schemas';
 import { storeMemberService } from './storeMember.service';
@@ -31,6 +32,22 @@ export const updateMemberRole = asyncHandler(async (req: AuthRequest, res: Respo
     const payload = updateMemberRoleSchema.parse(req.body);
     const member = await storeMemberService.updateMemberRole(storeId, memberId, payload.role as Role, actorId);
     res.status(200).json({ member });
+});
+
+export const setMemberSuspension = asyncHandler(async (req: AuthRequest, res: Response) => {
+    const storeId = req.params.storeId;
+    const memberId = req.params.memberId;
+    const actorId = req.user?.sub;
+    if (!storeId || !memberId || !actorId) {
+        throw new AppError('STORE_REQUIRED', 'Store and member are required', 400);
+    }
+
+    const payload = setMemberSuspensionSchema.parse(req.body);
+    await storeMemberService.setMemberSuspension(storeId, memberId, payload.suspended, actorId);
+    // The list carries the suspension state and who set it, so the client
+    // refreshes from one source rather than patching a row it half knows.
+    const members = await storeMemberService.listMembers(storeId);
+    res.status(200).json({ members });
 });
 
 export const removeMember = asyncHandler(async (req: AuthRequest, res: Response) => {

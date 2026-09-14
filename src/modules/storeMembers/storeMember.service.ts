@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { Role } from '@prisma/client';
+import { Prisma, Role } from '@prisma/client';
 import prisma from '../../../lib/prisma';
 import { env } from '../../config/env';
 import { getPlanConfig } from '../../config/plans';
@@ -59,6 +59,10 @@ const ensureOwnerRemaining = async (storeId: string, excludeMemberId: string) =>
             storeId,
             role: Role.OWNER,
             deletedAt: null,
+            // A suspended owner cannot manage anything, so they do not count as
+            // the owner left standing — suspending the last active one would
+            // lock the store out of its own team settings.
+            suspendedAt: null,
             NOT: {
                 id: excludeMemberId,
             },
@@ -104,10 +108,15 @@ const ensureMemberCapacity = async (storeId: string, includeInvites: boolean) =>
     }
 
     const plan = getPlanConfig(owner.planTier);
+    // Suspended members are excluded: they cannot use the store, so holding a
+    // seat for them would tax the owner for access nobody has. The cost is that
+    // reinstating runs this check again and can be refused by a store that has
+    // since filled up — which setMemberSuspension says out loud.
     const memberCount = await prisma.storeMember.count({
         where: {
             storeId,
             deletedAt: null,
+            suspendedAt: null,
         },
     });
     const inviteCount = includeInvites
@@ -129,6 +138,40 @@ const ensureMemberCapacity = async (storeId: string, includeInvites: boolean) =>
             403
         );
     }
+};
+
+const SUSPEND_ACTION = 'MEMBER_SUSPENDED';
+const REINSTATE_ACTION = 'MEMBER_REINSTATED';
+
+// Who suspended each of these members, read from the audit log. The membership
+// row is the authority on *whether* someone is suspended; this is only the story
+// behind it, so a trimmed log degrades to "no name" and never to "not suspended".
+const suspendedByForMembers = async (storeId: string, memberIds: string[]) => {
+    if (memberIds.length === 0) {
+        return new Map<string, string>();
+    }
+
+    const events = await prisma.auditLog.findMany({
+        where: {
+            storeId,
+            action: SUSPEND_ACTION,
+            entityType: 'StoreMember',
+            entityId: { in: memberIds },
+        },
+        // Newest first, so the first hit per member is the suspension in force.
+        orderBy: { createdAt: 'desc' },
+        select: {
+            entityId: true,
+            actor: { select: { fullName: true, email: true } },
+        },
+    });
+
+    const byMember = new Map<string, string>();
+    for (const event of events) {
+        if (!event.entityId || byMember.has(event.entityId) || !event.actor) continue;
+        byMember.set(event.entityId, event.actor.fullName || event.actor.email);
+    }
+    return byMember;
 };
 
 export const storeMemberService = {
@@ -153,6 +196,11 @@ export const storeMemberService = {
             },
         });
 
+        const suspendedBy = await suspendedByForMembers(
+            storeId,
+            members.filter((member) => member.suspendedAt).map((member) => member.id)
+        );
+
         return members.map((member) => ({
             id: member.id,
             userId: member.userId,
@@ -160,6 +208,8 @@ export const storeMemberService = {
             email: member.user.email,
             role: member.role,
             createdAt: member.createdAt,
+            suspendedAt: member.suspendedAt,
+            suspendedBy: suspendedBy.get(member.id) ?? null,
         }));
     },
     updateMemberRole: async (storeId: string, memberId: string, role: Role, actorId: string) => {
@@ -230,6 +280,76 @@ export const storeMemberService = {
             role: updated.role,
             createdAt: updated.createdAt,
         };
+    },
+    // Access revoked (or restored) without touching the membership row's history.
+    // Idempotent: suspending an already-suspended member is a no-op, so a
+    // double-tapped button cannot rewrite who suspended them or when.
+    setMemberSuspension: async (storeId: string, memberId: string, suspended: boolean, actorId: string) => {
+        const actorRole = await getActorRole(storeId, actorId);
+        const member = await prisma.storeMember.findFirst({
+            where: {
+                id: memberId,
+                storeId,
+                deletedAt: null,
+            },
+        });
+
+        if (!member) {
+            throw new AppError('NOT_FOUND', 'Store member not found', 404);
+        }
+
+        // Suspending yourself would lock you out of the screen you did it from,
+        // with no way back unless another owner or admin intervenes.
+        if (member.userId === actorId) {
+            throw new AppError('SELF_SUSPEND', 'You cannot suspend your own membership.', 400);
+        }
+
+        // Mirrors removeMember: an admin manages staff, but only an owner acts on
+        // another owner.
+        if (member.role === Role.OWNER && actorRole !== Role.OWNER) {
+            throw new AppError('FORBIDDEN', 'Only owners can suspend another owner.', 403);
+        }
+
+        if (Boolean(member.suspendedAt) === suspended) {
+            return;
+        }
+
+        if (suspended) {
+            if (member.role === Role.OWNER) {
+                await ensureOwnerRemaining(storeId, member.id);
+            }
+        } else {
+            // Their seat was released on suspension, so coming back needs one
+            // free — the store may have invited someone else in the meantime.
+            await ensureMemberCapacity(storeId, false);
+        }
+
+        // One transaction so the log cannot claim a suspension the column never
+        // took, or the reverse.
+        await prisma.$transaction(async (tx) => {
+            const updateResult = await tx.storeMember.updateMany({
+                where: {
+                    id: member.id,
+                    storeId,
+                    deletedAt: null,
+                },
+                data: { suspendedAt: suspended ? new Date() : null },
+            });
+
+            if (updateResult.count === 0) {
+                throw new AppError('NOT_FOUND', 'Store member not found', 404);
+            }
+
+            const auditData: Prisma.AuditLogCreateInput = {
+                store: { connect: { id: storeId } },
+                action: suspended ? SUSPEND_ACTION : REINSTATE_ACTION,
+                entityType: 'StoreMember',
+                entityId: member.id,
+                meta: { role: member.role },
+            };
+            auditData.actor = { connect: { id: actorId } };
+            await tx.auditLog.create({ data: auditData });
+        });
     },
     removeMember: async (storeId: string, memberId: string, actorId: string) => {
         const actorRole = await getActorRole(storeId, actorId);
@@ -324,7 +444,16 @@ export const storeMemberService = {
                 },
             });
             if (existingMember) {
-                throw new AppError('ALREADY_MEMBER', 'User is already a member of this store.', 409);
+                // Says which, so an owner is not left puzzling over why an
+                // "existing member" cannot get in. Inviting around a suspension
+                // is deliberately not a way to lift one — reinstate them.
+                throw new AppError(
+                    'ALREADY_MEMBER',
+                    existingMember.suspendedAt
+                        ? 'User is already a member of this store, currently suspended. Reinstate them instead of re-inviting.'
+                        : 'User is already a member of this store.',
+                    409
+                );
             }
         }
 

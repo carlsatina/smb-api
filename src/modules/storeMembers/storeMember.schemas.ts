@@ -24,6 +24,10 @@ export const updateMemberRoleSchema = z.object({
     role: z.nativeEnum(Role),
 });
 
+export const setMemberSuspensionSchema = z.object({
+    suspended: z.boolean(),
+});
+
 export const acceptInviteSchema = z.object({
     token: z.string().min(10),
 });

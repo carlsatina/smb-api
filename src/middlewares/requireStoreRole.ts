@@ -25,11 +25,21 @@ export const requireStoreRole = (roles: Role[]) => {
             },
             select: {
                 role: true,
+                suspendedAt: true,
             },
         });
 
         if (!membership) {
             return next(new AppError('FORBIDDEN', 'Not a member of this store', 403));
+        }
+
+        // The single gate every store route passes through, so suspension is
+        // enforced here rather than in each module. Given its own code so the
+        // client can say why access stopped instead of a blank "forbidden".
+        if (membership.suspendedAt) {
+            return next(
+                new AppError('MEMBER_SUSPENDED', 'Your access to this store has been suspended.', 403)
+            );
         }
 
         if (!roles.includes(membership.role)) {

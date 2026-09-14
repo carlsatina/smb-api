@@ -11,6 +11,7 @@ import {
     previewInvite,
     removeMember,
     revokeInvite,
+    setMemberSuspension,
     updateMemberRole,
 } from './storeMember.controller';
 
@@ -40,6 +41,7 @@ storeInviteRouter.use(authMiddleware);
 
 storeMemberRouter.get('/', requireStoreRole(readRoles), listMembers);
 storeMemberRouter.patch('/:memberId', requireStoreRole(manageRoles), updateMemberRole);
+storeMemberRouter.patch('/:memberId/suspension', requireStoreRole(manageRoles), setMemberSuspension);
 storeMemberRouter.delete('/:memberId', requireStoreRole(manageRoles), removeMember);
 
 storeInviteRouter.get('/', requireStoreRole(readRoles), listInvites);
