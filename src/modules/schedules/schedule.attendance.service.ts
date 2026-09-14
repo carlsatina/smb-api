@@ -11,6 +11,20 @@ import { isSchedulableStaff, Viewer } from './schedule.service';
 // should say so. Becomes a store setting the day someone asks for one.
 const GRACE_MINUTES = 0;
 
+// How long a punch may stay open before it stops meaning "still working" and
+// starts meaning "never timed out". Sits above any shift a store actually works
+// — a 22:00-06:00 overnight is 8h, and an extended one with overtime still lands
+// well short — so a real shift in progress is never misread. Note the roster
+// sets no maximum shift length (schedule.schemas allows an endMinute up to
+// 2880); raise this if a store ever rosters one longer.
+//
+// Nothing is written when a punch crosses this line. The entry stays open, which
+// is the truth — the member never timed out — and it simply stops blocking their
+// next clock-in. Only a manager's correction closes it.
+const STALE_OPEN_AFTER_HOURS = 16;
+const STALE_OPEN_AFTER_MINUTES = STALE_OPEN_AFTER_HOURS * 60;
+const STALE_OPEN_AFTER_MS = STALE_OPEN_AFTER_MINUTES * 60 * 1000;
+
 // Widest window the attendance grid may request at once. The month view asks
 // for ~31 days; this is headroom, not a target.
 const MAX_RANGE_DAYS = 62;
@@ -41,6 +55,8 @@ const minutesFromDayStart = (instant: Date, workDate: string, timeZone: string):
 
 const instantFromMinutes = (workDate: string, minute: number, timeZone: string): Date =>
     new Date(zonedStartOfDay(workDate, timeZone).getTime() + minute * 60000);
+
+const staleOpenCutoff = (now: Date): Date => new Date(now.getTime() - STALE_OPEN_AFTER_MS);
 
 const storeTimezone = async (storeId: string): Promise<string> => {
     const store = await scheduleRepository.findStoreTimezone(storeId);
@@ -121,14 +137,27 @@ export const attendanceService = {
         const today = toZonedDateString(now, timeZone);
         const yesterday = shiftDays(today, -1);
 
-        const [shifts, entries, comps] = await Promise.all([
+        const [shifts, windowEntries, comps, latestOpen, missedTimeOuts] = await Promise.all([
             scheduleRepository.listMemberShifts(storeId, member.id, toUtcDate(yesterday), toUtcDate(today)),
             scheduleRepository.listTimeEntries(storeId, toUtcDate(yesterday), toUtcDate(today), [member.id]),
             scheduleRepository.listCompensations(storeId),
+            // Read unbounded, exactly as clock-in's guard reads it. Picking the
+            // open punch out of the two-day window instead is what let a punch
+            // older than the window vanish from the button while still blocking
+            // the next clock-in — the button and the guard must never disagree.
+            scheduleRepository.findOpenTimeEntry(storeId, member.id),
+            scheduleRepository.countStaleOpenTimeEntries(storeId, member.id, staleOpenCutoff(now)),
         ]);
 
         const shiftByDate = new Map(shifts.map((s) => [toDateString(s.date), s]));
-        const open = entries.find((e) => e.clockOutAt === null) ?? null;
+        // A stale punch is a missing time out, not a shift in progress, so the
+        // button goes back to offering Time In — and the guard agrees, because it
+        // applies the same cutoff.
+        const open = latestOpen && latestOpen.clockInAt >= staleOpenCutoff(now) ? latestOpen : null;
+        const entries =
+            latestOpen && !windowEntries.some((e) => e.id === latestOpen.id)
+                ? [...windowEntries, latestOpen]
+                : windowEntries;
 
         // An open punch anchors the view to its own work day; otherwise the
         // button is about today (or last night's shift still in progress).
@@ -151,6 +180,8 @@ export const attendanceService = {
             breakMinutes: comp?.breakMinutes ?? 0,
             graceMinutes: GRACE_MINUTES,
             dayIsOver: false,
+            nowMinute: minutesFromDayStart(now, workDate, timeZone),
+            staleOpenAfterMinutes: STALE_OPEN_AFTER_MINUTES,
         });
 
         return {
@@ -161,6 +192,9 @@ export const attendanceService = {
             // Non-null exactly when the viewer is clocked in, which is what the
             // button toggles on.
             openEntry: open ? serialiseEntry(open, timeZone) : null,
+            // Punches the member never closed. Surfaced to them because those
+            // days pay nothing until a manager supplies the real time out.
+            missedTimeOuts,
             shift: shift
                 ? {
                       isRestDay: shift.isRestDay,
@@ -196,17 +230,22 @@ export const attendanceService = {
         );
 
         const shift = shiftByDate.get(workDate);
-        const created = await scheduleRepository.createTimeEntryIfIdle({
-            storeId,
-            storeMemberId: member.id,
-            workDate: toUtcDate(workDate),
-            clockInAt: now,
-            // Frozen at clock-in: re-deriving it later would move a punch onto a
-            // shift the member never worked if the roster is edited afterwards.
-            scheduleShiftId: shift && !shift.isRestDay ? shift.id : null,
-            source: TimeEntrySource.SELF,
-            note: note ?? null,
-        });
+        const created = await scheduleRepository.createTimeEntryIfIdle(
+            {
+                storeId,
+                storeMemberId: member.id,
+                workDate: toUtcDate(workDate),
+                clockInAt: now,
+                // Frozen at clock-in: re-deriving it later would move a punch onto
+                // a shift the member never worked if the roster is edited after.
+                scheduleShiftId: shift && !shift.isRestDay ? shift.id : null,
+                source: TimeEntrySource.SELF,
+                note: note ?? null,
+            },
+            // A punch older than this is a missing time out, not a shift in
+            // progress, so it no longer refuses this clock-in.
+            staleOpenCutoff(now)
+        );
         if (!created) {
             throw new AppError('ALREADY_CLOCKED_IN', 'You are already timed in — time out first', 409);
         }
@@ -222,6 +261,17 @@ export const attendanceService = {
         const now = new Date();
         if (now <= open.clockInAt) {
             throw new AppError('INVALID_CLOCK_OUT', 'Time out cannot be before time in', 400);
+        }
+        // Reachable only from a stale page, since the button stops offering Time
+        // Out once a punch goes stale. Stamping `now` on a punch from days ago
+        // would book those hours as worked, so the correction is left to a
+        // manager, who knows what the real time was.
+        if (open.clockInAt < staleOpenCutoff(now)) {
+            throw new AppError(
+                'MISSED_TIME_OUT',
+                `You never timed out of a shift more than ${STALE_OPEN_AFTER_HOURS} hours ago. Ask your manager to set the correct time out.`,
+                409
+            );
         }
 
         await scheduleRepository.updateTimeEntry(open.id, {
@@ -294,7 +344,8 @@ export const attendanceService = {
             entryMap.set(key, list);
         }
 
-        const today = toZonedDateString(new Date(), timeZone);
+        const now = new Date();
+        const today = toZonedDateString(now, timeZone);
 
         const rows = targets.map((member) => {
             const reconciliations: DayReconciliation[] = [];
@@ -312,6 +363,11 @@ export const attendanceService = {
                     breakMinutes: comp?.breakMinutes ?? 0,
                     graceMinutes: GRACE_MINUTES,
                     dayIsOver: date < today,
+                    // Minutes from that day's own midnight to now, so a punch on
+                    // a past day is measured by how long it has actually sat
+                    // open rather than by the date rolling over.
+                    nowMinute: minutesFromDayStart(now, date, timeZone),
+                    staleOpenAfterMinutes: STALE_OPEN_AFTER_MINUTES,
                 });
                 reconciliations.push(reconciliation);
 

@@ -21,6 +21,7 @@ export type ShiftPlan = {
 
 export type DayStatus =
     | 'OPEN' // clocked in, not yet out
+    | 'MISSING_OUT' // clocked in and never out, long enough ago that no punch is coming
     | 'ABSENT' // rostered to work, day is over, never punched
     | 'SCHEDULED' // rostered to work, day not over yet, no punch
     | 'UNSCHEDULED' // punched on a rest day or a day with no roster entry
@@ -38,7 +39,13 @@ export type DayReconciliation = {
     overtimeMinutes: number;
     // actual − scheduled. Negative is undertime, positive is time beyond the roster.
     varianceMinutes: number;
+    // An open punch still plausibly in progress. A punch left open past the
+    // staleness horizon is reported as hasMissingOut instead — nobody is still
+    // working it, so calling it "in progress" would be wrong.
     isOpen: boolean;
+    // A punch the member never closed. Carries no hours (open entries never do),
+    // so the day pays nothing until a manager supplies the real time out.
+    hasMissingOut: boolean;
     status: DayStatus;
 };
 
@@ -52,6 +59,13 @@ export type ReconcileOptions = {
     // Whether the work day has finished in the store's timezone. Passed in
     // rather than read from the clock so this module stays deterministic.
     dayIsOver?: boolean;
+    // Now, on the same minutes-from-local-midnight axis as the punches — so for
+    // a day already past it is simply a value beyond 1440. Passed in for the
+    // same determinism as dayIsOver. Without it nothing is judged stale.
+    nowMinute?: number | null;
+    // How long an open punch may sit before it stops meaning "in progress" and
+    // starts meaning "never timed out". Null disables the distinction.
+    staleOpenAfterMinutes?: number | null;
 };
 
 const isWorkingShift = (shift: ShiftPlan): shift is { isRestDay: false; startMinute: number; endMinute: number } =>
@@ -87,12 +101,27 @@ const lastOut = (entries: ClockPair[]): number | null => {
 export const reconcileDay = (
     shift: ShiftPlan,
     entries: ClockPair[],
-    { breakMinutes = 0, graceMinutes = 0, dayIsOver = false }: ReconcileOptions = {}
+    {
+        breakMinutes = 0,
+        graceMinutes = 0,
+        dayIsOver = false,
+        nowMinute = null,
+        staleOpenAfterMinutes = null,
+    }: ReconcileOptions = {}
 ): DayReconciliation => {
     const grace = Math.max(0, graceMinutes);
     const scheduledMinutes = plannedMinutes(shift, breakMinutes);
     const actualMinutes = punchedMinutes(entries, breakMinutes);
-    const isOpen = entries.some((e) => e.outMinute === null);
+    // An open punch this old is not a shift in progress — it is a time out that
+    // never happened. Split here rather than closing the entry: the record keeps
+    // saying the member never punched out, which is what actually occurred.
+    const isStale = (e: ClockPair) =>
+        e.outMinute === null &&
+        nowMinute !== null &&
+        staleOpenAfterMinutes !== null &&
+        nowMinute - e.inMinute > staleOpenAfterMinutes;
+    const hasMissingOut = entries.some(isStale);
+    const isOpen = entries.some((e) => e.outMinute === null && !isStale(e));
 
     const start = isWorkingShift(shift) ? shift.startMinute : null;
     const end = isWorkingShift(shift) ? shift.endMinute : null;
@@ -109,6 +138,9 @@ export const reconcileDay = (
 
     const status = ((): DayStatus => {
         if (isOpen) return 'OPEN';
+        // Ranked ahead of any late/undertime verdict: with no real time out the
+        // day's hours are unknown, so there is nothing honest to judge.
+        if (hasMissingOut) return 'MISSING_OUT';
         if (entries.length === 0) {
             if (isWorkingShift(shift)) return dayIsOver ? 'ABSENT' : 'SCHEDULED';
             return 'REST_DAY';
@@ -130,6 +162,7 @@ export const reconcileDay = (
         overtimeMinutes,
         varianceMinutes,
         isOpen,
+        hasMissingOut,
         status,
     };
 };
@@ -142,6 +175,10 @@ export type WeekTotals = {
     daysWorked: number;
     daysAbsent: number;
     openDays: number;
+    // Days whose punch was never closed. Kept separate from openDays: an open day
+    // resolves itself when the member punches out, this one only resolves when a
+    // manager supplies the time out.
+    missingOutDays: number;
 };
 
 // Week roll-up for the payout screen. `daysWorked` counts days with a completed
@@ -157,6 +194,7 @@ export const sumWeek = (days: DayReconciliation[]): WeekTotals =>
             daysWorked: totals.daysWorked + (day.actualMinutes > 0 ? 1 : 0),
             daysAbsent: totals.daysAbsent + (day.status === 'ABSENT' ? 1 : 0),
             openDays: totals.openDays + (day.isOpen ? 1 : 0),
+            missingOutDays: totals.missingOutDays + (day.hasMissingOut ? 1 : 0),
         }),
         {
             scheduledMinutes: 0,
@@ -166,6 +204,7 @@ export const sumWeek = (days: DayReconciliation[]): WeekTotals =>
             daysWorked: 0,
             daysAbsent: 0,
             openDays: 0,
+            missingOutDays: 0,
         }
     );
 

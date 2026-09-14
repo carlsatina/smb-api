@@ -204,7 +204,22 @@ export const scheduleRepository = {
     findOpenTimeEntry: (storeId: string, storeMemberId: string) =>
         prisma.timeEntry.findFirst({
             where: { storeId, storeMemberId, clockOutAt: null, deletedAt: null },
+            include: { editedBy: { select: { fullName: true, email: true } } },
             orderBy: { clockInAt: 'desc' },
+        }),
+
+    // Punches the member never closed, old enough that no time out is coming.
+    // They pay nothing until a manager supplies the real time, so the member is
+    // told how many are outstanding.
+    countStaleOpenTimeEntries: (storeId: string, storeMemberId: string, staleBefore: Date) =>
+        prisma.timeEntry.count({
+            where: {
+                storeId,
+                storeMemberId,
+                clockOutAt: null,
+                deletedAt: null,
+                clockInAt: { lt: staleBefore },
+            },
         }),
 
     findTimeEntry: (storeId: string, id: string) =>
@@ -227,7 +242,13 @@ export const scheduleRepository = {
     // Clock-in guarded against a double punch: the check and the insert share a
     // transaction, so a double-tapped button cannot leave two open entries.
     // Returns null when the member already has one open.
-    createTimeEntryIfIdle: (data: Prisma.TimeEntryUncheckedCreateInput) =>
+    //
+    // `staleBefore` is what stops a forgotten time out from locking the member
+    // out for good: a punch older than that is a missing time out, not a shift in
+    // progress, so it no longer refuses today's clock-in. It stays open and
+    // unpaid until a manager corrects it — the guard ignores it, nothing rewrites
+    // it into a time out that never happened.
+    createTimeEntryIfIdle: (data: Prisma.TimeEntryUncheckedCreateInput, staleBefore: Date) =>
         prisma.$transaction(async (tx) => {
             const open = await tx.timeEntry.findFirst({
                 where: {
@@ -235,6 +256,7 @@ export const scheduleRepository = {
                     storeMemberId: data.storeMemberId,
                     clockOutAt: null,
                     deletedAt: null,
+                    clockInAt: { gte: staleBefore },
                 },
             });
             if (open) return null;

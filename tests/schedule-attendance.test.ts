@@ -150,3 +150,56 @@ describe('toHours', () => {
         expect(toHours(455)).toBe(7.58);
     });
 });
+
+describe('reconcileDay — a punch the member never closed', () => {
+    // Timed in at 9AM and went home without timing out. Read the next afternoon,
+    // "now" is minute 1860 of that work day — 22 hours after the punch.
+    const NEVER_OUT = [{ inMinute: at(9), outMinute: null }];
+    const STALE = { ...BREAK, nowMinute: at(31), staleOpenAfterMinutes: 16 * 60 };
+    // The same punch read four hours in, while the shift is genuinely running.
+    const IN_PROGRESS = { ...BREAK, nowMinute: at(13), staleOpenAfterMinutes: 16 * 60 };
+
+    it('is still OPEN while the shift could plausibly be in progress', () => {
+        const day = reconcileDay(NINE_TO_6, NEVER_OUT, IN_PROGRESS);
+        expect(day.status).toBe('OPEN');
+        expect(day.isOpen).toBe(true);
+        expect(day.hasMissingOut).toBe(false);
+    });
+
+    it('reads as MISSING_OUT once no time out can still be coming', () => {
+        const day = reconcileDay(NINE_TO_6, NEVER_OUT, STALE);
+        expect(day.status).toBe('MISSING_OUT');
+        expect(day.hasMissingOut).toBe(true);
+        // Not "in progress" any more — nobody is still working it.
+        expect(day.isOpen).toBe(false);
+    });
+
+    it('carries no hours either way — an unclosed punch never pays', () => {
+        expect(reconcileDay(NINE_TO_6, NEVER_OUT, STALE).actualMinutes).toBe(0);
+        expect(reconcileDay(NINE_TO_6, NEVER_OUT, STALE).overtimeMinutes).toBe(0);
+        expect(reconcileDay(NINE_TO_6, NEVER_OUT, IN_PROGRESS).actualMinutes).toBe(0);
+    });
+
+    it('judges nothing stale when the caller supplies no clock', () => {
+        expect(reconcileDay(NINE_TO_6, NEVER_OUT, BREAK).status).toBe('OPEN');
+        expect(reconcileDay(NINE_TO_6, NEVER_OUT, BREAK).hasMissingOut).toBe(false);
+    });
+
+    it('leaves the day OPEN when a second punch is genuinely running', () => {
+        const day = reconcileDay(NINE_TO_6, [...NEVER_OUT, { inMinute: at(30), outMinute: null }], STALE);
+        expect(day.status).toBe('OPEN');
+        expect(day.hasMissingOut).toBe(true);
+    });
+
+    it('counts toward missingOutDays, separately from an open day', () => {
+        const totals = sumWeek([
+            reconcileDay(NINE_TO_6, NEVER_OUT, STALE),
+            reconcileDay(NINE_TO_6, NEVER_OUT, IN_PROGRESS),
+            reconcileDay(NINE_TO_6, [{ inMinute: at(9), outMinute: at(18) }], BREAK),
+        ]);
+        expect(totals.missingOutDays).toBe(1);
+        expect(totals.openDays).toBe(1);
+        expect(totals.daysWorked).toBe(1);
+        expect(totals.actualMinutes).toBe(480);
+    });
+});
