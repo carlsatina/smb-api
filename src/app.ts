@@ -13,6 +13,7 @@ import { scheduleRouter } from './modules/schedules/schedule.routes';
 import { expenseRouter } from './modules/expenses/expense.routes';
 import { adminRouter } from './modules/admin/admin.routes';
 import { authRouter } from './modules/auth/auth.routes';
+import { getMetricsSnapshot } from './shared/metrics';
 import { ingredientRouter } from './modules/ingredients/ingredient.routes';
 import { inventoryRouter } from './modules/inventory/inventory.routes';
 import { dailyInventoryRouter } from './modules/dailyInventory/dailyInventory.routes';
@@ -65,6 +66,32 @@ export const createApp = () => {
             uptime: process.uptime(),
             timestamp: new Date().toISOString(),
         });
+    });
+
+    // Operational metrics for correlating a load test's client-side latency
+    // with what the server was actually doing. Route timings, event-loop lag,
+    // memory and CPU.
+    //
+    // Disabled unless METRICS_TOKEN is set, and requires it on every request:
+    // route names, traffic volumes and error rates are useful to an attacker
+    // profiling the service, so this is opt-in rather than opt-out. With no
+    // token configured the path 404s like any other unknown route, which does
+    // not reveal that the feature exists.
+    app.get('/metrics', (req, res) => {
+        const expected = process.env.METRICS_TOKEN?.trim();
+        if (!expected) {
+            res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Not found' } });
+            return;
+        }
+
+        const provided = req.header('x-metrics-token')?.trim();
+        if (provided !== expected) {
+            res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Not found' } });
+            return;
+        }
+
+        const limit = Number(req.query.limit) || 25;
+        res.status(200).json(getMetricsSnapshot(limit));
     });
 
     app.use('/api/v1/auth', authRouter);
