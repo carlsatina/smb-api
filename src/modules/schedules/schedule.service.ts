@@ -608,7 +608,13 @@ export const scheduleService = {
                 409
             );
         }
-        await scheduleRepository.softDeleteWeek(week.id);
+        // The week itself is only soft-deleted, but its cash-advance deductions
+        // are removed outright: a deleted schedule must stop reducing balances,
+        // and leftovers would also block deleting the advance they point at.
+        await prisma.$transaction([
+            prisma.cashAdvanceDeduction.deleteMany({ where: { scheduleWeekRow: { scheduleWeekId: week.id } } }),
+            prisma.scheduleWeek.update({ where: { id: week.id }, data: { deletedAt: new Date() } }),
+        ]);
     },
 
     // ── Shift presets ────────────────────────────────────────────────────────
@@ -733,6 +739,7 @@ export const scheduleService = {
                 skipped: d.skipped,
                 reason: d.reason,
                 weekStart: toDateString(d.scheduleWeekRow.scheduleWeek.weekStart),
+                weekPublished: d.scheduleWeekRow.scheduleWeek.status === ScheduleWeekStatus.PUBLISHED,
             }));
             const deducted = deductions.reduce((sum, d) => sum + d.amount, 0);
             return {
@@ -767,17 +774,37 @@ export const scheduleService = {
         });
     },
 
+    // Deleting an advance takes its deductions with it — week rows read them
+    // regardless of the advance's deletedAt, so leaving them would keep cutting
+    // pay. That's only safe while those weeks are drafts: a real deduction in a
+    // published week is settled payout, so the week must be unpublished first.
+    // Skipped 0 markers carry no money and never block.
     deleteCashAdvance: async (storeId: string, cashAdvanceId: string) => {
-        const deductions = await prisma.cashAdvanceDeduction.count({ where: { cashAdvanceId } });
-        if (deductions > 0) {
+        const advance = await prisma.cashAdvance.findFirst({
+            where: { id: cashAdvanceId, storeId, deletedAt: null },
+            include: {
+                deductions: {
+                    where: { amount: { gt: 0 }, scheduleWeekRow: { scheduleWeek: { status: ScheduleWeekStatus.PUBLISHED } } },
+                    select: { scheduleWeekRow: { select: { scheduleWeek: { select: { weekStart: true } } } } },
+                },
+            },
+        });
+        if (!advance) throw new AppError('CASH_ADVANCE_NOT_FOUND', 'Cash advance not found', 404);
+
+        if (advance.deductions.length > 0) {
+            const weeks = [...new Set(advance.deductions.map((d) => toDateString(d.scheduleWeekRow.scheduleWeek.weekStart)))].sort();
             throw new AppError(
                 'CASH_ADVANCE_IN_USE',
-                'This advance already has deductions against it and cannot be removed',
-                409
+                `This advance has deductions in published week${weeks.length === 1 ? '' : 's'} (${weeks.join(', ')}). Unpublish ${weeks.length === 1 ? 'it' : 'them'} to delete this advance.`,
+                409,
+                { publishedWeeks: weeks }
             );
         }
-        const result = await scheduleRepository.softDeleteCashAdvance(storeId, cashAdvanceId);
-        if (result.count === 0) throw new AppError('CASH_ADVANCE_NOT_FOUND', 'Cash advance not found', 404);
+
+        await prisma.$transaction([
+            prisma.cashAdvanceDeduction.deleteMany({ where: { cashAdvanceId } }),
+            prisma.cashAdvance.update({ where: { id: cashAdvanceId }, data: { deletedAt: new Date() } }),
+        ]);
     },
 
     // Records this week's deduction against a specific advance. A skipped week is
@@ -797,7 +824,7 @@ export const scheduleService = {
         }
 
         const advance = await prisma.cashAdvance.findFirst({
-            where: { id: data.cashAdvanceId, storeId, deletedAt: null },
+            where: { id: data.cashAdvanceId, storeId, storeMemberId: row.storeMemberId, deletedAt: null },
             include: { deductions: { where: { NOT: { scheduleWeekRowId: rowId } } } },
         });
         if (!advance) throw new AppError('CASH_ADVANCE_NOT_FOUND', 'Cash advance not found', 404);
@@ -983,7 +1010,7 @@ export const scheduleService = {
             where: {
                 id: deductionId,
                 scheduleWeekRowId: rowId,
-                scheduleWeekRow: { scheduleWeek: { storeId, status: ScheduleWeekStatus.DRAFT } },
+                scheduleWeekRow: { scheduleWeek: { storeId, deletedAt: null, status: ScheduleWeekStatus.DRAFT } },
             },
         });
         if (result.count === 0) {

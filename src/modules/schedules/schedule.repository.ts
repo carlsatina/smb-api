@@ -122,9 +122,6 @@ export const scheduleRepository = {
     findWeekForDelete: (storeId: string, weekId: string) =>
         prisma.scheduleWeek.findFirst({ where: { id: weekId, storeId, deletedAt: null } }),
 
-    softDeleteWeek: (weekId: string) =>
-        prisma.scheduleWeek.update({ where: { id: weekId }, data: { deletedAt: new Date() } }),
-
     softDeletePreset: (storeId: string, presetId: string) =>
         prisma.shiftPreset.updateMany({
             where: { id: presetId, storeId, deletedAt: null },
@@ -175,7 +172,7 @@ export const scheduleRepository = {
                             select: {
                                 id: true,
                                 scheduleWeek: {
-                                    select: { weekStart: true },
+                                    select: { weekStart: true, status: true },
                                 },
                             },
                         },
@@ -189,12 +186,6 @@ export const scheduleRepository = {
         storeId: string,
         data: { storeMemberId: string; amount: Prisma.Decimal; takenOn: Date; note: string | null; createdById: string }
     ) => prisma.cashAdvance.create({ data: { storeId, ...data } }),
-
-    softDeleteCashAdvance: (storeId: string, cashAdvanceId: string) =>
-        prisma.cashAdvance.updateMany({
-            where: { id: cashAdvanceId, storeId, deletedAt: null },
-            data: { deletedAt: new Date() },
-        }),
 
     // ── Time clock ────────────────────────────────────────────────────────────
 
