@@ -387,9 +387,24 @@ export const scheduleService = {
         }
 
         await prisma.$transaction(async (tx) => {
-            const week =
-                existing ??
-                (await tx.scheduleWeek.create({ data: { storeId, weekStart, createdById: userId } }));
+            // The (storeId, weekStart) unique key also covers soft-deleted weeks,
+            // so a week that was deleted earlier is revived rather than recreated.
+            // Its old rows go with it (cascading to shifts and cash-advance
+            // deductions) so nothing from the deleted schedule leaks back in.
+            let week: { id: string } | null = existing;
+            if (!week) {
+                week = await tx.scheduleWeek.upsert({
+                    where: { storeId_weekStart: { storeId, weekStart } },
+                    create: { storeId, weekStart, createdById: userId },
+                    update: {
+                        deletedAt: null,
+                        status: ScheduleWeekStatus.DRAFT,
+                        publishedAt: null,
+                        createdById: userId,
+                    },
+                });
+                await tx.scheduleWeekRow.deleteMany({ where: { scheduleWeekId: week.id } });
+            }
 
             const keptRowIds: string[] = [];
 
