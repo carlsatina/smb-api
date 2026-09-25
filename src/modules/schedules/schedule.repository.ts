@@ -3,6 +3,12 @@ import prisma from '../../../lib/prisma';
 
 const weekInclude = {
     rows: {
+        where: {
+            storeMember: {
+                deletedAt: null,
+                suspendedAt: null,
+            },
+        },
         include: {
             shifts: {
                 orderBy: { date: 'asc' as const },
@@ -54,6 +60,7 @@ export const scheduleRepository = {
                 date: { gte: from, lte: to },
                 scheduleWeekRow: {
                     storeMemberId,
+                    storeMember: { deletedAt: null, suspendedAt: null },
                     scheduleWeek: { storeId, deletedAt: null },
                 },
             },
@@ -92,7 +99,7 @@ export const scheduleRepository = {
 
     listMembers: (storeId: string) =>
         prisma.storeMember.findMany({
-            where: { storeId, deletedAt: null },
+            where: { storeId, deletedAt: null, suspendedAt: null },
             include: { user: { select: { id: true, fullName: true, email: true } } },
             orderBy: { createdAt: 'asc' },
         }),
@@ -140,7 +147,10 @@ export const scheduleRepository = {
     // dropdown but is already rostered.
     listScheduledMemberIds: (storeId: string) =>
         prisma.scheduleWeekRow.findMany({
-            where: { scheduleWeek: { storeId, deletedAt: null } },
+            where: {
+                scheduleWeek: { storeId, deletedAt: null },
+                storeMember: { deletedAt: null, suspendedAt: null },
+            },
             select: { storeMemberId: true },
             distinct: ['storeMemberId'],
         }),
@@ -158,7 +168,20 @@ export const scheduleRepository = {
                 deletedAt: null,
                 ...(storeMemberIds ? { storeMemberId: { in: storeMemberIds } } : {}),
             },
-            include: { deductions: true },
+            include: {
+                deductions: {
+                    include: {
+                        scheduleWeekRow: {
+                            select: {
+                                id: true,
+                                scheduleWeek: {
+                                    select: { weekStart: true },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
             orderBy: { takenOn: 'asc' },
         }),
 

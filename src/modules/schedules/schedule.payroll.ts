@@ -87,3 +87,75 @@ export const compensationOn = <T extends EffectiveDated>(
     }
     return best;
 };
+
+export type AdvanceBalance = {
+    id: string;
+    available: number;
+};
+
+export type DeductionAllocation = {
+    cashAdvanceId: string;
+    amount: number;
+};
+
+// Allocates a single total deduction across multiple advances FIFO (oldest first).
+export const allocateDeductionFifo = (
+    advances: AdvanceBalance[],
+    totalDeduction: number
+): DeductionAllocation[] => {
+    let remaining = Math.max(0, totalDeduction);
+    return advances.map((adv) => {
+        const amount = Math.min(remaining, Math.max(0, adv.available));
+        remaining -= amount;
+        return { cashAdvanceId: adv.id, amount };
+    });
+};
+
+export type AdvanceWithDeductions = {
+    id: string;
+    storeMemberId: string;
+    amount: number;
+    takenOn: string | Date;
+    deductions: {
+        amount: number;
+        weekStart: string | Date;
+    }[];
+};
+
+/**
+ * Computes the outstanding cash advance balance per member as of a specific week.
+ *
+ * - Advances taken after the week's end (weekStart + 6 days) are excluded.
+ * - Deductions from weeks on or before the target weekStart are subtracted (prior weeks + this week).
+ * - Future deductions do not reduce the balance of the current week.
+ */
+export const computeCashAdvanceBalancesAsOf = (
+    advances: AdvanceWithDeductions[],
+    targetWeekStart: string | Date
+): Map<string, number> => {
+    const toDateStr = (d: string | Date) => (typeof d === 'string' ? d.slice(0, 10) : d.toISOString().slice(0, 10));
+    const targetStartStr = toDateStr(targetWeekStart);
+    const targetStartDate = new Date(`${targetStartStr}T00:00:00.000Z`);
+    const targetEndDate = new Date(targetStartDate.getTime() + 6 * 24 * 60 * 60 * 1000);
+    const targetEndStr = toDateStr(targetEndDate);
+
+    const balances = new Map<string, number>();
+
+    for (const advance of advances) {
+        const takenOnStr = toDateStr(advance.takenOn);
+        if (takenOnStr > targetEndStr) continue;
+
+        const deducted = advance.deductions
+            .filter((d) => toDateStr(d.weekStart) <= targetStartStr)
+            .reduce((sum, d) => sum + Number(d.amount || 0), 0);
+
+        const outstanding = Math.max(0, Number(advance.amount || 0) - deducted);
+        balances.set(
+            advance.storeMemberId,
+            (balances.get(advance.storeMemberId) ?? 0) + outstanding
+        );
+    }
+
+    return balances;
+};
+

@@ -14,6 +14,7 @@ import {
     publishWeekSchema,
     punchSchema,
     setDeductionSchema,
+    setTotalDeductionsSchema,
     upsertCompensationSchema,
     upsertPresetSchema,
     upsertTimeEntrySchema,
@@ -184,6 +185,15 @@ export const setDeduction = asyncHandler(async (req: AuthRequest, res: Response)
     const body = setDeductionSchema.parse(req.body);
     const deduction = await scheduleService.setDeduction(storeId, rowId, body);
     res.status(200).json({ deduction });
+});
+
+export const setTotalDeductions = asyncHandler(async (req: AuthRequest, res: Response) => {
+    const { storeId } = requireContext(req);
+    const rowId = req.params.rowId;
+    if (!rowId) throw new AppError('BAD_REQUEST', 'Schedule row is required', 400);
+    const body = setTotalDeductionsSchema.parse(req.body);
+    const result = await scheduleService.setTotalDeductions(storeId, rowId, body);
+    res.status(200).json(result);
 });
 
 export const removeDeduction = asyncHandler(async (req: AuthRequest, res: Response) => {

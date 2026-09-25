@@ -111,6 +111,12 @@ export const setDeductionSchema = z.object({
     reason: z.string().max(500).nullable().optional(),
 });
 
+export const setTotalDeductionsSchema = z.object({
+    amount: z.number().min(0),
+    skipped: z.boolean().default(false),
+    reason: z.string().max(500).nullable().optional(),
+});
+
 // ── Time clock ───────────────────────────────────────────────────────────────
 
 export const attendanceRangeQuerySchema = z.object({

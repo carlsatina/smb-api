@@ -28,6 +28,7 @@ import {
     removeDeduction,
     setCompensation,
     setDeduction,
+    setTotalDeductions,
     updatePreset,
     updateTimeEntry,
     upsertWeek,
@@ -80,6 +81,7 @@ scheduleRouter.delete('/cash-advances/:cashAdvanceId', ...managers, deleteCashAd
 
 // Per-week deductions against an advance
 scheduleRouter.put('/rows/:rowId/deduction', ...managers, setDeduction);
+scheduleRouter.put('/rows/:rowId/deductions/total', ...managers, setTotalDeductions);
 scheduleRouter.delete('/rows/:rowId/deduction/:deductionId', ...managers, removeDeduction);
 
 // ── Time clock ───────────────────────────────────────────────────────────────

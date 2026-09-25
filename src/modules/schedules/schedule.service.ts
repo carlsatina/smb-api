@@ -2,7 +2,7 @@ import { Prisma, Role, ScheduleWeekStatus } from '@prisma/client';
 import prisma from '../../../lib/prisma';
 import { AppError } from '../../shared/errors';
 import { PresetData, scheduleRepository, ScheduleWeekWithRows } from './schedule.repository';
-import { compensationOn, computeOtHours, computePayout, countDaysWorked, otHourlyRate } from './schedule.payroll';
+import { allocateDeductionFifo, compensationOn, computeCashAdvanceBalancesAsOf, computeOtHours, computePayout, countDaysWorked, otHourlyRate } from './schedule.payroll';
 import { otHoursFromActual, toHours } from './schedule.attendance';
 
 // The week grid runs Sunday → Saturday, matching the payroll sheet this
@@ -184,11 +184,14 @@ const serialiseWeek = (
     actuals: Map<string, ActualWork> = new Map()
 ) => {
     const published = week.status === ScheduleWeekStatus.PUBLISHED;
+    const activeRows = week.rows.filter(
+        (r) => !r.storeMember.suspendedAt && !r.storeMember.deletedAt
+    );
     const viewerMemberIds = new Set(
-        week.rows.filter((r) => r.storeMember.userId === viewer.userId).map((r) => r.storeMemberId)
+        activeRows.filter((r) => r.storeMember.userId === viewer.userId).map((r) => r.storeMemberId)
     );
 
-    const rows = week.rows.map((row) => {
+    const rows = activeRows.map((row) => {
         const canSeePay = isManager(viewer) || viewerMemberIds.has(row.storeMemberId);
         const base = {
             id: row.id,
@@ -223,17 +226,26 @@ const serialiseWeek = (
     };
 };
 
-// Outstanding cash advance balance per member: advances taken minus everything
-// already deducted. Replaces the hand-maintained "ca bal: …" remark.
-const cashAdvanceBalances = async (storeId: string): Promise<Map<string, number>> => {
+type RepoAdvance = Awaited<ReturnType<typeof scheduleRepository.listCashAdvances>>[number];
+
+const toAdvanceWithDeductions = (a: RepoAdvance) => ({
+    id: a.id,
+    storeMemberId: a.storeMemberId,
+    amount: toNum(a.amount),
+    takenOn: a.takenOn,
+    deductions: a.deductions.map((d) => ({
+        amount: toNum(d.amount),
+        weekStart: d.scheduleWeekRow.scheduleWeek.weekStart,
+    })),
+});
+
+// Outstanding cash advance balance per member as of a specific week:
+// advances taken on or before the week's end (weekStart + 6 days),
+// minus deductions made on or before the target weekStart.
+// Replaces the hand-maintained "ca bal: …" remark.
+const cashAdvanceBalancesAsOf = async (storeId: string, weekStart: Date): Promise<Map<string, number>> => {
     const advances = await scheduleRepository.listCashAdvances(storeId);
-    const balances = new Map<string, number>();
-    for (const advance of advances) {
-        const deducted = advance.deductions.reduce((sum, d) => sum + toNum(d.amount), 0);
-        const outstanding = toNum(advance.amount) - deducted;
-        balances.set(advance.storeMemberId, (balances.get(advance.storeMemberId) ?? 0) + outstanding);
-    }
-    return balances;
+    return computeCashAdvanceBalancesAsOf(advances.map(toAdvanceWithDeductions), weekStart);
 };
 
 // Actual work per member across a date range, from the time clock. Durations
@@ -278,7 +290,7 @@ export const scheduleService = {
         const weekStart = assertWeekStart(weekStartStr);
         const [week, balances, viewerMember, comps] = await Promise.all([
             scheduleRepository.findWeek(storeId, weekStart),
-            cashAdvanceBalances(storeId),
+            cashAdvanceBalancesAsOf(storeId, weekStart),
             scheduleRepository.findMemberByUser(storeId, viewer.userId),
             scheduleRepository.listCompensations(storeId),
         ]);
@@ -458,6 +470,7 @@ export const scheduleService = {
         const comps = await scheduleRepository.listCompensations(storeId);
 
         for (const row of week.rows) {
+            if (row.storeMember.suspendedAt || row.storeMember.deletedAt) continue;
             const comp = compensationOn(comps, row.storeMemberId, weekStart);
             if (!comp) {
                 missingRates.push(memberName(row));
@@ -547,20 +560,22 @@ export const scheduleService = {
 
         return scheduleService.upsertWeek(storeId, userId, {
             weekStart: toWeekStartStr,
-            rows: source.rows.map((row) => ({
-                storeMemberId: row.storeMemberId,
-                otHours: 0,
-                otAuto: true,
-                remarks: null,
-                sortOrder: row.sortOrder,
-                shifts: row.shifts.map((shift) => ({
-                    date: toDateString(addDays(shift.date, dayOffset)),
-                    isRestDay: shift.isRestDay,
-                    startMinute: shift.startMinute,
-                    endMinute: shift.endMinute,
-                    presetId: shift.presetId,
+            rows: source.rows
+                .filter((row) => !row.storeMember.suspendedAt && !row.storeMember.deletedAt)
+                .map((row) => ({
+                    storeMemberId: row.storeMemberId,
+                    otHours: 0,
+                    otAuto: true,
+                    remarks: null,
+                    sortOrder: row.sortOrder,
+                    shifts: row.shifts.map((shift) => ({
+                        date: toDateString(addDays(shift.date, dayOffset)),
+                        isRestDay: shift.isRestDay,
+                        startMinute: shift.startMinute,
+                        endMinute: shift.endMinute,
+                        presetId: shift.presetId,
+                    })),
                 })),
-            })),
         });
     },
 
@@ -696,7 +711,15 @@ export const scheduleService = {
         }
         const advances = await scheduleRepository.listCashAdvances(storeId, scope);
         return advances.map((a) => {
-            const deducted = a.deductions.reduce((sum, d) => sum + toNum(d.amount), 0);
+            const deductions = a.deductions.map((d) => ({
+                id: d.id,
+                scheduleWeekRowId: d.scheduleWeekRowId,
+                amount: toNum(d.amount),
+                skipped: d.skipped,
+                reason: d.reason,
+                weekStart: toDateString(d.scheduleWeekRow.scheduleWeek.weekStart),
+            }));
+            const deducted = deductions.reduce((sum, d) => sum + d.amount, 0);
             return {
                 id: a.id,
                 storeMemberId: a.storeMemberId,
@@ -705,6 +728,7 @@ export const scheduleService = {
                 balance: toNum(a.amount) - deducted,
                 takenOn: toDateString(a.takenOn),
                 note: a.note,
+                deductions,
             };
         });
     },
@@ -804,6 +828,141 @@ export const scheduleService = {
         };
     },
 
+    // Records a single total deduction for this week against a staff member,
+    // allocating it across their active cash advances FIFO (oldest first).
+    setTotalDeductions: async (
+        storeId: string,
+        rowId: string,
+        data: { amount: number; skipped?: boolean; reason?: string | null }
+    ) => {
+        const row = await prisma.scheduleWeekRow.findFirst({
+            where: { id: rowId, scheduleWeek: { storeId, deletedAt: null } },
+            include: { scheduleWeek: true },
+        });
+        if (!row) throw new AppError('ROW_NOT_FOUND', 'Schedule row not found', 404);
+        if (row.scheduleWeek.status === ScheduleWeekStatus.PUBLISHED) {
+            throw new AppError('WEEK_PUBLISHED', 'This week is published. Unpublish it before making changes.', 409);
+        }
+
+        const weekStart = row.scheduleWeek.weekStart;
+        const weekEnd = addDays(weekStart, 6);
+
+        const advances = await prisma.cashAdvance.findMany({
+            where: {
+                storeMemberId: row.storeMemberId,
+                storeId,
+                deletedAt: null,
+                takenOn: { lte: weekEnd },
+            },
+            include: {
+                deductions: {
+                    include: {
+                        scheduleWeekRow: {
+                            select: {
+                                scheduleWeek: {
+                                    select: { weekStart: true },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+            orderBy: [{ takenOn: 'asc' }, { createdAt: 'asc' }],
+        });
+
+        // Compute available balance per advance excluding this week's row
+        const advancesWithAvail = advances.map((a) => {
+            const priorDeducted = a.deductions
+                .filter((d) => toDateString(d.scheduleWeekRow.scheduleWeek.weekStart) < toDateString(weekStart))
+                .reduce((sum, d) => sum + toNum(d.amount), 0);
+            const available = Math.max(0, toNum(a.amount) - priorDeducted);
+            return { advance: a, available };
+        });
+
+        const totalAvailable = advancesWithAvail.reduce((sum, item) => sum + item.available, 0);
+        const requestedAmount = data.skipped ? 0 : data.amount;
+
+        if (requestedAmount > totalAvailable) {
+            throw new AppError(
+                'DEDUCTION_EXCEEDS_BALANCE',
+                `That deduction is more than the outstanding balance (${totalAvailable})`,
+                400,
+                { remaining: totalAvailable }
+            );
+        }
+
+        const fifoAllocations = allocateDeductionFifo(
+            advancesWithAvail.map((item) => ({ id: item.advance.id, available: item.available })),
+            requestedAmount
+        );
+        const allocations = fifoAllocations.map((alloc) => ({
+            cashAdvanceId: alloc.cashAdvanceId,
+            amount: alloc.amount,
+            skipped: data.skipped ?? false,
+        }));
+
+        const savedDeductions = await prisma.$transaction(async (tx) => {
+            // Delete existing deductions for this row that are not in the new allocations
+            await tx.cashAdvanceDeduction.deleteMany({
+                where: {
+                    scheduleWeekRowId: rowId,
+                    cashAdvanceId: { notIn: allocations.map((a) => a.cashAdvanceId) },
+                },
+            });
+
+            const results = [];
+            for (const alloc of allocations) {
+                if (alloc.amount === 0 && !alloc.skipped) {
+                    await tx.cashAdvanceDeduction.deleteMany({
+                        where: {
+                            cashAdvanceId: alloc.cashAdvanceId,
+                            scheduleWeekRowId: rowId,
+                        },
+                    });
+                    continue;
+                }
+
+                const saved = await tx.cashAdvanceDeduction.upsert({
+                    where: {
+                        cashAdvanceId_scheduleWeekRowId: {
+                            cashAdvanceId: alloc.cashAdvanceId,
+                            scheduleWeekRowId: rowId,
+                        },
+                    },
+                    create: {
+                        cashAdvanceId: alloc.cashAdvanceId,
+                        scheduleWeekRowId: rowId,
+                        amount: new Prisma.Decimal(alloc.amount),
+                        skipped: alloc.skipped,
+                        reason: data.reason ?? null,
+                    },
+                    update: {
+                        amount: new Prisma.Decimal(alloc.amount),
+                        skipped: alloc.skipped,
+                        reason: data.reason ?? null,
+                    },
+                });
+                results.push({
+                    id: saved.id,
+                    cashAdvanceId: saved.cashAdvanceId,
+                    amount: toNum(saved.amount),
+                    skipped: saved.skipped,
+                    reason: saved.reason,
+                });
+            }
+            return results;
+        });
+
+        const lessCa = savedDeductions.reduce((sum, d) => sum + d.amount, 0);
+        const caBalance = Math.max(0, totalAvailable - lessCa);
+
+        return {
+            deductions: savedDeductions,
+            lessCa,
+            caBalance,
+        };
+    },
+
     removeDeduction: async (storeId: string, rowId: string, deductionId: string) => {
         const result = await prisma.cashAdvanceDeduction.deleteMany({
             where: {
@@ -833,7 +992,7 @@ export const scheduleService = {
         const [weeks, comps, balances] = await Promise.all([
             scheduleRepository.listWeeksInRange(storeId, from, to),
             scheduleRepository.listCompensations(storeId),
-            cashAdvanceBalances(storeId),
+            cashAdvanceBalancesAsOf(storeId, to),
         ]);
 
         const published = weeks.filter((w) => w.status === ScheduleWeekStatus.PUBLISHED);
@@ -857,6 +1016,7 @@ export const scheduleService = {
 
         for (const week of published) {
             for (const row of week.rows) {
+                if (row.storeMember.suspendedAt || row.storeMember.deletedAt) continue;
                 // Month totals read the settled payout columns only; attendance
                 // is a per-week reconciliation and is not aggregated here.
                 const pay = buildRowPay(row, week.weekStart, true, 0, comps, undefined);
@@ -918,7 +1078,7 @@ export const scheduleService = {
     // request their own, and never see an unpublished week.
     memberMonth: async (storeId: string, storeMemberId: string, year: number, month: number, viewer: Viewer) => {
         const member = await prisma.storeMember.findFirst({
-            where: { id: storeMemberId, storeId, deletedAt: null },
+            where: { id: storeMemberId, storeId, deletedAt: null, suspendedAt: null },
             include: { user: { select: { fullName: true, email: true } } },
         });
         if (!member) throw new AppError('MEMBER_NOT_FOUND', 'Staff member not found in this store', 404);
@@ -971,18 +1131,20 @@ export const scheduleService = {
             cursor.setUTCDate(cursor.getUTCDate() + 7);
         }
 
-        const [weeks, comps, balances, viewerMember] = await Promise.all([
+        const [weeks, comps, rawAdvances, viewerMember] = await Promise.all([
             scheduleRepository.listWeeksInRange(storeId, monthStart, monthEnd),
             scheduleRepository.listCompensations(storeId),
-            cashAdvanceBalances(storeId),
+            scheduleRepository.listCashAdvances(storeId),
             scheduleRepository.findMemberByUser(storeId, viewer.userId),
         ]);
 
+        const advancesWithDeductions = rawAdvances.map(toAdvanceWithDeductions);
         const byWeekStart = new Map(weeks.map((w) => [toDateString(w.weekStart), w]));
 
         const blocks = sundays.map((sunday) => {
             const key = toDateString(sunday);
             const week = byWeekStart.get(key);
+            const sundayBalances = computeCashAdvanceBalancesAsOf(advancesWithDeductions, sunday);
 
             // Staff never see a draft's contents — same rule as the week view.
             const hidden = !week || (week.status === ScheduleWeekStatus.DRAFT && !isManager(viewer));
@@ -1001,7 +1163,7 @@ export const scheduleService = {
                 };
             }
 
-            return { ...serialiseWeek(week, viewer, balances, comps), isUnscheduled: false };
+            return { ...serialiseWeek(week, viewer, sundayBalances, comps), isUnscheduled: false };
         });
 
         return {

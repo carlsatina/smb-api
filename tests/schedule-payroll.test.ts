@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+    allocateDeductionFifo,
+    computeCashAdvanceBalancesAsOf,
     computeOtHours,
     computePayout,
     countDaysWorked,
@@ -139,3 +141,131 @@ describe('computeOtHours — derived from the roster', () => {
         ).toBe(2000);
     });
 });
+
+describe('allocateDeductionFifo', () => {
+    it('allocates deduction to single advance', () => {
+        const advances = [{ id: 'adv-1', available: 1000 }];
+        const result = allocateDeductionFifo(advances, 300);
+        expect(result).toEqual([{ cashAdvanceId: 'adv-1', amount: 300 }]);
+    });
+
+    it('allocates deduction FIFO across multiple advances', () => {
+        const advances = [
+            { id: 'adv-1', available: 500 },
+            { id: 'adv-2', available: 1000 },
+            { id: 'adv-3', available: 800 },
+        ];
+        const result = allocateDeductionFifo(advances, 1200);
+        expect(result).toEqual([
+            { cashAdvanceId: 'adv-1', amount: 500 },
+            { cashAdvanceId: 'adv-2', amount: 700 },
+            { cashAdvanceId: 'adv-3', amount: 0 },
+        ]);
+    });
+
+    it('caps total deduction when it exceeds all balances', () => {
+        const advances = [
+            { id: 'adv-1', available: 400 },
+            { id: 'adv-2', available: 300 },
+        ];
+        const result = allocateDeductionFifo(advances, 1000);
+        expect(result).toEqual([
+            { cashAdvanceId: 'adv-1', amount: 400 },
+            { cashAdvanceId: 'adv-2', amount: 300 },
+        ]);
+    });
+
+    it('returns zero allocations when deduction is zero or negative', () => {
+        const advances = [
+            { id: 'adv-1', available: 500 },
+            { id: 'adv-2', available: 1000 },
+        ];
+        expect(allocateDeductionFifo(advances, 0)).toEqual([
+            { cashAdvanceId: 'adv-1', amount: 0 },
+            { cashAdvanceId: 'adv-2', amount: 0 },
+        ]);
+        expect(allocateDeductionFifo(advances, -50)).toEqual([
+            { cashAdvanceId: 'adv-1', amount: 0 },
+            { cashAdvanceId: 'adv-2', amount: 0 },
+        ]);
+    });
+});
+
+describe('computeCashAdvanceBalancesAsOf', () => {
+    const advances = [
+        {
+            id: 'adv-1',
+            storeMemberId: 'member-1',
+            amount: 2000,
+            takenOn: '2026-09-01',
+            deductions: [
+                { amount: 500, weekStart: '2026-09-06' },
+                { amount: 500, weekStart: '2026-09-13' },
+                { amount: 500, weekStart: '2026-09-20' },
+            ],
+        },
+        {
+            id: 'adv-2',
+            storeMemberId: 'member-1',
+            amount: 1000,
+            takenOn: '2026-09-22',
+            deductions: [
+                { amount: 300, weekStart: '2026-09-27' },
+            ],
+        },
+        {
+            id: 'adv-3',
+            storeMemberId: 'member-2',
+            amount: 800,
+            takenOn: '2026-09-10',
+            deductions: [
+                { amount: 800, weekStart: '2026-09-13' },
+            ],
+        },
+    ];
+
+    it('computes week 1 balance: excludes future advances and future deductions', () => {
+        // Week 1: 2026-09-06 to 2026-09-12
+        // adv-1 taken 2026-09-01 <= 2026-09-12. Deducted in week 1: 500. Outstanding: 1500.
+        // adv-2 taken 2026-09-22 > 2026-09-12 (future -> excluded).
+        // adv-3 taken 2026-09-10 <= 2026-09-12. Deductions on/before 09-06: 0. Outstanding: 800.
+        const balances = computeCashAdvanceBalancesAsOf(advances, '2026-09-06');
+        expect(balances.get('member-1')).toBe(1500);
+        expect(balances.get('member-2')).toBe(800);
+    });
+
+    it('computes week 2 balance: reflects week 1 and week 2 deductions', () => {
+        // Week 2: 2026-09-13 to 2026-09-19
+        // adv-1: 2000 - 500 (wk1) - 500 (wk2) = 1000.
+        // adv-2: taken 2026-09-22 > 2026-09-19 (still future -> excluded).
+        // adv-3: 800 - 800 (wk2) = 0.
+        const balances = computeCashAdvanceBalancesAsOf(advances, '2026-09-13');
+        expect(balances.get('member-1')).toBe(1000);
+        expect(balances.get('member-2')).toBe(0);
+    });
+
+    it('computes week 3 balance: includes newly taken advance in week 3', () => {
+        // Week 3: 2026-09-20 to 2026-09-26
+        // adv-1: 2000 - 1500 = 500.
+        // adv-2: taken 2026-09-22 <= 2026-09-26 (now included). Deductions on/before 09-20: 0. Balance: 1000.
+        // member-1 total = 500 + 1000 = 1500.
+        const balances = computeCashAdvanceBalancesAsOf(advances, '2026-09-20');
+        expect(balances.get('member-1')).toBe(1500);
+    });
+
+    it('computes week 4 balance: deducts from advance 2 as well', () => {
+        // Week 4: 2026-09-27 to 2026-10-03
+        // adv-1: 2000 - 1500 = 500.
+        // adv-2: 1000 - 300 = 700.
+        // member-1 total = 1200.
+        const balances = computeCashAdvanceBalancesAsOf(advances, '2026-09-27');
+        expect(balances.get('member-1')).toBe(1200);
+    });
+
+    it('returns empty balance when member has no advances prior to week', () => {
+        const balances = computeCashAdvanceBalancesAsOf(advances, '2026-08-23');
+        expect(balances.get('member-1')).toBeUndefined();
+        expect(balances.get('member-2')).toBeUndefined();
+    });
+});
+
