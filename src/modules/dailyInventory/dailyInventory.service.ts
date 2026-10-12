@@ -21,6 +21,18 @@ const toNum = (v: Prisma.Decimal | number | null | undefined): number => {
     return Number(v);
 };
 
+const toNullableNum = (v: Prisma.Decimal | number | null | undefined): number | null => {
+    if (v === null || v === undefined) return null;
+    return Number(v);
+};
+
+// Home stock is stored as the day's starting count at the house; what remains is always derived
+// from it, so repeated autosaves or corrected deliveries never deduct the same delivery twice.
+export const computeHomeStock = (homeStockOpening: number | null, delivery: number): number | null => {
+    if (homeStockOpening === null) return null;
+    return homeStockOpening - delivery;
+};
+
 export interface DailyReportItemDto {
     id?: string;
     section: string | null;
@@ -33,6 +45,8 @@ export interface DailyReportItemDto {
     reminders: string | null;
     sortOrder: number;
     totalUsed: number | null;
+    homeStockOpening: number | null;
+    homeStock: number | null;
     itemType?: ItemType | null;
     itemId?: string | null;
 }
@@ -57,6 +71,7 @@ export interface SaveReportItemInput {
     openingInventory: number;
     delivery: number;
     endingInventory?: number | null;
+    homeStockOpening?: number | null;
     reminders?: string | null;
     sortOrder?: number;
     itemType?: ItemType | null;
@@ -105,6 +120,7 @@ export const dailyInventoryService = {
                     const total = opening + delivery;
                     const ending = item.endingInventory !== null ? toNum(item.endingInventory) : null;
                     const totalUsed = ending !== null ? Math.max(0, total - ending) : null;
+                    const homeStockOpening = toNullableNum(item.homeStockOpening);
 
                     return {
                         id: item.id,
@@ -118,6 +134,8 @@ export const dailyInventoryService = {
                         reminders: item.reminders,
                         sortOrder: item.sortOrder,
                         totalUsed,
+                        homeStockOpening,
+                        homeStock: computeHomeStock(homeStockOpening, delivery),
                         itemType: item.itemType,
                         itemId: item.itemId,
                     };
@@ -161,6 +179,11 @@ export const dailyInventoryService = {
                 const opening = prevItem.endingInventory !== null ? toNum(prevItem.endingInventory) : 0;
                 const delivery = 0;
                 const total = opening + delivery;
+                // What was left at the house after yesterday's delivery becomes today's starting home stock
+                const homeStockOpening = computeHomeStock(
+                    toNullableNum(prevItem.homeStockOpening),
+                    toNum(prevItem.delivery)
+                );
 
                 items.push({
                     section: prevItem.section,
@@ -173,6 +196,8 @@ export const dailyInventoryService = {
                     reminders: prevItem.reminders,
                     sortOrder: prevItem.sortOrder,
                     totalUsed: null,
+                    homeStockOpening,
+                    homeStock: homeStockOpening,
                     itemType: prevItem.itemType,
                     itemId: prevItem.itemId,
                 });
@@ -194,6 +219,8 @@ export const dailyInventoryService = {
                         reminders: t.reminders ?? null,
                         sortOrder: t.sortOrder,
                         totalUsed: null,
+                        homeStockOpening: null,
+                        homeStock: null,
                     });
                 }
             }
@@ -223,6 +250,8 @@ export const dailyInventoryService = {
             reminders: t.reminders ?? null,
             sortOrder: t.sortOrder,
             totalUsed: null,
+            homeStockOpening: null,
+            homeStock: null,
         }));
 
         return {
@@ -261,7 +290,8 @@ export const dailyInventoryService = {
         });
 
         // If user is store staff (not owner/admin), fetch previous day's report for opening values
-        let prevItemMap: Map<string, Prisma.Decimal | null> = new Map();
+        let prevItemMap: Map<string, { endingInventory: Prisma.Decimal | null; homeStockOpening: number | null }> =
+            new Map();
         if (!isOwnerOrAdmin && !existingReport) {
             const previousReport = await prisma.dailyInventoryReport.findFirst({
                 where: {
@@ -274,7 +304,13 @@ export const dailyInventoryService = {
             });
             if (previousReport) {
                 prevItemMap = new Map(
-                    previousReport.items.map((i) => [i.particulars.trim().toLowerCase(), i.endingInventory])
+                    previousReport.items.map((i) => [
+                        i.particulars.trim().toLowerCase(),
+                        {
+                            endingInventory: i.endingInventory,
+                            homeStockOpening: computeHomeStock(toNullableNum(i.homeStockOpening), toNum(i.delivery)),
+                        },
+                    ])
                 );
             }
         }
@@ -287,15 +323,21 @@ export const dailyInventoryService = {
         const preparedItems = payload.items.map((submittedItem, idx) => {
             const normKey = submittedItem.particulars.trim().toLowerCase();
             let openingVal = submittedItem.openingInventory;
+            let homeStockOpeningVal = submittedItem.homeStockOpening ?? null;
 
             if (!isOwnerOrAdmin) {
-                // Store staff CANNOT edit opening inventory:
+                // Store staff CANNOT edit opening inventory or home stock:
                 if (existingItemMap.has(normKey)) {
-                    openingVal = toNum(existingItemMap.get(normKey)?.openingInventory);
+                    const existingItem = existingItemMap.get(normKey);
+                    openingVal = toNum(existingItem?.openingInventory);
+                    homeStockOpeningVal = toNullableNum(existingItem?.homeStockOpening);
                 } else if (prevItemMap.has(normKey)) {
-                    openingVal = toNum(prevItemMap.get(normKey));
+                    const prevItem = prevItemMap.get(normKey);
+                    openingVal = toNum(prevItem?.endingInventory);
+                    homeStockOpeningVal = prevItem?.homeStockOpening ?? null;
                 } else {
                     openingVal = 0;
+                    homeStockOpeningVal = null;
                 }
             }
 
@@ -309,6 +351,7 @@ export const dailyInventoryService = {
                     submittedItem.endingInventory !== null && submittedItem.endingInventory !== undefined
                         ? new Prisma.Decimal(submittedItem.endingInventory)
                         : null,
+                homeStockOpening: homeStockOpeningVal !== null ? new Prisma.Decimal(homeStockOpeningVal) : null,
                 reminders: submittedItem.reminders?.trim() || null,
                 sortOrder: submittedItem.sortOrder ?? idx + 1,
                 itemType: submittedItem.itemType || null,

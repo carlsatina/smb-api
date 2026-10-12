@@ -13,6 +13,8 @@ export const saveDailyReportItemSchema = z.object({
     openingInventory: z.number().min(0).default(0),
     delivery: z.number().min(0).default(0),
     endingInventory: z.number().min(0).nullable().optional(),
+    // No min(0): a delivery larger than home stock carries a negative balance forward, which must still save
+    homeStockOpening: z.number().nullable().optional(),
     reminders: z.string().nullable().optional(),
     sortOrder: z.number().int().optional(),
     itemType: z.enum(['PRODUCT', 'INGREDIENT']).nullable().optional(),

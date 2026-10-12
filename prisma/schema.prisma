@@ -885,6 +885,7 @@ model DailyInventoryReportItem {
   openingInventory Decimal              @default(0) @db.Decimal(12, 4)
   delivery         Decimal              @default(0) @db.Decimal(12, 4)
   endingInventory  Decimal?             @db.Decimal(12, 4)
+  homeStockOpening Decimal?             @db.Decimal(12, 4)
   reminders        String?
   sortOrder        Int                  @default(0)
   itemType         ItemType?
