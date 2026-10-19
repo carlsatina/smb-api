@@ -33,6 +33,16 @@ export const computeHomeStock = (homeStockOpening: number | null, delivery: numb
     return homeStockOpening - delivery;
 };
 
+// Cashiers do not see home stock at all, so it is blanked out of what they are sent. This is safe
+// for their autosaves because saveDailyReport ignores home stock submitted by non-owner/admins.
+export const hideHomeStockForRole = (report: DailyReportDto, role: Role): DailyReportDto => {
+    if (role !== Role.CASHIER) return report;
+    return {
+        ...report,
+        items: report.items.map((item) => ({ ...item, homeStockOpening: null, homeStock: null })),
+    };
+};
+
 export interface DailyReportItemDto {
     id?: string;
     section: string | null;

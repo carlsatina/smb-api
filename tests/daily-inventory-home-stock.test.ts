@@ -1,7 +1,7 @@
 import { Prisma, Role } from '@prisma/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import prisma from '../lib/prisma';
-import { computeHomeStock, dailyInventoryService } from '../src/modules/dailyInventory/dailyInventory.service';
+import { computeHomeStock, dailyInventoryService, hideHomeStockForRole } from '../src/modules/dailyInventory/dailyInventory.service';
 
 vi.mock('../lib/prisma', () => {
     const dailyInventoryReport = {
@@ -79,6 +79,45 @@ describe('computeHomeStock', () => {
 
     it('goes negative when delivery exceeds home stock', () => {
         expect(computeHomeStock(3, 5)).toBe(-2);
+    });
+});
+
+describe('hideHomeStockForRole', () => {
+    const report = {
+        storeId: 'store-1',
+        reportType: 'TAKOYAKI' as const,
+        date: '2026-10-12',
+        isNew: false,
+        carriedOverFromDate: null,
+        items: [
+            {
+                section: null,
+                particulars: 'Flour',
+                unit: 'kg',
+                openingInventory: 5,
+                delivery: 5,
+                total: 10,
+                endingInventory: null,
+                reminders: null,
+                sortOrder: 0,
+                totalUsed: null,
+                homeStockOpening: 20,
+                homeStock: 15,
+            },
+        ],
+    };
+
+    it('blanks home stock for cashiers', () => {
+        const hidden = hideHomeStockForRole(report, Role.CASHIER);
+        expect(hidden.items[0].homeStockOpening).toBeNull();
+        expect(hidden.items[0].homeStock).toBeNull();
+        expect(hidden.items[0].delivery).toBe(5);
+    });
+
+    it('leaves home stock for other roles', () => {
+        for (const role of [Role.OWNER, Role.ADMIN, Role.INVENTORY_MANAGER, Role.VIEWER]) {
+            expect(hideHomeStockForRole(report, role).items[0].homeStock).toBe(15);
+        }
     });
 });
 
