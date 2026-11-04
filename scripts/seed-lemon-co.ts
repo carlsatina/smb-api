@@ -168,7 +168,15 @@ export const seedLemonCo = async (customPrisma?: PrismaClient) => {
                 timezone: dataset.company.timezone || 'Asia/Manila',
                 currency: dataset.company.currency || 'PHP',
                 unitOptions: ['cup', 'serving', 'pc', 'g', 'kg', 'ml', 'L', 'pack', 'bottle', 'gal'],
-                categoryOptions: ['Old Fashioned', 'Flavored Lemonade', 'Specialty & Shakes', 'Add-on'],
+                categoryOptions: [
+                    'Old Fashioned',
+                    'Flavored 16oz',
+                    'Flavored 22oz',
+                    'Flavored 1L',
+                    'Flavored 12oz',
+                    'Specialty & Shakes',
+                    'Add-on',
+                ],
                 expenseCategoryOptions: ['Food Allowance', 'Store Expenses', 'Supplies', 'Utilities'],
                 paymentMethods: ['CASH', 'GCASH', 'MAYA', 'GRAB', 'SENIOR_PWD', 'OTHER'],
                 allowNegativeStock: false,
@@ -178,6 +186,20 @@ export const seedLemonCo = async (customPrisma?: PrismaClient) => {
         console.log(`Created store "${store.name}" (ID: ${store.id})`);
     } else {
         console.log(`Found existing store "${store.name}" (ID: ${store.id}). Resetting October 2026 data...`);
+        await prisma.store.update({
+            where: { id: store.id },
+            data: {
+                categoryOptions: [
+                    'Old Fashioned',
+                    'Flavored 16oz',
+                    'Flavored 22oz',
+                    'Flavored 1L',
+                    'Flavored 12oz',
+                    'Specialty & Shakes',
+                    'Add-on',
+                ],
+            },
+        });
         // Clean existing October data idempotently
         await prisma.sale.deleteMany({ where: { storeId: store.id } });
         await prisma.dailySalesEntry.deleteMany({ where: { storeId: store.id } });

@@ -145,7 +145,16 @@ def main():
                 elif 'SHAKE' in name_clean.upper() or 'FROSTY' in name_clean.upper() or 'BURST' in name_clean.upper():
                     cat = 'Specialty & Shakes'
                 else:
-                    cat = 'Flavored Lemonade'
+                    if size_clean in ['16 OZ', '16oz']:
+                        cat = 'Flavored 16oz'
+                    elif size_clean == '22 OZ':
+                        cat = 'Flavored 22oz'
+                    elif size_clean == '1 Liter':
+                        cat = 'Flavored 1L'
+                    elif size_clean == '12 OZ':
+                        cat = 'Flavored 12oz'
+                    else:
+                        cat = 'Flavored Lemonade'
 
                 # Recipe calculation from formula
                 lemon_f = sheet_f.cell(r, 17).value
