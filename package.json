@@ -20,6 +20,8 @@
     "cleanup": "tsx scripts/cleanup.ts",
     "db:seed": "prisma db seed",
     "db:seed:admin": "tsx scripts/seed-super-admin.ts",
+    "db:seed:lemon-co": "tsx scripts/seed-lemon-co.ts",
+    "seed:lemon-co": "tsx scripts/seed-lemon-co.ts",
     "db:deploy": "prisma migrate deploy",
     "db:backup": "bash scripts/backup.sh",
     "db:restore": "bash scripts/restore.sh",

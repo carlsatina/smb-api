@@ -42,6 +42,7 @@ prisma/dev.db-journal
 # Uploaded files
 uploads/
 storage/
+*.xlsx
 
 # IDE / Editor
 .vscode/*

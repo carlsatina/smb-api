@@ -15,6 +15,7 @@ import {
 } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { DEFAULT_CATEGORY_OPTIONS, DEFAULT_UNIT_OPTIONS } from '../src/modules/stores/store.defaults';
+import { seedLemonCo } from '../scripts/seed-lemon-co';
 
 dotenv.config();
 
@@ -1544,6 +1545,9 @@ const main = async () => {
             }
         }
     }
+
+    // Seed Lemon Co. store with complete October 2026 sales, inventory, and reports data
+    await seedLemonCo(prisma);
 };
 
 main()
