@@ -1,4 +1,5 @@
 import { Response } from 'express';
+import { Role } from '@prisma/client';
 import { AuthRequest } from '../../middlewares/auth';
 import { asyncHandler } from '../../shared/asyncHandler';
 import { AppError } from '../../shared/errors';
@@ -48,6 +49,9 @@ export const finalizeSale = asyncHandler(async (req: AuthRequest, res: Response)
     }
 
     const payload = saleFinalizeSchema.parse(req.body);
+    if (payload.customDate && req.storeRole !== Role.OWNER && !req.user?.isSuperAdmin) {
+        throw new AppError('FORBIDDEN', 'Only store owners can customize the sale date.', 403);
+    }
     const sale = await saleService.finalize(storeId, userId, payload);
     res.status(201).json({ sale });
 });

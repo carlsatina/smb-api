@@ -26,7 +26,15 @@ const optionalPositiveInt = z.preprocess(
 const optionalStringArray = z.array(z.string().min(1)).optional();
 
 const VALID_PAYMENT_METHODS = ['CASH', 'CARD', 'TRANSFER', 'GCASH', 'MAYA', 'OTHER'] as const;
-const optionalPaymentMethods = z.array(z.enum(VALID_PAYMENT_METHODS)).min(1, 'At least one payment method required').optional();
+const optionalPaymentMethods = z.preprocess(
+    (value) => {
+        if (!Array.isArray(value)) return value;
+        const validSet = new Set<string>(VALID_PAYMENT_METHODS);
+        const filtered = value.filter((x): x is typeof VALID_PAYMENT_METHODS[number] => typeof x === 'string' && validSet.has(x));
+        return filtered.length > 0 ? filtered : undefined;
+    },
+    z.array(z.enum(VALID_PAYMENT_METHODS)).min(1, 'At least one payment method required')
+).optional();
 
 export const createStoreSchema = z.object({
     name: z.string().min(1),

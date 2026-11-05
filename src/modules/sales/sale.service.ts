@@ -473,7 +473,12 @@ export const saleService = {
     finalize: async (
         storeId: string,
         userId: string,
-        payload: { items: SaleItemInput[]; paymentMethod: PaymentMethod; orderType: OrderType }
+        payload: {
+            items: SaleItemInput[];
+            paymentMethod: PaymentMethod;
+            orderType: OrderType;
+            customDate?: Date;
+        }
     ) => {
         if (!payload.items.length) {
             throw new AppError('INVALID_ITEMS', 'Sale must include at least one item.', 400);
@@ -574,6 +579,8 @@ export const saleService = {
             ingredients.map((ingredient) => [ingredient.id, normalizeDecimal(ingredient.costPerUnit)])
         );
 
+        const effectiveDate = payload.customDate ?? new Date();
+
         const sale = await prisma.$transaction(async (tx) => {
             const receiptNumber = await getNextReceiptNumber(tx, storeId);
 
@@ -589,7 +596,8 @@ export const saleService = {
                     total: new Prisma.Decimal(totals.total),
                     paymentMethod: payload.paymentMethod,
                     orderType: payload.orderType,
-                    finalizedAt: new Date(),
+                    finalizedAt: effectiveDate,
+                    createdAt: effectiveDate,
                 },
             });
 
@@ -617,6 +625,7 @@ export const saleService = {
                         referenceType: 'SALE',
                         referenceId: created.id,
                         createdById: userId,
+                        createdAt: effectiveDate,
                     })),
                 });
             }

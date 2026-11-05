@@ -44,6 +44,7 @@ export const saleFinalizeSchema = z.object({
     items: z.array(saleItemSchema).min(1),
     paymentMethod: z.nativeEnum(PaymentMethod),
     orderType: z.nativeEnum(OrderType).default(OrderType.DINE_IN),
+    customDate: dateValue.optional(),
 });
 
 export const saleListQuerySchema = z.object({

@@ -1,8 +1,45 @@
 #!/usr/bin/env python3
 import json
 import os
+import re
 import sys
 import openpyxl
+
+SIZE_MAP = {
+    '12 OZ': 'Regular',
+    '12oz': 'Regular',
+    '12 oz': 'Regular',
+    '16 OZ': 'Grande',
+    '16oz': 'Grande',
+    '16 oz': 'Grande',
+    '22 OZ': 'Supreme',
+    '22oz': 'Supreme',
+    '22 oz': 'Supreme',
+    '1 Liter': 'Supreme XL',
+    '1 liter': 'Supreme XL',
+    '1L': 'Supreme XL',
+    '1 L': 'Supreme XL',
+}
+
+def to_title_case(s: str) -> str:
+    s = re.sub(r'\bLEMONDAE\b', 'Lemonade', s, flags=re.IGNORECASE)
+    s = re.sub(r'\bSTRAWBERY\b', 'Strawberry', s, flags=re.IGNORECASE)
+    s = re.sub(r'\bADD ON\b', 'Add-on', s, flags=re.IGNORECASE)
+    s = re.sub(r'\bOLD FASHIONED\b', 'Old-Fashioned', s, flags=re.IGNORECASE)
+    s = re.sub(r'\bFROSTY MANGO LEMONADA\b', 'Mango Lemonada', s, flags=re.IGNORECASE)
+    s = re.sub(r'\bFROSTY STRAWBERRY LUSH\b', 'Strawberry Lush', s, flags=re.IGNORECASE)
+    s = re.sub(r'\bFROSTY STRAWBERY LUSH\b', 'Strawberry Lush', s, flags=re.IGNORECASE)
+    words = s.split(' ')
+    titled = []
+    for w in words:
+        if w.lower() == 'add-on':
+            titled.append('Add-on')
+        elif '-' in w:
+            parts = [p.capitalize() for p in w.split('-')]
+            titled.append('-'.join(parts))
+        else:
+            titled.append(w.capitalize())
+    return ' '.join(titled)
 
 def main():
     xlsx_path = os.environ.get('CENTRAL_BLOC_XLSX')
@@ -128,33 +165,42 @@ def main():
                     continue
 
                 size_clean = str(size).strip()
+                size_mapped = SIZE_MAP.get(size_clean, size_clean.capitalize())
                 variant_clean = str(variant).strip() if variant else None
 
-                # Construct canonical product key & name
-                name_parts = [name_clean]
-                if variant_clean:
-                    name_parts.append(f"({variant_clean})")
-                name_parts.append(size_clean)
-                full_product_name = " ".join(name_parts)
+                name_u = name_clean.upper()
+                is_hot = (variant_clean and variant_clean.upper() == 'HOT') or 'HOT' in name_u
+                is_add_on = 'ADD ON' in name_u or 'ADD-ON' in name_u
+                is_old_fashioned = 'OLD FASHIONED' in name_u
+                is_shake = any(kw in name_u for kw in ['SHAKE', 'FROSTY', 'LEMONADA', 'LUSH', 'BURST'])
+                is_premium = any(kw in name_u for kw in ['HONEY', 'GINGER', 'STRAWBERRY', 'STRAWBERY', 'MERRY BERRY'])
 
-                # Determine category
-                if 'ADD ON' in name_clean.upper():
-                    cat = 'Add-on'
-                elif 'OLD FASHIONED' in name_clean.upper():
-                    cat = 'Old Fashioned'
-                elif 'SHAKE' in name_clean.upper() or 'FROSTY' in name_clean.upper() or 'BURST' in name_clean.upper():
-                    cat = 'Specialty & Shakes'
+                if is_hot:
+                    cat = 'Hot Drinks'
+                elif is_add_on:
+                    cat = 'Add-ons'
+                elif is_old_fashioned:
+                    cat = 'The Original'
+                elif is_shake:
+                    cat = 'Frosty Lemonade Shakes'
+                elif is_premium:
+                    cat = 'Premium Blends'
                 else:
-                    if size_clean in ['16 OZ', '16oz']:
-                        cat = 'Flavored 16oz'
-                    elif size_clean == '22 OZ':
-                        cat = 'Flavored 22oz'
-                    elif size_clean == '1 Liter':
-                        cat = 'Flavored 1L'
-                    elif size_clean == '12 OZ':
-                        cat = 'Flavored 12oz'
+                    cat = 'Signature Refreshers'
+
+                # Construct canonical product key & name in Title Case
+                name_title = to_title_case(name_clean)
+                name_parts = [name_title]
+                if variant_clean:
+                    v_u = variant_clean.upper()
+                    if v_u in ['WSS', 'BSS']:
+                        name_parts.append(f"({v_u})")
+                    elif v_u == 'HOT':
+                        name_parts.append("(Hot)")
                     else:
-                        cat = 'Flavored Lemonade'
+                        name_parts.append(f"({variant_clean.capitalize()})")
+                name_parts.append(size_mapped)
+                full_product_name = " ".join(name_parts)
 
                 # Recipe calculation from formula
                 lemon_f = sheet_f.cell(r, 17).value
@@ -309,7 +355,7 @@ def main():
                 # Register product
                 clean_slug = "".join(c if c.isalnum() else "-" for c in name_clean.upper()).strip("-")
                 variant_part = f"-{variant_clean.upper()}" if variant_clean else ""
-                size_part = f"-{size_clean.upper().replace(' ', '')}"
+                size_part = f"-{size_mapped.upper().replace(' ', '')}"
                 sku_candidate = f"LEM-{clean_slug[:15]}{variant_part}{size_part}"
 
                 price_num = float(price) if price is not None and price != '' else None
@@ -326,7 +372,7 @@ def main():
                     all_products[full_product_name] = {
                         'name': full_product_name,
                         'category': cat,
-                        'size': size_clean,
+                        'size': size_mapped,
                         'variant': variant_clean,
                         'sku': final_sku,
                         'type': 'READY_MADE' if 'ADD ON' in name_u and not recipe_lines else 'RECIPE',
