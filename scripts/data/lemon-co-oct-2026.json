@@ -9,20 +9,24 @@
     "Fresh Lemon": {
       "unit": "pc",
       "category": "RAW_MATERIAL",
-      "costPerUnit": 12.0,
+      "costPerUnit": 20.0,
       "lowStockThreshold": 50
     },
-    "White Sugar Syrup": {
-      "unit": "kg",
+    "White Sugar": {
+      "unit": "ml",
       "category": "RAW_MATERIAL",
-      "costPerUnit": 45.0,
-      "lowStockThreshold": 10
+      "costPerUnit": 0.15,
+      "lowStockThreshold": 1000,
+      "purchaseUnit": "L",
+      "purchaseUnitSize": 1000
     },
-    "Brown Sugar Syrup": {
-      "unit": "kg",
+    "Brown Sugar": {
+      "unit": "ml",
       "category": "RAW_MATERIAL",
-      "costPerUnit": 45.0,
-      "lowStockThreshold": 10
+      "costPerUnit": 0.15,
+      "lowStockThreshold": 1000,
+      "purchaseUnit": "L",
+      "purchaseUnitSize": 1000
     },
     "Purified Water": {
       "unit": "gal",
@@ -33,157 +37,157 @@
     "Mango Puree": {
       "unit": "g",
       "category": "RAW_MATERIAL",
-      "costPerUnit": 0.15,
+      "costPerUnit": 0.214,
       "lowStockThreshold": 1000
     },
     "Watermelon Flavor": {
       "unit": "g",
       "category": "RAW_MATERIAL",
-      "costPerUnit": 0.15,
+      "costPerUnit": 0.214,
       "lowStockThreshold": 1000
     },
     "Cucumber Flavor": {
       "unit": "g",
       "category": "RAW_MATERIAL",
-      "costPerUnit": 0.15,
+      "costPerUnit": 0.236,
       "lowStockThreshold": 1000
     },
     "Ginger Flavor": {
       "unit": "g",
       "category": "RAW_MATERIAL",
-      "costPerUnit": 0.18,
+      "costPerUnit": 0.17,
       "lowStockThreshold": 1000
     },
     "Pure Honey": {
       "unit": "g",
       "category": "RAW_MATERIAL",
-      "costPerUnit": 0.25,
+      "costPerUnit": 0.5824,
       "lowStockThreshold": 1000
     },
     "Strawberry Flavor": {
       "unit": "g",
       "category": "RAW_MATERIAL",
-      "costPerUnit": 0.18,
+      "costPerUnit": 0.256,
       "lowStockThreshold": 1000
     },
     "Yakult": {
       "unit": "pc",
       "category": "RAW_MATERIAL",
-      "costPerUnit": 12.0,
+      "costPerUnit": 12.32,
       "lowStockThreshold": 20
     },
-    "Watermelon Sour Syrup": {
+    "Watermelon Sour": {
       "unit": "g",
       "category": "RAW_MATERIAL",
-      "costPerUnit": 0.18,
+      "costPerUnit": 0.214,
       "lowStockThreshold": 500
     },
-    "Blue Lemonade Syrup": {
+    "Blue Lemonade": {
       "unit": "g",
       "category": "RAW_MATERIAL",
-      "costPerUnit": 0.18,
+      "costPerUnit": 0.214,
       "lowStockThreshold": 500
     },
-    "Guyabano Syrup": {
+    "Guyabano": {
       "unit": "g",
       "category": "RAW_MATERIAL",
-      "costPerUnit": 0.18,
+      "costPerUnit": 0.29,
       "lowStockThreshold": 500
     },
-    "Mango Pineapple Syrup": {
+    "Mango Pineapple": {
       "unit": "g",
       "category": "RAW_MATERIAL",
-      "costPerUnit": 0.18,
+      "costPerUnit": 0.214,
       "lowStockThreshold": 500
     },
-    "Monster Energy Syrup": {
+    "Monster Energy": {
       "unit": "g",
       "category": "RAW_MATERIAL",
-      "costPerUnit": 0.2,
+      "costPerUnit": 0.25,
       "lowStockThreshold": 500
     },
-    "Orange Syrup": {
+    "Orange": {
       "unit": "g",
       "category": "RAW_MATERIAL",
-      "costPerUnit": 0.18,
+      "costPerUnit": 0.214,
       "lowStockThreshold": 500
     },
-    "Dragonfruit Syrup": {
+    "Dragonfruit": {
       "unit": "g",
       "category": "RAW_MATERIAL",
-      "costPerUnit": 0.22,
+      "costPerUnit": 0.256,
       "lowStockThreshold": 1000
     },
     "Powdered Milk": {
       "unit": "g",
       "category": "RAW_MATERIAL",
-      "costPerUnit": 0.12,
+      "costPerUnit": 0.448,
       "lowStockThreshold": 200
     },
     "12 OZ Cold Cup": {
       "unit": "pc",
       "category": "PACKAGING",
-      "costPerUnit": 1.5,
+      "costPerUnit": 4.2,
       "lowStockThreshold": 100
     },
     "16 OZ Cold Cup": {
       "unit": "pc",
       "category": "PACKAGING",
-      "costPerUnit": 1.8,
+      "costPerUnit": 4.37,
       "lowStockThreshold": 100
     },
     "22 OZ Cold Cup": {
       "unit": "pc",
       "category": "PACKAGING",
-      "costPerUnit": 2.2,
+      "costPerUnit": 6.72,
       "lowStockThreshold": 100
     },
     "1 Liter Cup / Bottle": {
       "unit": "pc",
       "category": "PACKAGING",
-      "costPerUnit": 5.0,
+      "costPerUnit": 13.44,
       "lowStockThreshold": 50
     },
     "12 OZ Hot Cup": {
       "unit": "pc",
       "category": "PACKAGING",
-      "costPerUnit": 2.0,
+      "costPerUnit": 13.44,
       "lowStockThreshold": 50
     },
     "90mm Flat Lid": {
       "unit": "pc",
       "category": "PACKAGING",
-      "costPerUnit": 0.8,
+      "costPerUnit": 1.45,
       "lowStockThreshold": 100
     },
     "90mm Dome Lid": {
       "unit": "pc",
       "category": "PACKAGING",
-      "costPerUnit": 1.0,
+      "costPerUnit": 1.45,
       "lowStockThreshold": 50
     },
     "95mm Dome Lid": {
       "unit": "pc",
       "category": "PACKAGING",
-      "costPerUnit": 1.2,
+      "costPerUnit": 1.45,
       "lowStockThreshold": 50
     },
     "95mm Flat / Plastic Lid": {
       "unit": "pc",
       "category": "PACKAGING",
-      "costPerUnit": 0.9,
+      "costPerUnit": 1.45,
       "lowStockThreshold": 100
     },
     "Regular Straw": {
       "unit": "pc",
       "category": "PACKAGING",
-      "costPerUnit": 0.25,
+      "costPerUnit": 1.4,
       "lowStockThreshold": 100
     },
     "Boba Straw": {
       "unit": "pc",
       "category": "PACKAGING",
-      "costPerUnit": 0.5,
+      "costPerUnit": 1.4,
       "lowStockThreshold": 50
     },
     "Takeout Solo Bag": {
@@ -238,14 +242,15 @@
       "sku": "LEM-OLD-FASHIONED-WSS-REGULAR",
       "type": "RECIPE",
       "price": 90.0,
+      "cost": 39.55,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
           "qty": 0.5
         },
         {
-          "ingredientName": "White Sugar Syrup",
-          "qty": 0.03
+          "ingredientName": "White Sugar",
+          "qty": 50.0
         },
         {
           "ingredientName": "12 OZ Cold Cup",
@@ -269,14 +274,15 @@
       "sku": "LEM-OLD-FASHIONED-BSS-REGULAR",
       "type": "RECIPE",
       "price": 90.0,
+      "cost": 39.55,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
           "qty": 0.5
         },
         {
-          "ingredientName": "Brown Sugar Syrup",
-          "qty": 0.03
+          "ingredientName": "Brown Sugar",
+          "qty": 50.0
         },
         {
           "ingredientName": "12 OZ Cold Cup",
@@ -300,10 +306,15 @@
       "sku": "LEM-OLD-FASHIONED-HOT-REGULAR",
       "type": "RECIPE",
       "price": 110.0,
+      "cost": 45.94,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
           "qty": 0.5
+        },
+        {
+          "ingredientName": "White Sugar",
+          "qty": 50.0
         },
         {
           "ingredientName": "12 OZ Hot Cup",
@@ -319,6 +330,7 @@
       "sku": "LEM-MANGO-LEMONADE-REGULAR",
       "type": "RECIPE",
       "price": 118.0,
+      "cost": 57.2,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
@@ -327,6 +339,10 @@
         {
           "ingredientName": "Mango Puree",
           "qty": 100.0
+        },
+        {
+          "ingredientName": "White Sugar",
+          "qty": 25.0
         },
         {
           "ingredientName": "12 OZ Cold Cup",
@@ -350,6 +366,7 @@
       "sku": "LEM-WATERMELON-LEMO-REGULAR",
       "type": "RECIPE",
       "price": 118.0,
+      "cost": 64.15,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
@@ -381,6 +398,7 @@
       "sku": "LEM-CUCUMBER-LEMONA-REGULAR",
       "type": "RECIPE",
       "price": 118.0,
+      "cost": 63.15,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
@@ -389,6 +407,10 @@
         {
           "ingredientName": "Cucumber Flavor",
           "qty": 100.0
+        },
+        {
+          "ingredientName": "White Sugar",
+          "qty": 50.0
         },
         {
           "ingredientName": "12 OZ Cold Cup",
@@ -412,6 +434,7 @@
       "sku": "LEM-GINGER-LEMONADE-REGULAR",
       "type": "RECIPE",
       "price": 130.0,
+      "cost": 56.55,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
@@ -420,6 +443,10 @@
         {
           "ingredientName": "Ginger Flavor",
           "qty": 100.0
+        },
+        {
+          "ingredientName": "White Sugar",
+          "qty": 50.0
         },
         {
           "ingredientName": "12 OZ Cold Cup",
@@ -443,6 +470,7 @@
       "sku": "LEM-GINGER-LEMONADE-HOT-REGULAR",
       "type": "RECIPE",
       "price": 130.0,
+      "cost": 62.94,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
@@ -451,6 +479,10 @@
         {
           "ingredientName": "Ginger Flavor",
           "qty": 100.0
+        },
+        {
+          "ingredientName": "White Sugar",
+          "qty": 50.0
         },
         {
           "ingredientName": "12 OZ Hot Cup",
@@ -466,6 +498,7 @@
       "sku": "LEM-HONEY-LEMONADE-REGULAR",
       "type": "RECIPE",
       "price": 130.0,
+      "cost": 61.17,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
@@ -497,6 +530,7 @@
       "sku": "LEM-HONEY-LEMONADE-HOT-REGULAR",
       "type": "RECIPE",
       "price": 130.0,
+      "cost": 67.54,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
@@ -520,6 +554,7 @@
       "sku": "LEM-STRAWBERRY-LEMO-REGULAR",
       "type": "RECIPE",
       "price": 130.0,
+      "cost": 52.35,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
@@ -527,6 +562,10 @@
         },
         {
           "ingredientName": "Strawberry Flavor",
+          "qty": 50.0
+        },
+        {
+          "ingredientName": "White Sugar",
           "qty": 50.0
         },
         {
@@ -551,6 +590,7 @@
       "sku": "LEM-YAKULT-LEMONADE-REGULAR",
       "type": "RECIPE",
       "price": 118.0,
+      "cost": 51.87,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
@@ -559,6 +599,10 @@
         {
           "ingredientName": "Yakult",
           "qty": 1.0
+        },
+        {
+          "ingredientName": "White Sugar",
+          "qty": 50.0
         },
         {
           "ingredientName": "12 OZ Cold Cup",
@@ -582,6 +626,7 @@
       "sku": "LEM-FROSTY-MANGO-LE-REGULAR",
       "type": "RECIPE",
       "price": 128.0,
+      "cost": 68.4,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
@@ -590,6 +635,10 @@
         {
           "ingredientName": "Mango Puree",
           "qty": 100.0
+        },
+        {
+          "ingredientName": "White Sugar",
+          "qty": 25.0
         },
         {
           "ingredientName": "12 OZ Cold Cup",
@@ -613,6 +662,7 @@
       "sku": "LEM-FROSTY-STRAWBER-REGULAR",
       "type": "RECIPE",
       "price": 128.0,
+      "cost": 63.55,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
@@ -620,6 +670,10 @@
         },
         {
           "ingredientName": "Strawberry Flavor",
+          "qty": 50.0
+        },
+        {
+          "ingredientName": "White Sugar",
           "qty": 50.0
         },
         {
@@ -644,13 +698,18 @@
       "sku": "LEM-WATERMELON-SOUR-REGULAR",
       "type": "RECIPE",
       "price": 100.0,
+      "cost": 50.25,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
           "qty": 0.5
         },
         {
-          "ingredientName": "Watermelon Sour Syrup",
+          "ingredientName": "Watermelon Sour",
+          "qty": 50.0
+        },
+        {
+          "ingredientName": "White Sugar",
           "qty": 50.0
         },
         {
@@ -675,13 +734,18 @@
       "sku": "LEM-BLUE-LEMONADE-REGULAR",
       "type": "RECIPE",
       "price": 0.0,
+      "cost": 50.25,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
           "qty": 0.5
         },
         {
-          "ingredientName": "Blue Lemonade Syrup",
+          "ingredientName": "Blue Lemonade",
+          "qty": 50.0
+        },
+        {
+          "ingredientName": "White Sugar",
           "qty": 50.0
         },
         {
@@ -706,13 +770,18 @@
       "sku": "LEM-GUYABANO-REGULAR",
       "type": "RECIPE",
       "price": 108.0,
+      "cost": 44.05,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
           "qty": 0.5
         },
         {
-          "ingredientName": "Guyabano Syrup",
+          "ingredientName": "Guyabano",
+          "qty": 50.0
+        },
+        {
+          "ingredientName": "White Sugar",
           "qty": 50.0
         },
         {
@@ -737,13 +806,18 @@
       "sku": "LEM-MANGO-PINEAPPLE-REGULAR",
       "type": "RECIPE",
       "price": 0.0,
+      "cost": 50.25,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
           "qty": 0.5
         },
         {
-          "ingredientName": "Mango Pineapple Syrup",
+          "ingredientName": "Mango Pineapple",
+          "qty": 50.0
+        },
+        {
+          "ingredientName": "White Sugar",
           "qty": 50.0
         },
         {
@@ -768,13 +842,18 @@
       "sku": "LEM-MONSTER-LEMONAD-REGULAR",
       "type": "RECIPE",
       "price": 0.0,
+      "cost": 52.05,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
           "qty": 0.5
         },
         {
-          "ingredientName": "Monster Energy Syrup",
+          "ingredientName": "Monster Energy",
+          "qty": 50.0
+        },
+        {
+          "ingredientName": "White Sugar",
           "qty": 50.0
         },
         {
@@ -799,13 +878,18 @@
       "sku": "LEM-ORANGE-LEMONADE-REGULAR",
       "type": "RECIPE",
       "price": 0.0,
+      "cost": 50.25,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
           "qty": 0.5
         },
         {
-          "ingredientName": "Orange Syrup",
+          "ingredientName": "Orange",
+          "qty": 50.0
+        },
+        {
+          "ingredientName": "White Sugar",
           "qty": 50.0
         },
         {
@@ -830,14 +914,19 @@
       "sku": "LEM-DRAGONFRUIT-LEM-REGULAR",
       "type": "RECIPE",
       "price": 135.0,
+      "cost": 65.15,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
           "qty": 0.5
         },
         {
-          "ingredientName": "Dragonfruit Syrup",
+          "ingredientName": "Dragonfruit",
           "qty": 100.0
+        },
+        {
+          "ingredientName": "White Sugar",
+          "qty": 50.0
         },
         {
           "ingredientName": "12 OZ Cold Cup",
@@ -861,18 +950,23 @@
       "sku": "LEM-DRAGONFRUIT-SHA-REGULAR",
       "type": "RECIPE",
       "price": 155.0,
+      "cost": 76.35,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
           "qty": 0.5
         },
         {
-          "ingredientName": "Dragonfruit Syrup",
+          "ingredientName": "Dragonfruit",
           "qty": 100.0
         },
         {
           "ingredientName": "Powdered Milk",
           "qty": 25.0
+        },
+        {
+          "ingredientName": "White Sugar",
+          "qty": 50.0
         },
         {
           "ingredientName": "12 OZ Cold Cup",
@@ -896,6 +990,7 @@
       "sku": "LEM-ADD-ON-FROZEN-P-REGULAR",
       "type": "READY_MADE",
       "price": 20.0,
+      "cost": 0.0,
       "recipeLines": []
     },
     {
@@ -906,6 +1001,7 @@
       "sku": "LEM-ADD-ON-FROZEN-F-REGULAR",
       "type": "READY_MADE",
       "price": 15.0,
+      "cost": 0.0,
       "recipeLines": []
     },
     {
@@ -916,6 +1012,7 @@
       "sku": "LEM-ADD-ON-HONEY-REGULAR",
       "type": "RECIPE",
       "price": 40.0,
+      "cost": 29.12,
       "recipeLines": [
         {
           "ingredientName": "Pure Honey",
@@ -931,6 +1028,7 @@
       "sku": "LEM-ADD-ON-LEMON-REGULAR",
       "type": "RECIPE",
       "price": 50.0,
+      "cost": 20.0,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
@@ -946,14 +1044,15 @@
       "sku": "LEM-OLD-FASHIONED-WSS-SUPREME",
       "type": "RECIPE",
       "price": 140.0,
+      "cost": 59.57,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
           "qty": 1.0
         },
         {
-          "ingredientName": "White Sugar Syrup",
-          "qty": 0.03
+          "ingredientName": "White Sugar",
+          "qty": 100.0
         },
         {
           "ingredientName": "22 OZ Cold Cup",
@@ -977,14 +1076,15 @@
       "sku": "LEM-OLD-FASHIONED-BSS-SUPREME",
       "type": "RECIPE",
       "price": 140.0,
+      "cost": 59.57,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
           "qty": 1.0
         },
         {
-          "ingredientName": "Brown Sugar Syrup",
-          "qty": 0.03
+          "ingredientName": "Brown Sugar",
+          "qty": 100.0
         },
         {
           "ingredientName": "22 OZ Cold Cup",
@@ -1008,10 +1108,15 @@
       "sku": "LEM-OLD-FASHIONED-HOT-SUPREME",
       "type": "RECIPE",
       "price": 100.0,
+      "cost": 63.44,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
           "qty": 1.0
+        },
+        {
+          "ingredientName": "White Sugar",
+          "qty": 100.0
         },
         {
           "ingredientName": "12 OZ Hot Cup",
@@ -1027,6 +1132,7 @@
       "sku": "LEM-MANGO-LEMONADE-SUPREME",
       "type": "RECIPE",
       "price": 168.0,
+      "cost": 94.87,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
@@ -1035,6 +1141,10 @@
         {
           "ingredientName": "Mango Puree",
           "qty": 200.0
+        },
+        {
+          "ingredientName": "White Sugar",
+          "qty": 50.0
         },
         {
           "ingredientName": "22 OZ Cold Cup",
@@ -1058,6 +1168,7 @@
       "sku": "LEM-WATERMELON-LEMO-SUPREME",
       "type": "RECIPE",
       "price": 168.0,
+      "cost": 108.77,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
@@ -1089,6 +1200,7 @@
       "sku": "LEM-CUCUMBER-LEMONA-SUPREME",
       "type": "RECIPE",
       "price": 168.0,
+      "cost": 106.77,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
@@ -1097,6 +1209,10 @@
         {
           "ingredientName": "Cucumber Flavor",
           "qty": 200.0
+        },
+        {
+          "ingredientName": "White Sugar",
+          "qty": 100.0
         },
         {
           "ingredientName": "22 OZ Cold Cup",
@@ -1120,6 +1236,7 @@
       "sku": "LEM-GINGER-LEMONADE-SUPREME",
       "type": "RECIPE",
       "price": 180.0,
+      "cost": 93.57,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
@@ -1128,6 +1245,10 @@
         {
           "ingredientName": "Ginger Flavor",
           "qty": 200.0
+        },
+        {
+          "ingredientName": "White Sugar",
+          "qty": 100.0
         },
         {
           "ingredientName": "22 OZ Cold Cup",
@@ -1151,6 +1272,7 @@
       "sku": "LEM-GINGER-LEMONADE-HOT-SUPREME",
       "type": "RECIPE",
       "price": 100.0,
+      "cost": 97.44,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
@@ -1159,6 +1281,10 @@
         {
           "ingredientName": "Ginger Flavor",
           "qty": 200.0
+        },
+        {
+          "ingredientName": "White Sugar",
+          "qty": 100.0
         },
         {
           "ingredientName": "12 OZ Hot Cup",
@@ -1174,6 +1300,7 @@
       "sku": "LEM-HONEY-LEMONADE-SUPREME",
       "type": "RECIPE",
       "price": 180.0,
+      "cost": 102.81,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
@@ -1205,6 +1332,7 @@
       "sku": "LEM-HONEY-LEMONADE-HOT-SUPREME",
       "type": "RECIPE",
       "price": 100.0,
+      "cost": 106.68,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
@@ -1228,6 +1356,7 @@
       "sku": "LEM-STRAWBERRY-LEMO-SUPREME",
       "type": "RECIPE",
       "price": 180.0,
+      "cost": 85.17,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
@@ -1235,6 +1364,10 @@
         },
         {
           "ingredientName": "Strawberry Flavor",
+          "qty": 100.0
+        },
+        {
+          "ingredientName": "White Sugar",
           "qty": 100.0
         },
         {
@@ -1259,6 +1392,7 @@
       "sku": "LEM-YAKULT-LEMONADE-SUPREME",
       "type": "RECIPE",
       "price": 168.0,
+      "cost": 84.21,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
@@ -1267,6 +1401,10 @@
         {
           "ingredientName": "Yakult",
           "qty": 2.0
+        },
+        {
+          "ingredientName": "White Sugar",
+          "qty": 100.0
         },
         {
           "ingredientName": "22 OZ Cold Cup",
@@ -1290,6 +1428,7 @@
       "sku": "LEM-HONEY-GINGER-SUPREME",
       "type": "RECIPE",
       "price": 0.0,
+      "cost": 209.97,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
@@ -1302,6 +1441,10 @@
         {
           "ingredientName": "Pure Honey",
           "qty": 50.0
+        },
+        {
+          "ingredientName": "White Sugar",
+          "qty": 100.0
         },
         {
           "ingredientName": "22 OZ Cold Cup",
@@ -1325,13 +1468,18 @@
       "sku": "LEM-WATERMELON-SOUR-SUPREME",
       "type": "RECIPE",
       "price": 0.0,
+      "cost": 80.97,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
           "qty": 1.0
         },
         {
-          "ingredientName": "Watermelon Sour Syrup",
+          "ingredientName": "Watermelon Sour",
+          "qty": 100.0
+        },
+        {
+          "ingredientName": "White Sugar",
           "qty": 100.0
         },
         {
@@ -1356,13 +1504,18 @@
       "sku": "LEM-BLUE-LEMONADE-SUPREME",
       "type": "RECIPE",
       "price": 0.0,
+      "cost": 80.97,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
           "qty": 1.0
         },
         {
-          "ingredientName": "Blue Lemonade Syrup",
+          "ingredientName": "Blue Lemonade",
+          "qty": 100.0
+        },
+        {
+          "ingredientName": "White Sugar",
           "qty": 100.0
         },
         {
@@ -1387,13 +1540,18 @@
       "sku": "LEM-GUYABANO-SUPREME",
       "type": "RECIPE",
       "price": 158.0,
+      "cost": 78.57,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
           "qty": 1.0
         },
         {
-          "ingredientName": "Guyabano Syrup",
+          "ingredientName": "Guyabano",
+          "qty": 100.0
+        },
+        {
+          "ingredientName": "White Sugar",
           "qty": 100.0
         },
         {
@@ -1418,6 +1576,7 @@
       "sku": "LEM-FROSTY-MANGO-LE-SUPREME",
       "type": "RECIPE",
       "price": 178.0,
+      "cost": 117.27,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
@@ -1426,6 +1585,10 @@
         {
           "ingredientName": "Mango Puree",
           "qty": 200.0
+        },
+        {
+          "ingredientName": "White Sugar",
+          "qty": 50.0
         },
         {
           "ingredientName": "22 OZ Cold Cup",
@@ -1449,6 +1612,7 @@
       "sku": "LEM-FROSTY-STRAWBER-SUPREME",
       "type": "RECIPE",
       "price": 178.0,
+      "cost": 107.57,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
@@ -1456,6 +1620,10 @@
         },
         {
           "ingredientName": "Strawberry Flavor",
+          "qty": 100.0
+        },
+        {
+          "ingredientName": "White Sugar",
           "qty": 100.0
         },
         {
@@ -1480,6 +1648,7 @@
       "sku": "LEM-TROPICAL-BURST-SUPREME",
       "type": "RECIPE",
       "price": 0.0,
+      "cost": 70.27,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
@@ -1488,6 +1657,10 @@
         {
           "ingredientName": "Mango Puree",
           "qty": 50.0
+        },
+        {
+          "ingredientName": "White Sugar",
+          "qty": 100.0
         },
         {
           "ingredientName": "22 OZ Cold Cup",
@@ -1511,13 +1684,18 @@
       "sku": "LEM-MONSTER-LEMONAD-SUPREME",
       "type": "RECIPE",
       "price": 0.0,
+      "cost": 84.57,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
           "qty": 1.0
         },
         {
-          "ingredientName": "Monster Energy Syrup",
+          "ingredientName": "Monster Energy",
+          "qty": 100.0
+        },
+        {
+          "ingredientName": "White Sugar",
           "qty": 100.0
         },
         {
@@ -1542,13 +1720,18 @@
       "sku": "LEM-ORANGE-LEMONADE-SUPREME",
       "type": "RECIPE",
       "price": 0.0,
+      "cost": 80.97,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
           "qty": 1.0
         },
         {
-          "ingredientName": "Orange Syrup",
+          "ingredientName": "Orange",
+          "qty": 100.0
+        },
+        {
+          "ingredientName": "White Sugar",
           "qty": 100.0
         },
         {
@@ -1573,14 +1756,19 @@
       "sku": "LEM-DRAGONFRUIT-LEM-SUPREME",
       "type": "RECIPE",
       "price": 185.0,
+      "cost": 110.77,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
           "qty": 1.0
         },
         {
-          "ingredientName": "Dragonfruit Syrup",
+          "ingredientName": "Dragonfruit",
           "qty": 200.0
+        },
+        {
+          "ingredientName": "White Sugar",
+          "qty": 100.0
         },
         {
           "ingredientName": "22 OZ Cold Cup",
@@ -1604,18 +1792,23 @@
       "sku": "LEM-DRAGONFRUIT-SHA-SUPREME",
       "type": "RECIPE",
       "price": 205.0,
+      "cost": 121.97,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
           "qty": 1.0
         },
         {
-          "ingredientName": "Dragonfruit Syrup",
+          "ingredientName": "Dragonfruit",
           "qty": 200.0
         },
         {
           "ingredientName": "Powdered Milk",
           "qty": 25.0
+        },
+        {
+          "ingredientName": "White Sugar",
+          "qty": 100.0
         },
         {
           "ingredientName": "22 OZ Cold Cup",
@@ -1639,6 +1832,7 @@
       "sku": "LEM-ADD-ON-FROZEN---SUPREME",
       "type": "READY_MADE",
       "price": 20.0,
+      "cost": 0.0,
       "recipeLines": []
     },
     {
@@ -1649,6 +1843,7 @@
       "sku": "LEM-ADD-ON-FROZEN---SUPREME-1",
       "type": "READY_MADE",
       "price": 15.0,
+      "cost": 0.0,
       "recipeLines": []
     },
     {
@@ -1659,6 +1854,7 @@
       "sku": "LEM-ADD-ON-HONEY-SUPREME",
       "type": "RECIPE",
       "price": 40.0,
+      "cost": 58.24,
       "recipeLines": [
         {
           "ingredientName": "Pure Honey",
@@ -1674,6 +1870,7 @@
       "sku": "LEM-ADD-ON-LEMON-SUPREME",
       "type": "RECIPE",
       "price": 50.0,
+      "cost": 20.0,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
@@ -1689,14 +1886,15 @@
       "sku": "LEM-OLD-FASHIONED-WSS-SUPREMEXL",
       "type": "RECIPE",
       "price": 200.0,
+      "cost": 98.44,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
           "qty": 2.0
         },
         {
-          "ingredientName": "White Sugar Syrup",
-          "qty": 0.03
+          "ingredientName": "White Sugar",
+          "qty": 200.0
         },
         {
           "ingredientName": "1 Liter Cup / Bottle",
@@ -1716,14 +1914,15 @@
       "sku": "LEM-OLD-FASHIONED-BSS-SUPREMEXL",
       "type": "RECIPE",
       "price": 200.0,
+      "cost": 98.44,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
           "qty": 2.0
         },
         {
-          "ingredientName": "Brown Sugar Syrup",
-          "qty": 0.03
+          "ingredientName": "Brown Sugar",
+          "qty": 200.0
         },
         {
           "ingredientName": "1 Liter Cup / Bottle",
@@ -1743,10 +1942,15 @@
       "sku": "LEM-OLD-FASHIONED-HOT-SUPREMEXL",
       "type": "RECIPE",
       "price": 100.0,
+      "cost": 98.44,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
           "qty": 2.0
+        },
+        {
+          "ingredientName": "White Sugar",
+          "qty": 200.0
         },
         {
           "ingredientName": "12 OZ Hot Cup",
@@ -1762,6 +1966,7 @@
       "sku": "LEM-MANGO-LEMONADE-SUPREMEXL",
       "type": "RECIPE",
       "price": 258.0,
+      "cost": 158.34,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
@@ -1770,6 +1975,10 @@
         {
           "ingredientName": "Mango Puree",
           "qty": 350.0
+        },
+        {
+          "ingredientName": "White Sugar",
+          "qty": 100.0
         },
         {
           "ingredientName": "1 Liter Cup / Bottle",
@@ -1789,6 +1998,7 @@
       "sku": "LEM-WATERMELON-LEMO-SUPREMEXL",
       "type": "RECIPE",
       "price": 258.0,
+      "cost": 164.74,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
@@ -1816,6 +2026,7 @@
       "sku": "LEM-CUCUMBER-LEMONA-SUPREMEXL",
       "type": "RECIPE",
       "price": 258.0,
+      "cost": 181.04,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
@@ -1824,6 +2035,10 @@
         {
           "ingredientName": "Cucumber Flavor",
           "qty": 350.0
+        },
+        {
+          "ingredientName": "White Sugar",
+          "qty": 200.0
         },
         {
           "ingredientName": "1 Liter Cup / Bottle",
@@ -1843,6 +2058,7 @@
       "sku": "LEM-GINGER-LEMONADE-SUPREMEXL",
       "type": "RECIPE",
       "price": 270.0,
+      "cost": 157.94,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
@@ -1851,6 +2067,10 @@
         {
           "ingredientName": "Ginger Flavor",
           "qty": 350.0
+        },
+        {
+          "ingredientName": "White Sugar",
+          "qty": 200.0
         },
         {
           "ingredientName": "1 Liter Cup / Bottle",
@@ -1870,6 +2090,7 @@
       "sku": "LEM-GINGER-LEMONADE-HOT-SUPREMEXL",
       "type": "RECIPE",
       "price": 100.0,
+      "cost": 157.94,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
@@ -1878,6 +2099,10 @@
         {
           "ingredientName": "Ginger Flavor",
           "qty": 350.0
+        },
+        {
+          "ingredientName": "White Sugar",
+          "qty": 200.0
         },
         {
           "ingredientName": "12 OZ Hot Cup",
@@ -1893,6 +2118,7 @@
       "sku": "LEM-HONEY-LEMONADE-SUPREMEXL",
       "type": "RECIPE",
       "price": 270.0,
+      "cost": 155.8,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
@@ -1920,6 +2146,7 @@
       "sku": "LEM-HONEY-LEMONADE-HOT-SUPREMEXL",
       "type": "RECIPE",
       "price": 100.0,
+      "cost": 155.8,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
@@ -1943,6 +2170,7 @@
       "sku": "LEM-STRAWBERRY-LEMO-SUPREMEXL",
       "type": "RECIPE",
       "price": 270.0,
+      "cost": 149.64,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
@@ -1950,6 +2178,10 @@
         },
         {
           "ingredientName": "Strawberry Flavor",
+          "qty": 200.0
+        },
+        {
+          "ingredientName": "White Sugar",
           "qty": 200.0
         },
         {
@@ -1970,6 +2202,7 @@
       "sku": "LEM-YAKULT-LEMONADE-SUPREMEXL",
       "type": "RECIPE",
       "price": 258.0,
+      "cost": 123.08,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
@@ -1978,6 +2211,10 @@
         {
           "ingredientName": "Yakult",
           "qty": 2.0
+        },
+        {
+          "ingredientName": "White Sugar",
+          "qty": 200.0
         },
         {
           "ingredientName": "1 Liter Cup / Bottle",
@@ -1997,6 +2234,7 @@
       "sku": "LEM-HONEY-GINGER-SUPREMEXL",
       "type": "RECIPE",
       "price": 100.0,
+      "cost": 361.64,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
@@ -2009,6 +2247,10 @@
         {
           "ingredientName": "Pure Honey",
           "qty": 50.0
+        },
+        {
+          "ingredientName": "White Sugar",
+          "qty": 200.0
         },
         {
           "ingredientName": "1 Liter Cup / Bottle",
@@ -2028,13 +2270,18 @@
       "sku": "LEM-WATERMELON-SOUR-SUPREMEXL",
       "type": "RECIPE",
       "price": 100.0,
+      "cost": 142.64,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
           "qty": 2.0
         },
         {
-          "ingredientName": "Watermelon Sour Syrup",
+          "ingredientName": "Watermelon Sour",
+          "qty": 200.0
+        },
+        {
+          "ingredientName": "White Sugar",
           "qty": 200.0
         },
         {
@@ -2055,13 +2302,18 @@
       "sku": "LEM-BLUE-LEMONADE-SUPREMEXL",
       "type": "RECIPE",
       "price": 0.0,
+      "cost": 142.64,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
           "qty": 2.0
         },
         {
-          "ingredientName": "Blue Lemonade Syrup",
+          "ingredientName": "Blue Lemonade",
+          "qty": 200.0
+        },
+        {
+          "ingredientName": "White Sugar",
           "qty": 200.0
         },
         {
@@ -2082,6 +2334,7 @@
       "sku": "LEM-MERRY-BERRY-POP-SUPREMEXL",
       "type": "RECIPE",
       "price": 0.0,
+      "cost": 112.64,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
@@ -2090,6 +2343,10 @@
         {
           "ingredientName": "Strawberry Flavor",
           "qty": 50.0
+        },
+        {
+          "ingredientName": "White Sugar",
+          "qty": 200.0
         },
         {
           "ingredientName": "1 Liter Cup / Bottle",
@@ -2109,6 +2366,7 @@
       "sku": "LEM-ADD-ON-HONEY-SUPREMEXL",
       "type": "RECIPE",
       "price": 40.0,
+      "cost": 87.36,
       "recipeLines": [
         {
           "ingredientName": "Pure Honey",
@@ -2124,6 +2382,7 @@
       "sku": "LEM-ADD-ON-LEMON-SUPREMEXL",
       "type": "RECIPE",
       "price": 50.0,
+      "cost": 20.0,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
@@ -2139,14 +2398,15 @@
       "sku": "LEM-OLD-FASHIONED-WSS-GRANDE",
       "type": "RECIPE",
       "price": 120.0,
+      "cost": 53.47,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
           "qty": 1.0
         },
         {
-          "ingredientName": "White Sugar Syrup",
-          "qty": 0.03
+          "ingredientName": "White Sugar",
+          "qty": 75.0
         },
         {
           "ingredientName": "16 OZ Cold Cup",
@@ -2170,14 +2430,15 @@
       "sku": "LEM-OLD-FASHIONED-BSS-GRANDE",
       "type": "RECIPE",
       "price": 120.0,
+      "cost": 53.47,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
           "qty": 1.0
         },
         {
-          "ingredientName": "Brown Sugar Syrup",
-          "qty": 0.03
+          "ingredientName": "Brown Sugar",
+          "qty": 75.0
         },
         {
           "ingredientName": "16 OZ Cold Cup",
@@ -2201,6 +2462,7 @@
       "sku": "LEM-MANGO-LEMONADE-GRANDE",
       "type": "RECIPE",
       "price": 148.0,
+      "cost": 81.82,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
@@ -2208,6 +2470,10 @@
         },
         {
           "ingredientName": "Mango Puree",
+          "qty": 50.0
+        },
+        {
+          "ingredientName": "White Sugar",
           "qty": 50.0
         },
         {
@@ -2232,6 +2498,7 @@
       "sku": "LEM-WATERMELON-LEMO-GRANDE",
       "type": "RECIPE",
       "price": 148.0,
+      "cost": 90.37,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
@@ -2263,6 +2530,7 @@
       "sku": "LEM-CUCUMBER-LEMONA-GRANDE",
       "type": "RECIPE",
       "price": 148.0,
+      "cost": 88.87,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
@@ -2271,6 +2539,10 @@
         {
           "ingredientName": "Cucumber Flavor",
           "qty": 50.0
+        },
+        {
+          "ingredientName": "White Sugar",
+          "qty": 75.0
         },
         {
           "ingredientName": "16 OZ Cold Cup",
@@ -2294,6 +2566,7 @@
       "sku": "LEM-GINGER-LEMONADE-GRANDE",
       "type": "RECIPE",
       "price": 160.0,
+      "cost": 78.97,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
@@ -2302,6 +2575,10 @@
         {
           "ingredientName": "Ginger Flavor",
           "qty": 50.0
+        },
+        {
+          "ingredientName": "White Sugar",
+          "qty": 75.0
         },
         {
           "ingredientName": "16 OZ Cold Cup",
@@ -2325,6 +2602,7 @@
       "sku": "LEM-GINGER-LEMONADE-HOT-GRANDE",
       "type": "RECIPE",
       "price": 100.0,
+      "cost": 68.19,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
@@ -2333,6 +2611,10 @@
         {
           "ingredientName": "Ginger Flavor",
           "qty": 50.0
+        },
+        {
+          "ingredientName": "White Sugar",
+          "qty": 75.0
         },
         {
           "ingredientName": "12 OZ Hot Cup",
@@ -2348,6 +2630,7 @@
       "sku": "LEM-HONEY-LEMONADE-GRANDE",
       "type": "RECIPE",
       "price": 160.0,
+      "cost": 85.9,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
@@ -2379,6 +2662,7 @@
       "sku": "LEM-HONEY-LEMONADE-HOT-GRANDE",
       "type": "RECIPE",
       "price": 100.0,
+      "cost": 77.56,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
@@ -2402,6 +2686,7 @@
       "sku": "LEM-STRAWBERRY-LEMO-GRANDE",
       "type": "RECIPE",
       "price": 160.0,
+      "cost": 68.92,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
@@ -2409,6 +2694,10 @@
         },
         {
           "ingredientName": "Strawberry Flavor",
+          "qty": 50.0
+        },
+        {
+          "ingredientName": "White Sugar",
           "qty": 50.0
         },
         {
@@ -2433,6 +2722,7 @@
       "sku": "LEM-YAKULT-LEMONADE-GRANDE",
       "type": "RECIPE",
       "price": 148.0,
+      "cost": 65.79,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
@@ -2441,6 +2731,10 @@
         {
           "ingredientName": "Yakult",
           "qty": 1.0
+        },
+        {
+          "ingredientName": "White Sugar",
+          "qty": 75.0
         },
         {
           "ingredientName": "16 OZ Cold Cup",
@@ -2464,14 +2758,19 @@
       "sku": "LEM-GUYABANO-GRANDE",
       "type": "RECIPE",
       "price": 138.0,
+      "cost": 65.22,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
           "qty": 1.0
         },
         {
-          "ingredientName": "Guyabano Syrup",
+          "ingredientName": "Guyabano",
           "qty": 50.0
+        },
+        {
+          "ingredientName": "White Sugar",
+          "qty": 75.0
         },
         {
           "ingredientName": "16 OZ Cold Cup",
@@ -2495,14 +2794,19 @@
       "sku": "LEM-DRAGONFRUIT-LEM-GRANDE",
       "type": "RECIPE",
       "price": 165.0,
+      "cost": 75.87,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
           "qty": 1.0
         },
         {
-          "ingredientName": "Dragonfruit Syrup",
+          "ingredientName": "Dragonfruit",
           "qty": 87.5
+        },
+        {
+          "ingredientName": "White Sugar",
+          "qty": 75.0
         },
         {
           "ingredientName": "16 OZ Cold Cup",
@@ -2526,18 +2830,23 @@
       "sku": "LEM-DRAGONFRUIT-SHA-GRANDE",
       "type": "RECIPE",
       "price": 185.0,
+      "cost": 87.07,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
           "qty": 1.0
         },
         {
-          "ingredientName": "Dragonfruit Syrup",
+          "ingredientName": "Dragonfruit",
           "qty": 87.5
         },
         {
           "ingredientName": "Powdered Milk",
           "qty": 25.0
+        },
+        {
+          "ingredientName": "White Sugar",
+          "qty": 75.0
         },
         {
           "ingredientName": "16 OZ Cold Cup",
@@ -2561,6 +2870,7 @@
       "sku": "LEM-MANGO-LEMONADA-GRANDE",
       "type": "RECIPE",
       "price": 158.0,
+      "cost": 104.22,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
@@ -2568,6 +2878,10 @@
         },
         {
           "ingredientName": "Mango Puree",
+          "qty": 50.0
+        },
+        {
+          "ingredientName": "White Sugar",
           "qty": 50.0
         },
         {
@@ -2592,6 +2906,7 @@
       "sku": "LEM-STRAWBERRY-LUSH-GRANDE",
       "type": "RECIPE",
       "price": 158.0,
+      "cost": 95.07,
       "recipeLines": [
         {
           "ingredientName": "Fresh Lemon",
@@ -2600,6 +2915,10 @@
         {
           "ingredientName": "Strawberry Flavor",
           "qty": 50.0
+        },
+        {
+          "ingredientName": "White Sugar",
+          "qty": 75.0
         },
         {
           "ingredientName": "16 OZ Cold Cup",
@@ -2623,6 +2942,7 @@
       "sku": "LEM-ADD-ON-HONEY-GRANDE",
       "type": "RECIPE",
       "price": 40.0,
+      "cost": 29.12,
       "recipeLines": [
         {
           "ingredientName": "Pure Honey",
@@ -2654,7 +2974,7 @@
     },
     {
       "date": "2026-10-02",
-      "ingredientName": "Dragonfruit Syrup",
+      "ingredientName": "Dragonfruit",
       "qty": 4000.0
     },
     {
@@ -2679,7 +2999,7 @@
     },
     {
       "date": "2026-10-05",
-      "ingredientName": "Brown Sugar Syrup",
+      "ingredientName": "Brown Sugar",
       "qty": 1.0
     },
     {
@@ -2724,12 +3044,12 @@
     },
     {
       "date": "2026-10-06",
-      "ingredientName": "Watermelon Sour Syrup",
+      "ingredientName": "Watermelon Sour",
       "qty": 100.0
     },
     {
       "date": "2026-10-06",
-      "ingredientName": "Dragonfruit Syrup",
+      "ingredientName": "Dragonfruit",
       "qty": 5000.0
     },
     {
@@ -2764,7 +3084,7 @@
     },
     {
       "date": "2026-10-06",
-      "ingredientName": "Brown Sugar Syrup",
+      "ingredientName": "Brown Sugar",
       "qty": 4.0
     },
     {
@@ -2829,7 +3149,7 @@
     },
     {
       "date": "2026-10-13",
-      "ingredientName": "Dragonfruit Syrup",
+      "ingredientName": "Dragonfruit",
       "qty": -300.0
     },
     {
@@ -2859,7 +3179,7 @@
     },
     {
       "date": "2026-10-14",
-      "ingredientName": "Dragonfruit Syrup",
+      "ingredientName": "Dragonfruit",
       "qty": 3000.0
     },
     {
@@ -2889,12 +3209,12 @@
     },
     {
       "date": "2026-10-14",
-      "ingredientName": "White Sugar Syrup",
+      "ingredientName": "White Sugar",
       "qty": 8.0
     },
     {
       "date": "2026-10-14",
-      "ingredientName": "Brown Sugar Syrup",
+      "ingredientName": "Brown Sugar",
       "qty": 8.0
     },
     {
@@ -2929,7 +3249,7 @@
     },
     {
       "date": "2026-10-15",
-      "ingredientName": "Dragonfruit Syrup",
+      "ingredientName": "Dragonfruit",
       "qty": -100.0
     },
     {
@@ -3009,7 +3329,7 @@
     },
     {
       "date": "2026-10-21",
-      "ingredientName": "Dragonfruit Syrup",
+      "ingredientName": "Dragonfruit",
       "qty": 6000.0
     },
     {
@@ -3044,7 +3364,7 @@
     },
     {
       "date": "2026-10-21",
-      "ingredientName": "White Sugar Syrup",
+      "ingredientName": "White Sugar",
       "qty": 2.0
     },
     {
@@ -3119,7 +3439,7 @@
     },
     {
       "date": "2026-10-26",
-      "ingredientName": "Dragonfruit Syrup",
+      "ingredientName": "Dragonfruit",
       "qty": 5000.0
     },
     {
@@ -3154,12 +3474,12 @@
     },
     {
       "date": "2026-10-26",
-      "ingredientName": "White Sugar Syrup",
+      "ingredientName": "White Sugar",
       "qty": 5.0
     },
     {
       "date": "2026-10-26",
-      "ingredientName": "Brown Sugar Syrup",
+      "ingredientName": "Brown Sugar",
       "qty": 6.0
     },
     {
@@ -3259,7 +3579,7 @@
     },
     {
       "date": "2026-10-29",
-      "ingredientName": "Dragonfruit Syrup",
+      "ingredientName": "Dragonfruit",
       "qty": -75.0
     },
     {
@@ -4604,6 +4924,34 @@
           "totalAmount": 405.0
         },
         {
+          "productName": "Add-on Honey Regular",
+          "price": 40.0,
+          "cashQty": 0.0,
+          "cashAmount": 0.0,
+          "ewalletQty": 2.0,
+          "ewalletAmount": 80.0,
+          "grabQty": 0.0,
+          "grabAmount": 0.0,
+          "seniorQty": 0.0,
+          "seniorAmount": 0.0,
+          "totalQty": 2.0,
+          "totalAmount": 80.0
+        },
+        {
+          "productName": "Mango Lemonada Regular",
+          "price": 128.0,
+          "cashQty": 0.0,
+          "cashAmount": 0.0,
+          "ewalletQty": 1.0,
+          "ewalletAmount": 128.0,
+          "grabQty": 0.0,
+          "grabAmount": 0.0,
+          "seniorQty": 0.0,
+          "seniorAmount": 0.0,
+          "totalQty": 1.0,
+          "totalAmount": 128.0
+        },
+        {
           "productName": "Old-Fashioned (WSS) Supreme",
           "price": 140.0,
           "cashQty": 9.0,
@@ -4884,7 +5232,7 @@
           "totalAmount": 495.0
         }
       ],
-      "totalSalesCalculated": 20468.0,
+      "totalSalesCalculated": 20676.0,
       "inventory": {
         "lemon": {
           "start": 573.5,
@@ -5408,13 +5756,13 @@
           "cashQty": 1.0,
           "cashAmount": 168.0,
           "ewalletQty": 10.0,
-          "ewalletAmount": 1680.0,
+          "ewalletAmount": 1623.0,
           "grabQty": 0.0,
           "grabAmount": 0.0,
           "seniorQty": 0.0,
           "seniorAmount": 0.0,
           "totalQty": 11.0,
-          "totalAmount": 1848.0
+          "totalAmount": 1791.0
         },
         {
           "productName": "Dragonfruit Lemonade Supreme",
@@ -5613,7 +5961,7 @@
           "totalAmount": 1485.0
         }
       ],
-      "totalSalesCalculated": 24842.0,
+      "totalSalesCalculated": 24785.0,
       "inventory": {
         "lemon": {
           "start": 562.0,
@@ -6305,16 +6653,16 @@
           "cashQty": 0.0,
           "cashAmount": 0.0,
           "ewalletQty": 4.0,
-          "ewalletAmount": 592.0,
+          "ewalletAmount": 546.0,
           "grabQty": 0.0,
           "grabAmount": 0.0,
           "seniorQty": 0.0,
           "seniorAmount": 0.0,
           "totalQty": 4.0,
-          "totalAmount": 592.0
+          "totalAmount": 546.0
         }
       ],
-      "totalSalesCalculated": 13324.0,
+      "totalSalesCalculated": 13278.0,
       "inventory": {
         "lemon": {
           "start": 404.0,
@@ -6763,6 +7111,20 @@
           "totalAmount": 135.0
         },
         {
+          "productName": "Add-on Honey Regular",
+          "price": 40.0,
+          "cashQty": 0.0,
+          "cashAmount": 0.0,
+          "ewalletQty": 1.0,
+          "ewalletAmount": 40.0,
+          "grabQty": 0.0,
+          "grabAmount": 0.0,
+          "seniorQty": 0.0,
+          "seniorAmount": 0.0,
+          "totalQty": 1.0,
+          "totalAmount": 40.0
+        },
+        {
           "productName": "Old-Fashioned (WSS) Supreme",
           "price": 140.0,
           "cashQty": 9.0,
@@ -6973,7 +7335,7 @@
           "totalAmount": 330.0
         }
       ],
-      "totalSalesCalculated": 10877.0,
+      "totalSalesCalculated": 10917.0,
       "inventory": {
         "lemon": {
           "start": 322.5,
@@ -9294,7 +9656,7 @@
         "EWALLET SALES": 6735.0,
         "GRAB SALES": 215.0,
         "SENIOR/PWD SALES": 282.0,
-        "EXPENSES": 1725.0,
+        "EXPENSES": 1500.0,
         "FOOD ALLOWANCE": 225.0,
         "BALANCE FOR DEPOSIT": 11793.0,
         "TOTAL SALES": 20253.0
@@ -9726,13 +10088,13 @@
           "cashQty": 0.0,
           "cashAmount": 0.0,
           "ewalletQty": 4.0,
-          "ewalletAmount": 592.0,
+          "ewalletAmount": 209.0,
           "grabQty": 0.0,
           "grabAmount": 0.0,
           "seniorQty": 0.0,
           "seniorAmount": 0.0,
           "totalQty": 4.0,
-          "totalAmount": 592.0
+          "totalAmount": 209.0
         },
         {
           "productName": "Mango Lemonada Grande",
@@ -9749,7 +10111,7 @@
           "totalAmount": 316.0
         }
       ],
-      "totalSalesCalculated": 20636.0,
+      "totalSalesCalculated": 20253.0,
       "inventory": {
         "lemon": {
           "start": 491.0,
@@ -10038,7 +10400,7 @@
         "GRAB SALES": 611.0,
         "SENIOR/PWD SALES": 77.0,
         "EXPENSES": 0.0,
-        "FOOD ALLOWANCE": 255.0,
+        "FOOD ALLOWANCE": 225.0,
         "BALANCE FOR DEPOSIT": 11874.0,
         "TOTAL SALES": 18089.0
       },
@@ -10834,13 +11196,13 @@
           "cashQty": 1.0,
           "cashAmount": 140.0,
           "ewalletQty": 4.0,
-          "ewalletAmount": 560.0,
+          "ewalletAmount": 440.0,
           "grabQty": 0.0,
           "grabAmount": 0.0,
           "seniorQty": 0.0,
           "seniorAmount": 0.0,
           "totalQty": 5.0,
-          "totalAmount": 700.0
+          "totalAmount": 580.0
         },
         {
           "productName": "Watermelon Lemonade Supreme",
@@ -11053,7 +11415,7 @@
           "totalAmount": 330.0
         }
       ],
-      "totalSalesCalculated": 12353.0,
+      "totalSalesCalculated": 12233.0,
       "inventory": {
         "lemon": {
           "start": 403.0,
@@ -11535,13 +11897,13 @@
           "cashQty": 5.0,
           "cashAmount": 700.0,
           "ewalletQty": 3.0,
-          "ewalletAmount": 420.0,
+          "ewalletAmount": 380.0,
           "grabQty": 0.0,
           "grabAmount": 0.0,
           "seniorQty": 0.0,
           "seniorAmount": 0.0,
           "totalQty": 8.0,
-          "totalAmount": 1120.0
+          "totalAmount": 1080.0
         },
         {
           "productName": "Old-Fashioned (BSS) Supreme",
@@ -11754,7 +12116,7 @@
           "totalAmount": 660.0
         }
       ],
-      "totalSalesCalculated": 11394.0,
+      "totalSalesCalculated": 11354.0,
       "inventory": {
         "lemon": {
           "start": 320.0,
@@ -12792,6 +13154,20 @@
           "totalAmount": 310.0
         },
         {
+          "productName": "Add-on Honey Regular",
+          "price": 40.0,
+          "cashQty": 1.0,
+          "cashAmount": 40.0,
+          "ewalletQty": 0.0,
+          "ewalletAmount": 0.0,
+          "grabQty": 0.0,
+          "grabAmount": 0.0,
+          "seniorQty": 0.0,
+          "seniorAmount": 0.0,
+          "totalQty": 1.0,
+          "totalAmount": 40.0
+        },
+        {
           "productName": "Old-Fashioned (BSS) Supreme",
           "price": 140.0,
           "cashQty": 2.0,
@@ -12937,13 +13313,13 @@
           "cashQty": 16.0,
           "cashAmount": 1920.0,
           "ewalletQty": 7.0,
-          "ewalletAmount": 840.0,
+          "ewalletAmount": 800.0,
           "grabQty": 0.0,
           "grabAmount": 0.0,
           "seniorQty": 0.0,
           "seniorAmount": 0.0,
           "totalQty": 23.0,
-          "totalAmount": 2760.0
+          "totalAmount": 2720.0
         },
         {
           "productName": "Mango Lemonade Grande",
@@ -13493,6 +13869,20 @@
           "totalAmount": 472.0
         },
         {
+          "productName": "Add-on Honey Regular",
+          "price": 40.0,
+          "cashQty": 1.0,
+          "cashAmount": 40.0,
+          "ewalletQty": 0.0,
+          "ewalletAmount": 0.0,
+          "grabQty": 0.0,
+          "grabAmount": 0.0,
+          "seniorQty": 0.0,
+          "seniorAmount": 0.0,
+          "totalQty": 1.0,
+          "totalAmount": 40.0
+        },
+        {
           "productName": "Old-Fashioned (WSS) Supreme",
           "price": 140.0,
           "cashQty": 8.0,
@@ -13787,7 +14177,7 @@
           "totalAmount": 888.0
         }
       ],
-      "totalSalesCalculated": 20382.0,
+      "totalSalesCalculated": 20422.0,
       "inventory": {
         "lemon": {
           "start": 163.0,
@@ -14507,13 +14897,13 @@
           "cashQty": 1.0,
           "cashAmount": 148.0,
           "ewalletQty": 15.0,
-          "ewalletAmount": 2220.0,
+          "ewalletAmount": 2186.0,
           "grabQty": 0.0,
           "grabAmount": 0.0,
           "seniorQty": 0.0,
           "seniorAmount": 0.0,
           "totalQty": 16.0,
-          "totalAmount": 2368.0
+          "totalAmount": 2334.0
         },
         {
           "productName": "Dragonfruit Lemonade Grande",
@@ -14544,7 +14934,7 @@
           "totalAmount": 158.0
         }
       ],
-      "totalSalesCalculated": 26444.0,
+      "totalSalesCalculated": 26410.0,
       "inventory": {
         "lemon": {
           "start": 165.0,
@@ -15026,13 +15416,13 @@
           "cashQty": 7.0,
           "cashAmount": 1260.0,
           "ewalletQty": 6.0,
-          "ewalletAmount": 1080.0,
+          "ewalletAmount": 1040.0,
           "grabQty": 1.0,
           "grabAmount": 215.0,
           "seniorQty": 0.0,
           "seniorAmount": 0.0,
           "totalQty": 14.0,
-          "totalAmount": 2555.0
+          "totalAmount": 2515.0
         },
         {
           "productName": "Strawberry Lemonade Supreme",
@@ -15259,7 +15649,7 @@
           "totalAmount": 165.0
         }
       ],
-      "totalSalesCalculated": 21664.0,
+      "totalSalesCalculated": 21624.0,
       "inventory": {
         "lemon": {
           "start": 268.5,
@@ -15680,6 +16070,20 @@
           "totalAmount": 512.0
         },
         {
+          "productName": "Add-on Honey Regular",
+          "price": 40.0,
+          "cashQty": 0.0,
+          "cashAmount": 0.0,
+          "ewalletQty": 1.0,
+          "ewalletAmount": 40.0,
+          "grabQty": 0.0,
+          "grabAmount": 0.0,
+          "seniorQty": 0.0,
+          "seniorAmount": 0.0,
+          "totalQty": 1.0,
+          "totalAmount": 40.0
+        },
+        {
           "productName": "Old-Fashioned (WSS) Supreme",
           "price": 140.0,
           "cashQty": 7.0,
@@ -15783,13 +16187,13 @@
           "cashQty": 1.0,
           "cashAmount": 168.0,
           "ewalletQty": 15.0,
-          "ewalletAmount": 2520.0,
+          "ewalletAmount": 2443.0,
           "grabQty": 5.0,
           "grabAmount": 990.0,
           "seniorQty": 0.0,
           "seniorAmount": 0.0,
           "totalQty": 21.0,
-          "totalAmount": 3678.0
+          "totalAmount": 3601.0
         },
         {
           "productName": "Yakult Lemonade Supreme XL",
@@ -15806,7 +16210,7 @@
           "totalAmount": 258.0
         }
       ],
-      "totalSalesCalculated": 17600.0,
+      "totalSalesCalculated": 17563.0,
       "inventory": {
         "lemon": {
           "start": 108.5,
@@ -18302,6 +18706,20 @@
           "totalAmount": 270.0
         },
         {
+          "productName": "Add-on Honey Supreme XL",
+          "price": 40.0,
+          "cashQty": 0.0,
+          "cashAmount": 0.0,
+          "ewalletQty": 1.0,
+          "ewalletAmount": 40.0,
+          "grabQty": 0.0,
+          "grabAmount": 0.0,
+          "seniorQty": 0.0,
+          "seniorAmount": 0.0,
+          "totalQty": 1.0,
+          "totalAmount": 40.0
+        },
+        {
           "productName": "Old-Fashioned (WSS) Grande",
           "price": 120.0,
           "cashQty": 7.0,
@@ -18456,7 +18874,7 @@
           "totalAmount": 158.0
         }
       ],
-      "totalSalesCalculated": 13942.0,
+      "totalSalesCalculated": 13982.0,
       "inventory": {
         "lemon": {
           "start": 123.5,
@@ -19073,6 +19491,20 @@
           "totalAmount": 370.0
         },
         {
+          "productName": "Add-on Honey Supreme",
+          "price": 40.0,
+          "cashQty": 0.0,
+          "cashAmount": 0.0,
+          "ewalletQty": 0.0,
+          "ewalletAmount": 0.0,
+          "grabQty": 2.0,
+          "grabAmount": 100.0,
+          "seniorQty": 0.0,
+          "seniorAmount": 0.0,
+          "totalQty": 2.0,
+          "totalAmount": 100.0
+        },
+        {
           "productName": "Old-Fashioned (WSS) Supreme XL",
           "price": 200.0,
           "cashQty": 1.0,
@@ -19227,7 +19659,7 @@
           "totalAmount": 1036.0
         }
       ],
-      "totalSalesCalculated": 27202.0,
+      "totalSalesCalculated": 27302.0,
       "inventory": {
         "lemon": {
           "start": 282.5,
@@ -19746,6 +20178,20 @@
           "totalAmount": 1680.0
         },
         {
+          "productName": "Add-on Honey Supreme",
+          "price": 40.0,
+          "cashQty": 0.0,
+          "cashAmount": 0.0,
+          "ewalletQty": 0.0,
+          "ewalletAmount": 0.0,
+          "grabQty": 1.0,
+          "grabAmount": 50.0,
+          "seniorQty": 0.0,
+          "seniorAmount": 0.0,
+          "totalQty": 1.0,
+          "totalAmount": 50.0
+        },
+        {
           "productName": "Old-Fashioned (WSS) Supreme XL",
           "price": 200.0,
           "cashQty": 4.0,
@@ -19914,7 +20360,7 @@
           "totalAmount": 316.0
         }
       ],
-      "totalSalesCalculated": 20551.0,
+      "totalSalesCalculated": 20601.0,
       "inventory": {
         "lemon": {
           "start": 352.5,
@@ -20391,6 +20837,20 @@
           "totalAmount": 205.0
         },
         {
+          "productName": "Add-on Honey Supreme",
+          "price": 40.0,
+          "cashQty": 0.0,
+          "cashAmount": 0.0,
+          "ewalletQty": 0.0,
+          "ewalletAmount": 0.0,
+          "grabQty": 1.0,
+          "grabAmount": 50.0,
+          "seniorQty": 0.0,
+          "seniorAmount": 0.0,
+          "totalQty": 1.0,
+          "totalAmount": 50.0
+        },
+        {
           "productName": "Old-Fashioned (WSS) Supreme XL",
           "price": 200.0,
           "cashQty": 2.0,
@@ -20573,7 +21033,7 @@
           "totalAmount": 158.0
         }
       ],
-      "totalSalesCalculated": 18469.0,
+      "totalSalesCalculated": 18519.0,
       "inventory": {
         "lemon": {
           "start": 225.5,
@@ -21994,13 +22454,13 @@
           "cashQty": 0.0,
           "cashAmount": 0.0,
           "ewalletQty": 4.0,
-          "ewalletAmount": 640.0,
+          "ewalletAmount": 546.0,
           "grabQty": 0.0,
           "grabAmount": 0.0,
           "seniorQty": 0.0,
           "seniorAmount": 0.0,
           "totalQty": 4.0,
-          "totalAmount": 640.0
+          "totalAmount": 546.0
         },
         {
           "productName": "Yakult Lemonade Grande",
@@ -22017,7 +22477,7 @@
           "totalAmount": 444.0
         }
       ],
-      "totalSalesCalculated": 14788.0,
+      "totalSalesCalculated": 14694.0,
       "inventory": {
         "lemon": {
           "start": 233.0,
@@ -23340,13 +23800,13 @@
           "cashQty": 5.0,
           "cashAmount": 840.0,
           "ewalletQty": 6.0,
-          "ewalletAmount": 1008.0,
+          "ewalletAmount": 960.0,
           "grabQty": 0.0,
           "grabAmount": 0.0,
           "seniorQty": 1.0,
           "seniorAmount": 120.0,
           "totalQty": 12.0,
-          "totalAmount": 1968.0
+          "totalAmount": 1920.0
         },
         {
           "productName": "Strawberry Lush Supreme",
@@ -23375,6 +23835,20 @@
           "seniorAmount": 0.0,
           "totalQty": 1.0,
           "totalAmount": 185.0
+        },
+        {
+          "productName": "Add-on Honey Supreme",
+          "price": 40.0,
+          "cashQty": 1.0,
+          "cashAmount": 40.0,
+          "ewalletQty": 0.0,
+          "ewalletAmount": 0.0,
+          "grabQty": 0.0,
+          "grabAmount": 0.0,
+          "seniorQty": 0.0,
+          "seniorAmount": 0.0,
+          "totalQty": 1.0,
+          "totalAmount": 40.0
         },
         {
           "productName": "Old-Fashioned (BSS) Supreme XL",
@@ -23517,7 +23991,7 @@
           "totalAmount": 330.0
         }
       ],
-      "totalSalesCalculated": 17379.0,
+      "totalSalesCalculated": 17371.0,
       "inventory": {
         "lemon": {
           "start": 399.0,
@@ -23901,13 +24375,13 @@
           "cashQty": 1.0,
           "cashAmount": 130.0,
           "ewalletQty": 4.0,
-          "ewalletAmount": 520.0,
+          "ewalletAmount": 444.0,
           "grabQty": 0.0,
           "grabAmount": 0.0,
           "seniorQty": 0.0,
           "seniorAmount": 0.0,
           "totalQty": 5.0,
-          "totalAmount": 650.0
+          "totalAmount": 574.0
         },
         {
           "productName": "Honey Lemonade (Hot) Regular",
@@ -24190,7 +24664,7 @@
           "totalAmount": 316.0
         }
       ],
-      "totalSalesCalculated": 13863.0,
+      "totalSalesCalculated": 13787.0,
       "inventory": {
         "lemon": {
           "start": 660.0,

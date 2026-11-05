@@ -80,36 +80,36 @@ def main():
     # 2. Extract products, prices, recipes, and daily sales
     # Ingredient definitions map
     ingredients_dict = {
-        'Fresh Lemon': {'unit': 'pc', 'category': 'RAW_MATERIAL', 'costPerUnit': 12.00, 'lowStockThreshold': 50},
-        'White Sugar Syrup': {'unit': 'kg', 'category': 'RAW_MATERIAL', 'costPerUnit': 45.00, 'lowStockThreshold': 10},
-        'Brown Sugar Syrup': {'unit': 'kg', 'category': 'RAW_MATERIAL', 'costPerUnit': 45.00, 'lowStockThreshold': 10},
+        'Fresh Lemon': {'unit': 'pc', 'category': 'RAW_MATERIAL', 'costPerUnit': 20.00, 'lowStockThreshold': 50},
+        'White Sugar': {'unit': 'ml', 'category': 'RAW_MATERIAL', 'costPerUnit': 0.15, 'lowStockThreshold': 1000, 'purchaseUnit': 'L', 'purchaseUnitSize': 1000},
+        'Brown Sugar': {'unit': 'ml', 'category': 'RAW_MATERIAL', 'costPerUnit': 0.15, 'lowStockThreshold': 1000, 'purchaseUnit': 'L', 'purchaseUnitSize': 1000},
         'Purified Water': {'unit': 'gal', 'category': 'RAW_MATERIAL', 'costPerUnit': 25.00, 'lowStockThreshold': 5},
-        'Mango Puree': {'unit': 'g', 'category': 'RAW_MATERIAL', 'costPerUnit': 0.15, 'lowStockThreshold': 1000},
-        'Watermelon Flavor': {'unit': 'g', 'category': 'RAW_MATERIAL', 'costPerUnit': 0.15, 'lowStockThreshold': 1000},
-        'Cucumber Flavor': {'unit': 'g', 'category': 'RAW_MATERIAL', 'costPerUnit': 0.15, 'lowStockThreshold': 1000},
-        'Ginger Flavor': {'unit': 'g', 'category': 'RAW_MATERIAL', 'costPerUnit': 0.18, 'lowStockThreshold': 1000},
-        'Pure Honey': {'unit': 'g', 'category': 'RAW_MATERIAL', 'costPerUnit': 0.25, 'lowStockThreshold': 1000},
-        'Strawberry Flavor': {'unit': 'g', 'category': 'RAW_MATERIAL', 'costPerUnit': 0.18, 'lowStockThreshold': 1000},
-        'Yakult': {'unit': 'pc', 'category': 'RAW_MATERIAL', 'costPerUnit': 12.00, 'lowStockThreshold': 20},
-        'Watermelon Sour Syrup': {'unit': 'g', 'category': 'RAW_MATERIAL', 'costPerUnit': 0.18, 'lowStockThreshold': 500},
-        'Blue Lemonade Syrup': {'unit': 'g', 'category': 'RAW_MATERIAL', 'costPerUnit': 0.18, 'lowStockThreshold': 500},
-        'Guyabano Syrup': {'unit': 'g', 'category': 'RAW_MATERIAL', 'costPerUnit': 0.18, 'lowStockThreshold': 500},
-        'Mango Pineapple Syrup': {'unit': 'g', 'category': 'RAW_MATERIAL', 'costPerUnit': 0.18, 'lowStockThreshold': 500},
-        'Monster Energy Syrup': {'unit': 'g', 'category': 'RAW_MATERIAL', 'costPerUnit': 0.20, 'lowStockThreshold': 500},
-        'Orange Syrup': {'unit': 'g', 'category': 'RAW_MATERIAL', 'costPerUnit': 0.18, 'lowStockThreshold': 500},
-        'Dragonfruit Syrup': {'unit': 'g', 'category': 'RAW_MATERIAL', 'costPerUnit': 0.22, 'lowStockThreshold': 1000},
-        'Powdered Milk': {'unit': 'g', 'category': 'RAW_MATERIAL', 'costPerUnit': 0.12, 'lowStockThreshold': 200},
-        '12 OZ Cold Cup': {'unit': 'pc', 'category': 'PACKAGING', 'costPerUnit': 1.50, 'lowStockThreshold': 100},
-        '16 OZ Cold Cup': {'unit': 'pc', 'category': 'PACKAGING', 'costPerUnit': 1.80, 'lowStockThreshold': 100},
-        '22 OZ Cold Cup': {'unit': 'pc', 'category': 'PACKAGING', 'costPerUnit': 2.20, 'lowStockThreshold': 100},
-        '1 Liter Cup / Bottle': {'unit': 'pc', 'category': 'PACKAGING', 'costPerUnit': 5.00, 'lowStockThreshold': 50},
-        '12 OZ Hot Cup': {'unit': 'pc', 'category': 'PACKAGING', 'costPerUnit': 2.00, 'lowStockThreshold': 50},
-        '90mm Flat Lid': {'unit': 'pc', 'category': 'PACKAGING', 'costPerUnit': 0.80, 'lowStockThreshold': 100},
-        '90mm Dome Lid': {'unit': 'pc', 'category': 'PACKAGING', 'costPerUnit': 1.00, 'lowStockThreshold': 50},
-        '95mm Dome Lid': {'unit': 'pc', 'category': 'PACKAGING', 'costPerUnit': 1.20, 'lowStockThreshold': 50},
-        '95mm Flat / Plastic Lid': {'unit': 'pc', 'category': 'PACKAGING', 'costPerUnit': 0.90, 'lowStockThreshold': 100},
-        'Regular Straw': {'unit': 'pc', 'category': 'PACKAGING', 'costPerUnit': 0.25, 'lowStockThreshold': 100},
-        'Boba Straw': {'unit': 'pc', 'category': 'PACKAGING', 'costPerUnit': 0.50, 'lowStockThreshold': 50},
+        'Mango Puree': {'unit': 'g', 'category': 'RAW_MATERIAL', 'costPerUnit': 0.214, 'lowStockThreshold': 1000},
+        'Watermelon Flavor': {'unit': 'g', 'category': 'RAW_MATERIAL', 'costPerUnit': 0.214, 'lowStockThreshold': 1000},
+        'Cucumber Flavor': {'unit': 'g', 'category': 'RAW_MATERIAL', 'costPerUnit': 0.236, 'lowStockThreshold': 1000},
+        'Ginger Flavor': {'unit': 'g', 'category': 'RAW_MATERIAL', 'costPerUnit': 0.170, 'lowStockThreshold': 1000},
+        'Pure Honey': {'unit': 'g', 'category': 'RAW_MATERIAL', 'costPerUnit': 0.5824, 'lowStockThreshold': 1000},
+        'Strawberry Flavor': {'unit': 'g', 'category': 'RAW_MATERIAL', 'costPerUnit': 0.256, 'lowStockThreshold': 1000},
+        'Yakult': {'unit': 'pc', 'category': 'RAW_MATERIAL', 'costPerUnit': 12.32, 'lowStockThreshold': 20},
+        'Watermelon Sour': {'unit': 'g', 'category': 'RAW_MATERIAL', 'costPerUnit': 0.214, 'lowStockThreshold': 500},
+        'Blue Lemonade': {'unit': 'g', 'category': 'RAW_MATERIAL', 'costPerUnit': 0.214, 'lowStockThreshold': 500},
+        'Guyabano': {'unit': 'g', 'category': 'RAW_MATERIAL', 'costPerUnit': 0.290, 'lowStockThreshold': 500},
+        'Mango Pineapple': {'unit': 'g', 'category': 'RAW_MATERIAL', 'costPerUnit': 0.214, 'lowStockThreshold': 500},
+        'Monster Energy': {'unit': 'g', 'category': 'RAW_MATERIAL', 'costPerUnit': 0.250, 'lowStockThreshold': 500},
+        'Orange': {'unit': 'g', 'category': 'RAW_MATERIAL', 'costPerUnit': 0.214, 'lowStockThreshold': 500},
+        'Dragonfruit': {'unit': 'g', 'category': 'RAW_MATERIAL', 'costPerUnit': 0.256, 'lowStockThreshold': 1000},
+        'Powdered Milk': {'unit': 'g', 'category': 'RAW_MATERIAL', 'costPerUnit': 0.448, 'lowStockThreshold': 200},
+        '12 OZ Cold Cup': {'unit': 'pc', 'category': 'PACKAGING', 'costPerUnit': 4.20, 'lowStockThreshold': 100},
+        '16 OZ Cold Cup': {'unit': 'pc', 'category': 'PACKAGING', 'costPerUnit': 4.37, 'lowStockThreshold': 100},
+        '22 OZ Cold Cup': {'unit': 'pc', 'category': 'PACKAGING', 'costPerUnit': 6.72, 'lowStockThreshold': 100},
+        '1 Liter Cup / Bottle': {'unit': 'pc', 'category': 'PACKAGING', 'costPerUnit': 13.44, 'lowStockThreshold': 50},
+        '12 OZ Hot Cup': {'unit': 'pc', 'category': 'PACKAGING', 'costPerUnit': 13.44, 'lowStockThreshold': 50},
+        '90mm Flat Lid': {'unit': 'pc', 'category': 'PACKAGING', 'costPerUnit': 1.45, 'lowStockThreshold': 100},
+        '90mm Dome Lid': {'unit': 'pc', 'category': 'PACKAGING', 'costPerUnit': 1.45, 'lowStockThreshold': 50},
+        '95mm Dome Lid': {'unit': 'pc', 'category': 'PACKAGING', 'costPerUnit': 1.45, 'lowStockThreshold': 50},
+        '95mm Flat / Plastic Lid': {'unit': 'pc', 'category': 'PACKAGING', 'costPerUnit': 1.45, 'lowStockThreshold': 100},
+        'Regular Straw': {'unit': 'pc', 'category': 'PACKAGING', 'costPerUnit': 1.40, 'lowStockThreshold': 100},
+        'Boba Straw': {'unit': 'pc', 'category': 'PACKAGING', 'costPerUnit': 1.40, 'lowStockThreshold': 50},
         'Takeout Solo Bag': {'unit': 'pc', 'category': 'PACKAGING', 'costPerUnit': 1.00, 'lowStockThreshold': 20},
         'Takeout Duo Bag': {'unit': 'pc', 'category': 'PACKAGING', 'costPerUnit': 1.50, 'lowStockThreshold': 20},
         'Thermal Bag': {'unit': 'pc', 'category': 'PACKAGING', 'costPerUnit': 15.00, 'lowStockThreshold': 10},
@@ -118,6 +118,137 @@ def main():
         'Trash Bag': {'unit': 'pc', 'category': 'PACKAGING', 'costPerUnit': 3.00, 'lowStockThreshold': 10},
         'Tissue': {'unit': 'pack', 'category': 'PACKAGING', 'costPerUnit': 10.00, 'lowStockThreshold': 10},
     }
+
+    # Food cost table from NEW-COSTING-AND-PRICING-FOR-FRANCHISEES Excel sheet (COST OF FOOD)
+    excel_food_costs = {
+        ('MANGO', '12 OZ'): 57.20,
+        ('MANGO', '16 OZ'): 81.82,
+        ('MANGO', '22 OZ'): 94.87,
+        ('MANGO', '1 LITER'): 158.34,
+        ('CUCUMBER', '12 OZ'): 63.15,
+        ('CUCUMBER', '16 OZ'): 88.87,
+        ('CUCUMBER', '22 OZ'): 106.77,
+        ('CUCUMBER', '1 LITER'): 181.04,
+        ('GINGER', '12 OZ'): 56.55,
+        ('GINGER', '16 OZ'): 78.97,
+        ('GINGER', '22 OZ'): 93.57,
+        ('GINGER', '1 LITER'): 157.94,
+        ('STRAWBERRY', '12 OZ'): 52.35,
+        ('STRAWBERRY', '16 OZ'): 68.92,
+        ('STRAWBERRY', '22 OZ'): 85.17,
+        ('STRAWBERRY', '1 LITER'): 149.64,
+        ('WATERMELON', '12 OZ'): 64.15,
+        ('WATERMELON', '16 OZ'): 90.37,
+        ('WATERMELON', '22 OZ'): 108.77,
+        ('WATERMELON', '1 LITER'): 164.74,
+        ('HONEY GINGER', '12 OZ'): 107.25,
+        ('HONEY GINGER', '16 OZ'): 155.02,
+        ('HONEY GINGER', '22 OZ'): 209.97,
+        ('HONEY GINGER', '1 LITER'): 361.64,
+        ('YAKULT', '12 OZ'): 51.87,
+        ('YAKULT', '16 OZ'): 65.79,
+        ('YAKULT', '22 OZ'): 84.21,
+        ('YAKULT', '1 LITER'): 123.08,
+        ('OFL', '12 OZ'): 39.55,
+        ('OFL', '16 OZ'): 53.47,
+        ('OFL', '22 OZ'): 59.57,
+        ('OFL', '1 LITER'): 98.44,
+        ('HONEY', '12 OZ'): 61.17,
+        ('HONEY', '16 OZ'): 85.90,
+        ('HONEY', '22 OZ'): 102.81,
+        ('HONEY', '1 LITER'): 155.80,
+        ('STRAWBERRY LUSH', '12 OZ'): 63.55,
+        ('STRAWBERRY LUSH', '16 OZ'): 95.07,
+        ('STRAWBERRY LUSH', '22 OZ'): 107.57,
+        ('MANGO LEMONADA', '12 OZ'): 68.40,
+        ('MANGO LEMONADA', '16 OZ'): 104.22,
+        ('MANGO LEMONADA', '22 OZ'): 117.27,
+        ('OFL HOT', '12 OZ'): 45.94,
+        ('GINGER HOT', '12 OZ'): 62.94,
+        ('HONEY LEMONADE HOT', '12 OZ'): 67.54,
+        ('HONEY GINGER HOT', '12 OZ'): 87.94,
+        ('GUYABANO', '12 OZ'): 44.05,
+        ('GUYABANO', '16 OZ'): 65.22,
+        ('GUYABANO', '22 OZ'): 78.57,
+    }
+
+    def get_product_cost(name: str, recipe_lines: list) -> float:
+        p = name.upper()
+        size = None
+        if 'REGULAR' in p: size = '12 OZ'
+        elif 'GRANDE' in p: size = '16 OZ'
+        elif 'SUPREME XL' in p: size = '1 LITER'
+        elif 'SUPREME' in p: size = '22 OZ'
+
+        base = None
+        if 'OLD-FASHIONED' in p:
+            base = 'OFL HOT' if '(HOT)' in p else 'OFL'
+        elif 'MANGO LEMONADA' in p:
+            base = 'MANGO LEMONADA'
+        elif 'MANGO' in p and 'PINEAPPLE' not in p:
+            base = 'MANGO'
+        elif 'STRAWBERRY LUSH' in p:
+            base = 'STRAWBERRY LUSH'
+        elif 'STRAWBERRY' in p:
+            base = 'STRAWBERRY'
+        elif 'CUCUMBER' in p:
+            base = 'CUCUMBER'
+        elif 'HONEY GINGER' in p:
+            base = 'HONEY GINGER HOT' if '(HOT)' in p else 'HONEY GINGER'
+        elif 'GINGER' in p:
+            base = 'GINGER HOT' if '(HOT)' in p else 'GINGER'
+        elif 'HONEY' in p and 'ADD-ON' not in p and 'ADD ON' not in p:
+            base = 'HONEY LEMONADE HOT' if '(HOT)' in p else 'HONEY'
+        elif 'YAKULT' in p:
+            base = 'YAKULT'
+        elif 'WATERMELON' in p and 'SOUR' not in p:
+            base = 'WATERMELON'
+        elif 'GUYABANO' in p:
+            base = 'GUYABANO'
+
+        if base and size and (base, size) in excel_food_costs:
+            return excel_food_costs[(base, size)]
+
+        # Calculate from recipe lines + misc packaging (water/ice/napkin 15.0 for drinks)
+        recipe_cost = sum(
+            rl['qty'] * ingredients_dict.get(rl['ingredientName'], {}).get('costPerUnit', 0.0)
+            for rl in recipe_lines
+        )
+        is_packaged_drink = 'ADD-ON' not in p and 'ADD ON' not in p and len(recipe_lines) > 0
+        misc_cost = 15.0 if is_packaged_drink else 0.0
+        return round(recipe_cost + misc_cost, 2)
+
+    def get_sugar_ml(name_u: str, size_clean: str) -> float:
+        if 'ADD ON' in name_u or 'ADD-ON' in name_u:
+            return 0.0
+        if 'WATERMELON' in name_u and 'SOUR' not in name_u:
+            return 0.0
+        if 'HONEY' in name_u and 'GINGER' not in name_u:
+            return 0.0
+        if 'HONEY GINGER' in name_u or 'HONEYGINGER' in name_u:
+            if size_clean in ['12 OZ', '16 OZ', '16oz'] or 'HOT' in name_u:
+                return 0.0
+            elif size_clean == '22 OZ':
+                return 100.0
+            elif size_clean in ['1 Liter', '1L']:
+                return 200.0
+        if 'MANGO' in name_u and 'PINEAPPLE' not in name_u:
+            if size_clean == '12 OZ': return 25.0
+            elif size_clean in ['16 OZ', '16oz', '22 OZ']: return 50.0
+            elif size_clean in ['1 Liter', '1L']: return 100.0
+            return 25.0
+        if 'STRAWBERRY' in name_u and 'LUSH' not in name_u and size_clean in ['16 OZ', '16oz']:
+            return 50.0
+
+        if size_clean == '12 OZ':
+            return 50.0
+        elif size_clean in ['16 OZ', '16oz']:
+            return 75.0
+        elif size_clean == '22 OZ':
+            return 100.0
+        elif size_clean in ['1 Liter', '1L']:
+            return 200.0
+        return 50.0
 
     # Extract all distinct products across all 31 days
     all_products = {}
@@ -158,8 +289,24 @@ def main():
                 size = sheet_v.cell(r, 5).value or default_size
                 price = sheet_v.cell(r, 6).value
 
+                cash_q = float(sheet_v.cell(r, 7).value or 0)
+                cash_a = float(sheet_v.cell(r, 8).value or 0)
+                ew_q = float(sheet_v.cell(r, 9).value or 0)
+                ew_a = float(sheet_v.cell(r, 10).value or 0)
+                gr_q = float(sheet_v.cell(r, 11).value or 0)
+                gr_a = float(sheet_v.cell(r, 12).value or 0)
+                sn_q = float(sheet_v.cell(r, 13).value or 0)
+                sn_a = float(sheet_v.cell(r, 14).value or 0)
+                tot_q = float(sheet_v.cell(r, 15).value or 0)
+                tot_a = float(sheet_v.cell(r, 16).value or 0)
+
                 if not raw_name:
-                    continue
+                    if (cash_a + ew_a + gr_a + sn_a + tot_a) > 0:
+                        # Handle unnamed row with sales (e.g. Oct 3 row 347 with 128 PHP in 12 OZ E-Wallet)
+                        raw_name = 'FROSTY MANGO LEMONADA'
+                        price = price or 128.0
+                    else:
+                        continue
                 name_clean = str(raw_name).strip()
                 if 'total' in name_clean.lower() or name_clean == 'ITEM':
                     continue
@@ -223,7 +370,7 @@ def main():
                 name_u = name_clean.upper()
 
                 if 'MANGO PINEAPPLE' in name_u:
-                    flavor_ing = 'Mango Pineapple Syrup'
+                    flavor_ing = 'Mango Pineapple'
                     flavor_grams = 50.0
                 elif 'MANGO' in name_u:
                     flavor_ing = 'Mango Puree'
@@ -232,7 +379,7 @@ def main():
                     elif size_clean == '1 Liter': flavor_grams = 350.0
                     else: flavor_grams = 50.0
                 elif 'WATERMELON SOUR' in name_u:
-                    flavor_ing = 'Watermelon Sour Syrup'
+                    flavor_ing = 'Watermelon Sour'
                     if size_clean == '22 OZ': flavor_grams = 100.0
                     elif size_clean == '1 Liter': flavor_grams = 200.0
                     else: flavor_grams = 50.0
@@ -274,25 +421,25 @@ def main():
                     if size_clean in ['22 OZ', '1 Liter']: flavor_grams = 2.0
                     else: flavor_grams = 1.0
                 elif 'BLUE LEMONADE' in name_u:
-                    flavor_ing = 'Blue Lemonade Syrup'
+                    flavor_ing = 'Blue Lemonade'
                     if size_clean == '22 OZ': flavor_grams = 100.0
                     elif size_clean == '1 Liter': flavor_grams = 200.0
                     else: flavor_grams = 50.0
                 elif 'GUYABANO' in name_u:
-                    flavor_ing = 'Guyabano Syrup'
+                    flavor_ing = 'Guyabano'
                     if size_clean == '16 OZ': flavor_grams = 75.0
                     elif size_clean == '22 OZ': flavor_grams = 100.0
                     else: flavor_grams = 50.0
                 elif 'MONSTER' in name_u:
-                    flavor_ing = 'Monster Energy Syrup'
+                    flavor_ing = 'Monster Energy'
                     if size_clean == '22 OZ': flavor_grams = 100.0
                     else: flavor_grams = 50.0
                 elif 'ORANGE' in name_u:
-                    flavor_ing = 'Orange Syrup'
+                    flavor_ing = 'Orange'
                     if size_clean == '22 OZ': flavor_grams = 100.0
                     else: flavor_grams = 50.0
                 elif 'DRAGONFRUIT' in name_u:
-                    flavor_ing = 'Dragonfruit Syrup'
+                    flavor_ing = 'Dragonfruit'
                     if size_clean == '16 OZ': flavor_grams = 87.5
                     elif size_clean == '22 OZ': flavor_grams = 200.0
                     else: flavor_grams = 100.0
@@ -319,10 +466,10 @@ def main():
                 if 'SHAKE' in name_u:
                     recipe_lines.append({'ingredientName': 'Powdered Milk', 'qty': 25.0})
 
-                if variant_clean == 'WSS':
-                    recipe_lines.append({'ingredientName': 'White Sugar Syrup', 'qty': 0.03})
-                elif variant_clean == 'BSS':
-                    recipe_lines.append({'ingredientName': 'Brown Sugar Syrup', 'qty': 0.03})
+                sugar_ml = get_sugar_ml(name_u, size_clean)
+                if sugar_ml > 0:
+                    sugar_ing = 'Brown Sugar' if variant_clean == 'BSS' else 'White Sugar'
+                    recipe_lines.append({'ingredientName': sugar_ing, 'qty': sugar_ml})
 
                 # Packaging
                 if 'ADD ON' not in name_u:
@@ -377,27 +524,33 @@ def main():
                         'sku': final_sku,
                         'type': 'READY_MADE' if 'ADD ON' in name_u and not recipe_lines else 'RECIPE',
                         'price': price_num or 100.0,
+                        'cost': get_product_cost(full_product_name, recipe_lines),
                         'recipeLines': recipe_lines,
                     }
                 elif price_num is not None:
                     all_products[full_product_name]['price'] = price_num
 
                 # Check sales numbers for today
-                cash_q = float(sheet_v.cell(r, 7).value or 0)
-                cash_a = float(sheet_v.cell(r, 8).value or 0)
-                ew_q = float(sheet_v.cell(r, 9).value or 0)
-                ew_a = float(sheet_v.cell(r, 10).value or 0)
-                gr_q = float(sheet_v.cell(r, 11).value or 0)
-                gr_a = float(sheet_v.cell(r, 12).value or 0)
-                sn_q = float(sheet_v.cell(r, 13).value or 0)
-                sn_a = float(sheet_v.cell(r, 14).value or 0)
-                tot_q = float(sheet_v.cell(r, 15).value or 0)
-                tot_a = float(sheet_v.cell(r, 16).value or 0)
+                if cash_q == 0 and cash_a > 0:
+                    cash_q = round(cash_a / price_num, 2) if price_num else 1.0
+                if ew_q == 0 and ew_a > 0:
+                    ew_q = round(ew_a / price_num, 2) if price_num else 1.0
+                if gr_q == 0 and gr_a > 0:
+                    gr_q = round(gr_a / price_num, 2) if price_num else 1.0
+                if sn_q == 0 and sn_a > 0:
+                    sn_q = round(sn_a / price_num, 2) if price_num else 1.0
 
-                if tot_q > 0:
+                calc_q = cash_q + ew_q + gr_q + sn_q
+                calc_a = cash_a + ew_a + gr_a + sn_a
+                if tot_q == 0 and calc_q > 0:
+                    tot_q = calc_q
+                if tot_a == 0 and calc_a > 0:
+                    tot_a = calc_a
+
+                if tot_q > 0 or tot_a > 0:
                     day_sold_items.append({
                         'productName': full_product_name,
-                        'price': price_num or (tot_a / tot_q),
+                        'price': price_num or (tot_a / tot_q if tot_q > 0 else tot_a),
                         'cashQty': cash_q,
                         'cashAmount': cash_a,
                         'ewalletQty': ew_q,
@@ -422,6 +575,41 @@ def main():
             if c5 is not None and 'TOTAL SALES' not in summary:
                 if sheet_v.cell(r - 1, 3).value == 'BALANCE FOR DEPOSIT':
                     summary['TOTAL SALES'] = float(c5)
+
+        # Normalize Oct 10 & Oct 11 expense cells where sheet total expenses and balance for deposit
+        # were entered manually by the cashier
+        if date_str == '2026-10-10':
+            # E1550 had total expense 1725 (1500 store expense + 225 food allowance in G1550/E1551)
+            summary['EXPENSES'] = 1500.0
+            summary['FOOD ALLOWANCE'] = 225.0
+        elif date_str == '2026-10-11':
+            # 12099 cash sales - 11874 balance for deposit = 225 food allowance
+            summary['FOOD ALLOWANCE'] = 225.0
+
+        # Reconcile day_sold_items channel amounts with summary['TOTAL SALES']
+        # (e.g. when EWALLET SALES in the summary subtracts a senior e-wallet discount)
+        sheet_total_sales = summary.get('TOTAL SALES', day_total_sales)
+        items_diff = round(day_total_sales - sheet_total_sales, 2)
+        if items_diff != 0 and day_sold_items:
+            remaining = items_diff
+            # Prefer adjusting ewalletAmount first, then cashAmount
+            for field in ['ewalletAmount', 'cashAmount']:
+                if remaining == 0:
+                    break
+                candidates = sorted(
+                    [it for it in day_sold_items if it[field] > remaining],
+                    key=lambda x: x[field],
+                    reverse=True,
+                )
+                if candidates:
+                    target = candidates[0]
+                    target[field] = round(target[field] - remaining, 2)
+                    target['totalAmount'] = round(
+                        target['cashAmount'] + target['ewalletAmount'] + target['grabAmount'] + target['seniorAmount'],
+                        2,
+                    )
+                    remaining = 0
+            day_total_sales = round(sum(it['totalAmount'] for it in day_sold_items), 2)
 
         # Extract Lemon Inventory
         r_lemon = start_r + 130
@@ -509,13 +697,13 @@ def main():
                     'HONEY': 'Pure Honey',
                     'STRAWBERRY': 'Strawberry Flavor',
                     'YAKULT': 'Yakult',
-                    'WATERMELON SOUR': 'Watermelon Sour Syrup',
-                    'BLUE LEMONADE': 'Blue Lemonade Syrup',
-                    'GUYABANO': 'Guyabano Syrup',
-                    'MANGO PINEAPPLE': 'Mango Pineapple Syrup',
-                    'MONSTER LEMONADE': 'Monster Energy Syrup',
-                    'ORANGE LEMONADE': 'Orange Syrup',
-                    'DRAGONFRUIT LEMONADE': 'Dragonfruit Syrup',
+                    'WATERMELON SOUR': 'Watermelon Sour',
+                    'BLUE LEMONADE': 'Blue Lemonade',
+                    'GUYABANO': 'Guyabano',
+                    'MANGO PINEAPPLE': 'Mango Pineapple',
+                    'MONSTER LEMONADE': 'Monster Energy',
+                    'ORANGE LEMONADE': 'Orange',
+                    'DRAGONFRUIT LEMONADE': 'Dragonfruit',
                     'POWDERED MILK': 'Powdered Milk',
                 }
                 mapped = ing_map.get(f['name'].upper(), f['name'])
@@ -533,8 +721,8 @@ def main():
                     '12 OZ HOT': '12 OZ Hot Cup',
                     '16 OZ CUPS': '16 OZ Cold Cup',
                     'STRAW': 'Regular Straw',
-                    'WSS': 'White Sugar Syrup',
-                    'BSS': 'Brown Sugar Syrup',
+                    'WSS': 'White Sugar',
+                    'BSS': 'Brown Sugar',
                     'WATER': 'Purified Water',
                     'TOTE BAGS': 'Tote Bag',
                     'TISSUE': 'Tissue',

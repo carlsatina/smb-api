@@ -36,6 +36,8 @@ interface IngredientDef {
     category: IngredientCategory;
     costPerUnit: number;
     lowStockThreshold: number;
+    purchaseUnit?: string;
+    purchaseUnitSize?: number;
 }
 
 interface RecipeLineDef {
@@ -51,6 +53,7 @@ interface ProductDef {
     sku: string;
     type: ProductType;
     price: number;
+    cost?: number;
     recipeLines: RecipeLineDef[];
 }
 
@@ -244,6 +247,8 @@ export const seedLemonCo = async (customPrisma?: PrismaClient) => {
                 category: def.category,
                 costPerUnit: def.costPerUnit,
                 lowStockThreshold: def.lowStockThreshold,
+                purchaseUnit: def.purchaseUnit,
+                purchaseUnitSize: def.purchaseUnitSize,
                 active: true,
             },
         });
@@ -262,6 +267,7 @@ export const seedLemonCo = async (customPrisma?: PrismaClient) => {
             itemType: ItemType.INGREDIENT,
             itemId: ingredientMap.get('Fresh Lemon')!,
             qtyDelta: day1.inventory.lemon.start,
+            unitCost: dataset.ingredients['Fresh Lemon']?.costPerUnit ?? null,
             type: MovementType.STOCK_ADJUSTMENT,
             note: 'Oct 2026 Opening stock: Fresh Lemon',
             createdById: ownerUser.id,
@@ -278,13 +284,13 @@ export const seedLemonCo = async (customPrisma?: PrismaClient) => {
         'HONEY': 'Pure Honey',
         'STRAWBERRY': 'Strawberry Flavor',
         'YAKULT': 'Yakult',
-        'WATERMELON SOUR': 'Watermelon Sour Syrup',
-        'BLUE LEMONADE': 'Blue Lemonade Syrup',
-        'GUYABANO': 'Guyabano Syrup',
-        'MANGO PINEAPPLE': 'Mango Pineapple Syrup',
-        'MONSTER LEMONADE': 'Monster Energy Syrup',
-        'ORANGE LEMONADE': 'Orange Syrup',
-        'DRAGONFRUIT LEMONADE': 'Dragonfruit Syrup',
+        'WATERMELON SOUR': 'Watermelon Sour',
+        'BLUE LEMONADE': 'Blue Lemonade',
+        'GUYABANO': 'Guyabano',
+        'MANGO PINEAPPLE': 'Mango Pineapple',
+        'MONSTER LEMONADE': 'Monster Energy',
+        'ORANGE LEMONADE': 'Orange',
+        'DRAGONFRUIT LEMONADE': 'Dragonfruit',
         'POWDERED MILK': 'Powdered Milk',
     };
 
@@ -296,6 +302,7 @@ export const seedLemonCo = async (customPrisma?: PrismaClient) => {
                 itemType: ItemType.INGREDIENT,
                 itemId: ingredientMap.get(mappedIng)!,
                 qtyDelta: f.start,
+                unitCost: dataset.ingredients[mappedIng]?.costPerUnit ?? null,
                 type: MovementType.STOCK_ADJUSTMENT,
                 note: `Oct 2026 Opening stock: ${mappedIng}`,
                 createdById: ownerUser.id,
@@ -312,8 +319,8 @@ export const seedLemonCo = async (customPrisma?: PrismaClient) => {
         '12 OZ HOT': '12 OZ Hot Cup',
         '16 OZ CUPS': '16 OZ Cold Cup',
         'STRAW': 'Regular Straw',
-        'WSS': 'White Sugar Syrup',
-        'BSS': 'Brown Sugar Syrup',
+        'WSS': 'White Sugar',
+        'BSS': 'Brown Sugar',
         'WATER': 'Purified Water',
         'TOTE BAGS': 'Tote Bag',
         'TISSUE': 'Tissue',
@@ -332,11 +339,14 @@ export const seedLemonCo = async (customPrisma?: PrismaClient) => {
     for (const s of day1.inventory.supplies) {
         const mappedIng = supplyToIngredient[s.name] || s.name;
         if (s.start > 0 && ingredientMap.has(mappedIng)) {
+            const isSugar = mappedIng === 'White Sugar' || mappedIng === 'Brown Sugar';
+            const qty = isSugar ? s.start * 1000 : s.start;
             initialMovements.push({
                 storeId: store.id,
                 itemType: ItemType.INGREDIENT,
                 itemId: ingredientMap.get(mappedIng)!,
-                qtyDelta: s.start,
+                qtyDelta: qty,
+                unitCost: dataset.ingredients[mappedIng]?.costPerUnit ?? null,
                 type: MovementType.STOCK_ADJUSTMENT,
                 note: `Oct 2026 Opening stock: ${mappedIng}`,
                 createdById: ownerUser.id,
@@ -354,11 +364,14 @@ export const seedLemonCo = async (customPrisma?: PrismaClient) => {
     const deliveryMovements: Prisma.InventoryMovementCreateManyInput[] = [];
     for (const del of dataset.deliveries) {
         if (ingredientMap.has(del.ingredientName) && del.qty !== 0) {
+            const isSugar = del.ingredientName === 'White Sugar' || del.ingredientName === 'Brown Sugar';
+            const qty = isSugar ? del.qty * 1000 : del.qty;
             deliveryMovements.push({
                 storeId: store.id,
                 itemType: ItemType.INGREDIENT,
                 itemId: ingredientMap.get(del.ingredientName)!,
-                qtyDelta: del.qty,
+                qtyDelta: qty,
+                unitCost: dataset.ingredients[del.ingredientName]?.costPerUnit ?? null,
                 type: del.qty > 0 ? MovementType.PURCHASE_RECEIPT : MovementType.STOCK_ADJUSTMENT,
                 note: del.qty > 0 ? `Restock delivery (${del.ingredientName})` : `Stock adjustment (${del.ingredientName})`,
                 createdById: ownerUser.id,
@@ -384,6 +397,10 @@ export const seedLemonCo = async (customPrisma?: PrismaClient) => {
             }
         }
 
+        const costToUse = p.cost != null && p.cost > 0
+            ? p.cost
+            : (estimatedCost > 0 ? Number(estimatedCost.toFixed(2)) : 15.00);
+
         const product = await prisma.product.create({
             data: {
                 storeId: store.id,
@@ -391,7 +408,7 @@ export const seedLemonCo = async (customPrisma?: PrismaClient) => {
                 type: p.type,
                 sku: p.sku,
                 price: p.price,
-                cost: estimatedCost > 0 ? Number(estimatedCost.toFixed(2)) : 15.00,
+                cost: costToUse,
                 unit: 'cup',
                 category: p.category,
                 active: true,
@@ -487,9 +504,9 @@ export const seedLemonCo = async (customPrisma?: PrismaClient) => {
                     else if (channel === 'GRAB') { qty = item.grabQty; amt = item.grabAmount; }
                     else if (channel === 'SENIOR') { qty = item.seniorQty; amt = item.seniorAmount; }
 
-                    const lineSubtotal = qty * item.price;
-                    const lineDiscount = channel === 'SENIOR' ? Math.max(0, lineSubtotal - amt) : 0;
-                    const lineTotal = amt > 0 ? amt : lineSubtotal - lineDiscount;
+                    const lineTotal = amt > 0 ? amt : qty * item.price;
+                    const lineSubtotal = lineTotal;
+                    const lineDiscount = 0;
 
                     subtotal += lineSubtotal;
                     discount += lineDiscount;
@@ -498,7 +515,7 @@ export const seedLemonCo = async (customPrisma?: PrismaClient) => {
                     return {
                         productId: prodId,
                         qty,
-                        unitPrice: item.price,
+                        unitPrice: qty > 0 ? Number((lineTotal / qty).toFixed(2)) : item.price,
                         discount: lineDiscount,
                         tax: 0,
                         total: lineTotal,
@@ -577,11 +594,13 @@ export const seedLemonCo = async (customPrisma?: PrismaClient) => {
         for (const s of day.inventory.supplies) {
             const mappedIng = supplyToIngredient[s.name] || s.name;
             if (s.used > 0 && ingredientMap.has(mappedIng)) {
+                const isSugar = mappedIng === 'White Sugar' || mappedIng === 'Brown Sugar';
+                const qty = isSugar ? s.used * 1000 : s.used;
                 dailyIngredientDeductions.push({
                     storeId: store.id,
                     itemType: ItemType.INGREDIENT,
                     itemId: ingredientMap.get(mappedIng)!,
-                    qtyDelta: -s.used,
+                    qtyDelta: -qty,
                     type: MovementType.SALE,
                     note: `Packaging/Supplies used on ${dateStr}: ${mappedIng}`,
                     createdById: cashierUser.id,
@@ -632,11 +651,13 @@ export const seedLemonCo = async (customPrisma?: PrismaClient) => {
         const cashSalesAmt = day.summary['CASH SALES'] || 0;
         const ewalletSalesAmt = day.summary['EWALLET SALES'] || 0;
         const grabSalesAmt = day.summary['GRAB SALES'] || 0;
-        const seniorSalesAmt = day.summary['SENIOR/PWD SALES'] || 0;
+        const sheetTotalSales = day.summary['TOTAL SALES'] || 0;
         const totalExpenses = foodAllowance + storeExpenses;
         const balanceForDeposit = day.summary['BALANCE FOR DEPOSIT'] || (cashSalesAmt - totalExpenses);
-        // Grab sales added to ewallet/gcash sales
-        const totalGcashSales = Number((ewalletSalesAmt + grabSalesAmt).toFixed(2));
+        // Grab sales added to ewallet/gcash sales; reconcile with sheet TOTAL SALES when present
+        const totalGcashSales = Number(
+            (sheetTotalSales > 0 ? sheetTotalSales - balanceForDeposit - totalExpenses : ewalletSalesAmt + grabSalesAmt).toFixed(2)
+        );
 
         const dse = await prisma.dailySalesEntry.create({
             data: {
