@@ -79,3 +79,7 @@ export const saleExportQuerySchema = z.object({
     productId: optionalString,
     channel: optionalString,
 });
+
+export const saleDeleteSchema = z.object({
+    reason: z.string().trim().max(300).nullable().optional(),
+});

@@ -191,3 +191,45 @@ describe('editing a Grab sale', () => {
         ]);
     });
 });
+
+describe('deleting a sale', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        prismaMock.sale.updateMany.mockResolvedValue({ count: 1 });
+        prismaMock.product.findMany.mockResolvedValue([{ id: 'prod-a', cost: dec(20) }] as never);
+        prismaMock.ingredient.findMany.mockResolvedValue([]);
+    });
+
+    it('soft-deletes a finalized sale, returns its stock, and audits a snapshot', async () => {
+        prismaMock.sale.findFirst.mockResolvedValue(saleRow() as never);
+        prismaMock.inventoryMovement.groupBy.mockResolvedValue([
+            { itemType: ItemType.PRODUCT, itemId: 'prod-a', _sum: { qtyDelta: dec(-2) } },
+        ] as never);
+
+        const result = await saleService.deleteSale('store-1', 'owner-1', 'sale-1', ' Duplicate ticket ');
+
+        expect(result.stockReturned).toBe(true);
+        expect(prismaMock.sale.updateMany.mock.calls[0]?.[0]?.data).toHaveProperty('deletedAt');
+        const movements = prismaMock.inventoryMovement.createMany.mock.calls[0]?.[0]?.data as Array<Record<string, unknown>>;
+        expect(Number(movements[0].qtyDelta)).toBe(2);
+        expect(movements[0]).toMatchObject({ type: MovementType.SALE, referenceType: 'SALE_DELETE', referenceId: 'sale-1' });
+        expect(prismaMock.auditLog.create.mock.calls[0]?.[0]?.data).toMatchObject({
+            action: 'SALE_DELETED',
+            entityId: 'sale-1',
+            meta: { itemName: 'Receipt #12', reason: 'Duplicate ticket', total: 100, stockReturned: true },
+        });
+    });
+
+    it('does not move stock again for a voided sale', async () => {
+        prismaMock.sale.findFirst.mockResolvedValue(
+            saleRow({ status: SaleStatus.VOIDED, voidedAt: new Date() }) as never
+        );
+        await saleService.deleteSale('store-1', 'owner-1', 'sale-1');
+        expect(prismaMock.inventoryMovement.groupBy).not.toHaveBeenCalled();
+        expect(prismaMock.inventoryMovement.createMany).not.toHaveBeenCalled();
+        expect(prismaMock.auditLog.create.mock.calls[0]?.[0]?.data).toMatchObject({
+            action: 'SALE_DELETED',
+            meta: { stockReturned: false, reason: null },
+        });
+    });
+});

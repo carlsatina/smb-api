@@ -1,9 +1,11 @@
+import { Role } from '@prisma/client';
 import { Router } from 'express';
 import multer from 'multer';
 import { authMiddleware } from '../../middlewares/auth';
 import { requirePlanFeature } from '../../middlewares/requirePlanFeature';
+import { requireStoreRole } from '../../middlewares/requireStoreRole';
 import { requirePermission, requireStoreMember } from '../../middlewares/requirePermission';
-import { exportSales, finalizeSale, getSale, importSales, listSales, updateSale, voidSale } from './sale.controller';
+import { exportSales, finalizeSale, getSale, importSales, listSales, updateSale, voidSale, deleteSale } from './sale.controller';
 
 export const saleRouter = Router({ mergeParams: true });
 
@@ -28,4 +30,6 @@ saleRouter.get('/', requireStoreMember(), listSales);
 saleRouter.get('/:saleId', requireStoreMember(), getSale);
 saleRouter.post('/finalize', requirePermission('pos.use'), finalizeSale);
 saleRouter.patch('/:saleId', requirePermission('sales.edit'), updateSale);
+// Owner-only and never delegable; always written to the audit log.
+saleRouter.delete('/:saleId', requireStoreRole([Role.OWNER]), deleteSale);
 saleRouter.post('/:saleId/void', requirePermission('sales.void'), voidSale);

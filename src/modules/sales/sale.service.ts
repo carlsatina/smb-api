@@ -460,11 +460,12 @@ const mapSaleDetail = (
     })),
 });
 
+// Receipt numbers are unique per store including deleted sales, so the next
+// number must look past soft-deleted ones too.
 const getNextReceiptNumber = async (tx: Prisma.TransactionClient, storeId: string) => {
     const result = await tx.sale.aggregate({
         where: {
             storeId,
-            deletedAt: null,
         },
         _max: {
             receiptNumber: true,
@@ -1022,6 +1023,118 @@ export const saleService = {
 
         return mapSaleDetail(updated);
     },
+    /**
+     * Owner-only soft delete. A still-finalized sale gives back exactly what it
+     * consumed (typed SALE, dated with the sale, so usage reports net out); a
+     * voided sale already returned its stock. Always audited with a snapshot.
+     */
+    deleteSale: async (storeId: string, userId: string, saleId: string, reason?: string | null) => {
+        const sale = await saleRepository.getById(storeId, saleId);
+        if (!sale) {
+            throw new AppError('NOT_FOUND', 'Sale not found', 404);
+        }
+
+        const returnsStock = sale.status === SaleStatus.FINALIZED && !sale.voidedAt;
+        let reversal: MovementDelta[] = [];
+        if (returnsStock) {
+            const consumed = await prisma.inventoryMovement.groupBy({
+                by: ['itemType', 'itemId'],
+                where: { storeId, referenceId: saleId, type: MovementType.SALE },
+                _sum: { qtyDelta: true },
+            });
+            reversal = consumed
+                .map((row) => ({
+                    itemType: row.itemType,
+                    itemId: row.itemId,
+                    qtyDelta: Number((-normalizeDecimal(row._sum.qtyDelta)).toFixed(4)),
+                }))
+                .filter((delta) => Math.abs(delta.qtyDelta) >= QTY_EPSILON);
+        }
+
+        const productIds = reversal.filter((d) => d.itemType === ItemType.PRODUCT).map((d) => d.itemId);
+        const ingredientIds = reversal.filter((d) => d.itemType === ItemType.INGREDIENT).map((d) => d.itemId);
+        const [products, ingredients] = await Promise.all([
+            productIds.length
+                ? prisma.product.findMany({ where: { id: { in: productIds }, storeId }, select: { id: true, cost: true } })
+                : Promise.resolve([]),
+            ingredientIds.length
+                ? prisma.ingredient.findMany({
+                      where: { id: { in: ingredientIds }, storeId },
+                      select: { id: true, costPerUnit: true },
+                  })
+                : Promise.resolve([]),
+        ]);
+        const productCost = new Map(products.map((p) => [p.id, p.cost !== null ? normalizeDecimal(p.cost) : null]));
+        const ingredientCost = new Map(ingredients.map((i) => [i.id, normalizeDecimal(i.costPerUnit)]));
+
+        const receiptLabel = sale.receiptNumber ? `Receipt #${sale.receiptNumber}` : `Sale ${sale.id.slice(-8)}`;
+
+        await prisma.$transaction(async (tx) => {
+            const result = await tx.sale.updateMany({
+                where: { id: saleId, storeId, deletedAt: null },
+                data: { deletedAt: new Date() },
+            });
+            if (result.count === 0) {
+                throw new AppError('NOT_FOUND', 'Sale not found', 404);
+            }
+
+            if (reversal.length) {
+                await tx.inventoryMovement.createMany({
+                    data: reversal.map((delta) => ({
+                        storeId,
+                        itemType: delta.itemType,
+                        itemId: delta.itemId,
+                        qtyDelta: new Prisma.Decimal(delta.qtyDelta),
+                        unitCost:
+                            delta.itemType === ItemType.PRODUCT
+                                ? productCost.get(delta.itemId) != null
+                                    ? new Prisma.Decimal(productCost.get(delta.itemId) ?? 0)
+                                    : null
+                                : new Prisma.Decimal(ingredientCost.get(delta.itemId) ?? 0),
+                        type: MovementType.SALE,
+                        referenceType: 'SALE_DELETE',
+                        referenceId: saleId,
+                        createdById: userId,
+                        createdAt: sale.createdAt,
+                    })),
+                });
+            }
+
+            await tx.auditLog.create({
+                data: {
+                    store: { connect: { id: storeId } },
+                    actor: { connect: { id: userId } },
+                    action: 'SALE_DELETED',
+                    entityType: 'Sale',
+                    entityId: saleId,
+                    meta: {
+                        itemName: receiptLabel,
+                        receiptNumber: sale.receiptNumber,
+                        reason: reason?.trim() || null,
+                        status: sale.status,
+                        saleDate: sale.createdAt.toISOString(),
+                        cashier: sale.cashier?.fullName || sale.cashier?.email || null,
+                        paymentMethod: sale.paymentMethod,
+                        orderType: sale.orderType,
+                        channel: sale.channel,
+                        subtotal: normalizeDecimal(sale.subtotal),
+                        discount: normalizeDecimal(sale.discount),
+                        tax: normalizeDecimal(sale.tax),
+                        total: normalizeDecimal(sale.total),
+                        stockReturned: reversal.length > 0,
+                        items: sale.items.map((item) => ({
+                            itemName: item.nameSnapshot,
+                            qty: normalizeDecimal(item.qty),
+                            unitPrice: normalizeDecimal(item.unitPrice),
+                            total: normalizeDecimal(item.total),
+                        })),
+                    } as Prisma.InputJsonValue,
+                },
+            });
+        });
+
+        return { id: saleId, receiptNumber: sale.receiptNumber, stockReturned: reversal.length > 0 };
+    },
     voidSale: async (storeId: string, userId: string, saleId: string) => {
         const sale = await saleRepository.getById(storeId, saleId);
         if (!sale) {
@@ -1268,7 +1381,7 @@ export const saleService = {
             try {
                 await prisma.$transaction(async (tx) => {
                     const maxResult = await tx.sale.aggregate({
-                        where: { storeId, deletedAt: null },
+                        where: { storeId },
                         _max: { receiptNumber: true },
                     });
                     let nextReceipt = (maxResult._max.receiptNumber ?? 0) + 1;

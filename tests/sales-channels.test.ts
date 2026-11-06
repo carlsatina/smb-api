@@ -199,5 +199,7 @@ describe('finalizing a channel sale', () => {
             channel: null,
             orderType: OrderType.DINE_IN,
         });
+        // Receipt numbers count deleted sales too, so the unique number never repeats.
+        expect(prismaMock.sale.aggregate.mock.calls[0]?.[0]?.where).toEqual({ storeId: 's1' });
     });
 });
