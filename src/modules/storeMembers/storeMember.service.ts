@@ -4,6 +4,14 @@ import prisma from '../../../lib/prisma';
 import { env } from '../../config/env';
 import { getPlanConfig } from '../../config/plans';
 import { AppError } from '../../shared/errors';
+import {
+    effectivePermissions,
+    memberOverridesFromGranted,
+    parseMemberPermissionOverrides,
+    parseRolePermissionOverrides,
+    PERMISSIONS,
+    PermissionKey,
+} from '../../shared/permissions';
 import { sendInviteEmail } from '../../shared/email';
 
 type InviteInput = {
@@ -61,6 +69,40 @@ const assertCanManageRole = (actorRole: Role, targetRole: Role, action: string) 
     if (!ELEVATED_ROLES.includes(actorRole) && ELEVATED_ROLES.includes(targetRole)) {
         throw new AppError('FORBIDDEN', `Only owners and admins can ${action} an owner or admin.`, 403);
     }
+};
+
+const loadMemberForPermissions = async (storeId: string, memberId: string) => {
+    const member = await prisma.storeMember.findFirst({
+        where: { id: memberId, storeId, deletedAt: null },
+        include: {
+            user: { select: { id: true, fullName: true, email: true } },
+            store: { select: { rolePermissions: true } },
+        },
+    });
+    if (!member) {
+        throw new AppError('NOT_FOUND', 'Store member not found', 404);
+    }
+    return member;
+};
+
+const describeMemberPermissions = (member: Awaited<ReturnType<typeof loadMemberForPermissions>>) => {
+    const roleOverrides = parseRolePermissionOverrides(member.store.rolePermissions);
+    const overrides = member.role === Role.OWNER ? {} : parseMemberPermissionOverrides(member.permissionOverrides);
+    return {
+        member: {
+            id: member.id,
+            userId: member.userId,
+            fullName: member.user.fullName,
+            email: member.user.email,
+            role: member.role,
+        },
+        permissions: PERMISSIONS,
+        // What the member would have from their role alone (store grid applied).
+        rolePermissions: effectivePermissions(member.role, roleOverrides),
+        overrides,
+        effective: effectivePermissions(member.role, roleOverrides, overrides),
+        editable: member.role !== Role.OWNER,
+    };
 };
 
 const ensureOwnerRemaining = async (storeId: string, excludeMemberId: string) => {
@@ -220,6 +262,10 @@ export const storeMemberService = {
             createdAt: member.createdAt,
             suspendedAt: member.suspendedAt,
             suspendedBy: suspendedBy.get(member.id) ?? null,
+            customPermissionCount:
+                member.role === Role.OWNER
+                    ? 0
+                    : Object.keys(parseMemberPermissionOverrides(member.permissionOverrides)).length,
         }));
     },
     updateMemberRole: async (storeId: string, memberId: string, role: Role, actorId: string) => {
@@ -261,7 +307,8 @@ export const storeMemberService = {
                 storeId,
                 deletedAt: null,
             },
-            data: { role },
+            // Personal exceptions were chosen for the old role; start clean on a role change.
+            data: role === member.role ? { role } : { role, permissionOverrides: {} },
         });
 
         if (updateResult.count === 0) {
@@ -403,6 +450,62 @@ export const storeMemberService = {
         if (updateResult.count === 0) {
             throw new AppError('NOT_FOUND', 'Store member not found', 404);
         }
+    },
+    getMemberPermissions: async (storeId: string, memberId: string) => {
+        return describeMemberPermissions(await loadMemberForPermissions(storeId, memberId));
+    },
+    updateMemberPermissions: async (
+        storeId: string,
+        memberId: string,
+        actorId: string,
+        granted: PermissionKey[]
+    ) => {
+        const member = await loadMemberForPermissions(storeId, memberId);
+        if (member.role === Role.OWNER) {
+            throw new AppError('INVALID_TARGET', 'Owners always have every permission.', 400);
+        }
+        if (member.userId === actorId) {
+            throw new AppError('FORBIDDEN', 'You cannot change your own permissions.', 403);
+        }
+
+        const roleOverrides = parseRolePermissionOverrides(member.store.rolePermissions);
+        const roleBaseline = effectivePermissions(member.role, roleOverrides);
+        const previous = parseMemberPermissionOverrides(member.permissionOverrides);
+        const before = effectivePermissions(member.role, roleOverrides, previous);
+        const next = memberOverridesFromGranted(granted, roleBaseline);
+        const after = effectivePermissions(member.role, roleOverrides, next);
+
+        const changes = PERMISSIONS.flatMap(({ key }) => {
+            const had = before.includes(key);
+            const has = after.includes(key);
+            return had === has ? [] : [{ permission: key, granted: has }];
+        });
+
+        if (changes.length || JSON.stringify(previous) !== JSON.stringify(next)) {
+            await prisma.$transaction(async (tx) => {
+                await tx.storeMember.update({
+                    where: { id: member.id },
+                    data: { permissionOverrides: next as Prisma.InputJsonValue },
+                });
+                await tx.auditLog.create({
+                    data: {
+                        store: { connect: { id: storeId } },
+                        actor: { connect: { id: actorId } },
+                        action: 'MEMBER_PERMISSIONS_UPDATED',
+                        entityType: 'StoreMember',
+                        entityId: member.id,
+                        meta: {
+                            memberUserId: member.userId,
+                            memberEmail: member.user.email,
+                            role: member.role,
+                            changes,
+                        } as Prisma.InputJsonValue,
+                    },
+                });
+            });
+        }
+
+        return describeMemberPermissions(await loadMemberForPermissions(storeId, memberId));
     },
     listInvites: async (storeId: string) => {
         await ensureStoreExists(storeId);

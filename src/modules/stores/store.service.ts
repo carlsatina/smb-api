@@ -12,6 +12,7 @@ import {
     EditableRole,
     effectivePermissions,
     overridesFromMatrix,
+    parseMemberPermissionOverrides,
     parseRolePermissionOverrides,
     PERMISSIONS,
     PermissionKey,
@@ -155,7 +156,8 @@ export const storeService = {
                 role: membership.role,
                 permissions: effectivePermissions(
                     membership.role,
-                    parseRolePermissionOverrides(membership.store.rolePermissions)
+                    parseRolePermissionOverrides(membership.store.rolePermissions),
+                    parseMemberPermissionOverrides(membership.permissionOverrides)
                 ),
                 ownerPlanTier: owner?.planTier ?? 'STARTER',
                 ownerSubscriptionActive: owner?.subscriptionActive ?? false,
@@ -324,7 +326,16 @@ export const storeService = {
             throw new AppError('NOT_FOUND', 'Store not found', 404);
         }
         const overrides = parseRolePermissionOverrides(store.rolePermissions);
+        const customMemberCount = await prisma.storeMember.count({
+            where: {
+                storeId,
+                deletedAt: null,
+                role: { not: Role.OWNER },
+                NOT: { permissionOverrides: { equals: {} } },
+            },
+        });
         return {
+            customMemberCount,
             permissions: PERMISSIONS,
             roles: EDITABLE_ROLES,
             defaults: DEFAULT_ROLE_PERMISSIONS,

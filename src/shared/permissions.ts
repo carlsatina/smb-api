@@ -145,15 +145,58 @@ export const withImplied = (permissions: Iterable<PermissionKey>): PermissionKey
     return PERMISSION_KEYS.filter((key) => set.has(key));
 };
 
-export const effectivePermissions = (role: Role, overrides: RolePermissionOverrides): PermissionKey[] => {
-    if (role === Role.OWNER) return [...PERMISSION_KEYS];
-    if (!isEditableRole(role)) return [];
-    const set = new Set<PermissionKey>(DEFAULT_ROLE_PERMISSIONS[role]);
-    Object.entries(overrides[role] ?? {}).forEach(([key, granted]) => {
+/** Per-person exceptions stored on StoreMember (permission -> granted). */
+export type MemberPermissionOverrides = Partial<Record<PermissionKey, boolean>>;
+
+export const parseMemberPermissionOverrides = (
+    value: Prisma.JsonValue | null | undefined
+): MemberPermissionOverrides => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+    const result: MemberPermissionOverrides = {};
+    Object.entries(value).forEach(([key, granted]) => {
+        if (isPermissionKey(key) && typeof granted === 'boolean') result[key] = granted;
+    });
+    return result;
+};
+
+const applyOverrides = (set: Set<PermissionKey>, overrides: Partial<Record<PermissionKey, boolean>>) => {
+    Object.entries(overrides).forEach(([key, granted]) => {
         if (granted) set.add(key as PermissionKey);
         else set.delete(key as PermissionKey);
     });
-    return withImplied(set);
+};
+
+/**
+ * Layers: role defaults -> the store's role overrides -> the person's own
+ * exceptions. Owners always have everything.
+ */
+export const effectivePermissions = (
+    role: Role,
+    overrides: RolePermissionOverrides,
+    memberOverrides: MemberPermissionOverrides = {}
+): PermissionKey[] => {
+    if (role === Role.OWNER) return [...PERMISSION_KEYS];
+    if (!isEditableRole(role)) return [];
+    const set = new Set<PermissionKey>(DEFAULT_ROLE_PERMISSIONS[role]);
+    applyOverrides(set, overrides[role] ?? {});
+    // The role baseline is closed under "implies" before personal exceptions apply.
+    const baseline = new Set(withImplied(set));
+    applyOverrides(baseline, memberOverrides);
+    return withImplied(baseline);
+};
+
+/** Minimal personal exceptions that turn `baseline` into `granted`. */
+export const memberOverridesFromGranted = (
+    granted: PermissionKey[],
+    baseline: PermissionKey[]
+): MemberPermissionOverrides => {
+    const next = new Set(withImplied(granted));
+    const base = new Set(baseline);
+    const diff: MemberPermissionOverrides = {};
+    PERMISSION_KEYS.forEach((key) => {
+        if (next.has(key) !== base.has(key)) diff[key] = next.has(key);
+    });
+    return diff;
 };
 
 export const permissionMatrix = (overrides: RolePermissionOverrides): Record<EditableRole, PermissionKey[]> => ({

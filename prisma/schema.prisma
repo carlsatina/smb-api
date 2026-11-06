@@ -258,6 +258,9 @@ model StoreMember {
   // "suspended by" line in the UI, never the suspension itself.
   suspendedAt DateTime?
   deletedAt   DateTime?
+  // Per-person exceptions on top of the role's permissions (permission -> granted).
+  // Cleared whenever the member's role changes.
+  permissionOverrides Json @default("{}")
 
   store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
   user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)

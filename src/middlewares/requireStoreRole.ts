@@ -2,7 +2,11 @@ import { NextFunction, Response } from 'express';
 import { Role } from '@prisma/client';
 import prisma from '../../lib/prisma';
 import { AppError } from '../shared/errors';
-import { effectivePermissions, parseRolePermissionOverrides } from '../shared/permissions';
+import {
+    effectivePermissions,
+    parseMemberPermissionOverrides,
+    parseRolePermissionOverrides,
+} from '../shared/permissions';
 import { AuthRequest } from './auth';
 
 /**
@@ -30,6 +34,7 @@ export const loadStoreMembership = async (req: AuthRequest) => {
         select: {
             role: true,
             suspendedAt: true,
+            permissionOverrides: true,
             store: { select: { rolePermissions: true } },
         },
     });
@@ -47,7 +52,8 @@ export const loadStoreMembership = async (req: AuthRequest) => {
     req.storeRole = membership.role;
     req.permissions = effectivePermissions(
         membership.role,
-        parseRolePermissionOverrides(membership.store?.rolePermissions)
+        parseRolePermissionOverrides(membership.store?.rolePermissions),
+        parseMemberPermissionOverrides(membership.permissionOverrides)
     );
     return membership.role;
 };

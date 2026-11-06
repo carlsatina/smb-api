@@ -7,8 +7,10 @@ import {
     acceptInviteSchema,
     createInviteSchema,
     setMemberSuspensionSchema,
+    updateMemberPermissionsSchema,
     updateMemberRoleSchema,
 } from './storeMember.schemas';
+import type { PermissionKey } from '../../shared/permissions';
 import { storeMemberService } from './storeMember.service';
 
 export const listMembers = asyncHandler(async (req: AuthRequest, res: Response) => {
@@ -118,4 +120,31 @@ export const acceptInvite = asyncHandler(async (req: AuthRequest, res: Response)
     const payload = acceptInviteSchema.parse(req.body);
     const membership = await storeMemberService.acceptInvite(storeId, actorId, actorEmail, payload.token);
     res.status(201).json({ membership });
+});
+
+export const getMemberPermissions = asyncHandler(async (req: AuthRequest, res: Response) => {
+    const storeId = req.params.storeId;
+    const memberId = req.params.memberId;
+    if (!storeId || !memberId) {
+        throw new AppError('STORE_REQUIRED', 'Store and member are required', 400);
+    }
+    const data = await storeMemberService.getMemberPermissions(storeId, memberId);
+    res.status(200).json({ ...data, canEdit: req.storeRole === Role.OWNER && data.editable });
+});
+
+export const updateMemberPermissions = asyncHandler(async (req: AuthRequest, res: Response) => {
+    const storeId = req.params.storeId;
+    const memberId = req.params.memberId;
+    const actorId = req.user?.sub;
+    if (!storeId || !memberId || !actorId) {
+        throw new AppError('STORE_REQUIRED', 'Store and member are required', 400);
+    }
+    const { permissions } = updateMemberPermissionsSchema.parse(req.body);
+    const data = await storeMemberService.updateMemberPermissions(
+        storeId,
+        memberId,
+        actorId,
+        permissions as PermissionKey[]
+    );
+    res.status(200).json({ ...data, canEdit: true });
 });

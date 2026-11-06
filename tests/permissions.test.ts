@@ -5,6 +5,7 @@ import { requirePermission, requireStoreMember } from '../src/middlewares/requir
 import {
     DEFAULT_ROLE_PERMISSIONS,
     effectivePermissions,
+    memberOverridesFromGranted,
     overridesFromMatrix,
     parseRolePermissionOverrides,
     PERMISSION_KEYS,
@@ -13,12 +14,18 @@ import {
 } from '../src/shared/permissions';
 import { storeMemberService } from '../src/modules/storeMembers/storeMember.service';
 
-vi.mock('../lib/prisma', () => ({
-    default: {
-        storeMember: { findFirst: vi.fn(), updateMany: vi.fn() },
-        store: { findFirst: vi.fn() },
-    },
-}));
+vi.mock('../lib/prisma', () => {
+    const storeMember = { findFirst: vi.fn(), updateMany: vi.fn(), update: vi.fn() };
+    const auditLog = { create: vi.fn() };
+    return {
+        default: {
+            storeMember,
+            auditLog,
+            store: { findFirst: vi.fn() },
+            $transaction: vi.fn((fn: (tx: unknown) => unknown) => fn({ storeMember, auditLog })),
+        },
+    };
+});
 
 const prismaMock = vi.mocked(prisma, { deep: true });
 
@@ -152,6 +159,100 @@ describe('delegated team management', () => {
             .mockResolvedValueOnce({ id: 'm1', userId: 'u1', role: CASHIER } as never);
         await expect(storeMemberService.updateMemberRole('s1', 'm1', IM, 'u1')).rejects.toMatchObject({
             code: 'FORBIDDEN',
+        });
+    });
+});
+
+describe('per-person permission exceptions', () => {
+    beforeEach(() => vi.clearAllMocks());
+
+    it('layers role defaults, the store grid, then personal exceptions', () => {
+        const store = { CASHIER: { 'reports.view': true } };
+        const perms = effectivePermissions(CASHIER, store, { 'reports.view': false, 'sales.void': true });
+        expect(perms).toContain('sales.void');
+        expect(perms).not.toContain('reports.view');
+        expect(perms).toContain('pos.use');
+        expect(effectivePermissions(OWNER, {}, { 'pos.use': false })).toEqual(PERMISSION_KEYS);
+    });
+
+    it('stores only the difference from the role, including implied permissions', () => {
+        const baseline = effectivePermissions(CASHIER, {});
+        expect(memberOverridesFromGranted([...baseline, 'sales.void'], baseline)).toEqual({ 'sales.void': true });
+        expect(memberOverridesFromGranted(baseline, baseline)).toEqual({});
+        expect(memberOverridesFromGranted([...baseline, 'inventory.manage'], baseline)).toEqual({
+            'inventory.view': true,
+            'inventory.manage': true,
+        });
+    });
+
+    it('is applied by the permission middleware', async () => {
+        prismaMock.storeMember.findFirst.mockResolvedValue({
+            role: CASHIER,
+            suspendedAt: null,
+            permissionOverrides: { 'sales.void': true },
+            store: { rolePermissions: {} },
+        } as never);
+        const next = vi.fn();
+        await requirePermission('sales.void')(
+            { params: { storeId: 's1' }, user: { sub: 'u1', email: 'a@x', isSuperAdmin: false } } as never,
+            {} as never,
+            next
+        );
+        expect(next).toHaveBeenCalledWith();
+    });
+
+    const memberRow = (overrides: Record<string, unknown> = {}) => ({
+        id: 'm2',
+        userId: 'u2',
+        role: CASHIER,
+        permissionOverrides: {},
+        user: { id: 'u2', fullName: 'Ben', email: 'ben@x' },
+        store: { rolePermissions: {} },
+        ...overrides,
+    });
+
+    it('saves exceptions and audits the change', async () => {
+        prismaMock.storeMember.findFirst
+            .mockResolvedValueOnce(memberRow() as never)
+            .mockResolvedValueOnce(memberRow({ permissionOverrides: { 'sales.void': true } }) as never);
+        const result = await storeMemberService.updateMemberPermissions('s1', 'm2', 'owner-1', [
+            'pos.use',
+            'expenses.manage',
+            'sales.void',
+        ]);
+        expect(prismaMock.storeMember.update.mock.calls[0]?.[0]).toMatchObject({
+            where: { id: 'm2' },
+            data: { permissionOverrides: { 'sales.void': true } },
+        });
+        expect(prismaMock.auditLog.create.mock.calls[0]?.[0]?.data).toMatchObject({
+            action: 'MEMBER_PERMISSIONS_UPDATED',
+            meta: { changes: [{ permission: 'sales.void', granted: true }] },
+        });
+        expect(result.effective).toContain('sales.void');
+    });
+
+    it('refuses owners and your own permissions', async () => {
+        prismaMock.storeMember.findFirst.mockResolvedValueOnce(memberRow({ role: OWNER }) as never);
+        await expect(storeMemberService.updateMemberPermissions('s1', 'm2', 'u1', [])).rejects.toMatchObject({
+            code: 'INVALID_TARGET',
+        });
+        prismaMock.storeMember.findFirst.mockResolvedValueOnce(memberRow() as never);
+        await expect(storeMemberService.updateMemberPermissions('s1', 'm2', 'u2', [])).rejects.toMatchObject({
+            code: 'FORBIDDEN',
+        });
+        expect(prismaMock.storeMember.update).not.toHaveBeenCalled();
+    });
+
+    it('clears exceptions when the role changes', async () => {
+        prismaMock.storeMember.findFirst
+            .mockResolvedValueOnce({ role: OWNER } as never) // actor
+            .mockResolvedValueOnce({ id: 'm2', userId: 'u2', role: CASHIER } as never) // target
+            .mockResolvedValueOnce(memberRow({ role: IM }) as never); // reloaded
+        prismaMock.storeMember.updateMany.mockResolvedValue({ count: 1 } as never);
+        await storeMemberService.updateMemberRole('s1', 'm2', IM, 'u1');
+        expect(prismaMock.storeMember.updateMany.mock.calls[0]?.[0]?.data).toEqual({
+            role: IM,
+            permissionOverrides: {},
         });
     });
 });

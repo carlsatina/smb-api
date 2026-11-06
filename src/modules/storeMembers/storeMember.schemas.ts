@@ -1,5 +1,6 @@
 import { Role } from '@prisma/client';
 import { z } from 'zod';
+import { PERMISSION_KEYS } from '../../shared/permissions';
 
 const optionalNumber = z.preprocess(
     (value) => {
@@ -30,4 +31,11 @@ export const setMemberSuspensionSchema = z.object({
 
 export const acceptInviteSchema = z.object({
     token: z.string().min(10),
+});
+
+// Full list of permissions the member should have; stored as exceptions vs their role.
+export const updateMemberPermissionsSchema = z.object({
+    permissions: z.array(
+        z.string().refine((value) => (PERMISSION_KEYS as string[]).includes(value), { message: 'Unknown permission.' })
+    ),
 });
