@@ -66,6 +66,17 @@ const SIZE_SUBCATEGORY: Record<string, string> = {
 };
 const SIZE_ORDER = ['Regular', 'Grande', 'Supreme', 'Supreme XL'];
 
+// Grab sells only the larger cups, at store price +25% rounded to the peso.
+const GRAB_CHANNEL = {
+    key: 'GRAB',
+    name: 'Grab',
+    markupPercent: 25,
+    rounding: 'NEAREST_1',
+    alwaysTakeout: true,
+    active: true,
+};
+const GRAB_SIZES = new Set(['Supreme', 'Supreme XL']);
+
 /** Per-category subcategory lists, smallest size first, only sizes the category has. */
 const buildSubcategoryOptions = (products: ProductDef[]): Record<string, string[]> => {
     const sizesByCategory = new Map<string, Set<string>>();
@@ -206,6 +217,7 @@ export const seedLemonCo = async (customPrisma?: PrismaClient) => {
                     'Add-ons',
                 ],
                 subcategoryOptions,
+                salesChannels: [GRAB_CHANNEL],
                 expenseCategoryOptions: ['Food Allowance', 'Store Expenses', 'Supplies', 'Utilities'],
                 paymentMethods: ['CASH', 'CARD', 'TRANSFER', 'GCASH', 'MAYA', 'OTHER'],
                 allowNegativeStock: false,
@@ -227,6 +239,7 @@ export const seedLemonCo = async (customPrisma?: PrismaClient) => {
                     'Add-ons',
                 ],
                 subcategoryOptions,
+                salesChannels: [GRAB_CHANNEL],
             },
         });
         // Clean existing October data idempotently
@@ -440,6 +453,7 @@ export const seedLemonCo = async (customPrisma?: PrismaClient) => {
                 unit: 'cup',
                 category: p.category,
                 subcategory: SIZE_SUBCATEGORY[p.size] ?? null,
+                unavailableChannels: GRAB_SIZES.has(p.size) ? [] : [GRAB_CHANNEL.key],
                 active: true,
                 lowStockThreshold: 10,
             },
