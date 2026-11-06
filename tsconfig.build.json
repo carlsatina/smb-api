@@ -1,0 +1,19 @@
+{
+  // Production build: compile only the app. Tests, scripts, the Prisma seed/config
+  // (run from source by tsx / the Prisma CLI) and Vitest configs are type-checked by
+  // `npx tsc --noEmit`, not shipped in dist/.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "."
+  },
+  "exclude": [
+    "node_modules",
+    "dist",
+    "tests",
+    "scripts",
+    "prisma/**/*.ts",
+    "prisma.config.ts",
+    "vitest.config.ts",
+    "vitest.integration.config.ts"
+  ]
+}
