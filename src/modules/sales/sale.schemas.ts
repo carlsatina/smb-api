@@ -47,6 +47,12 @@ export const saleFinalizeSchema = z.object({
     customDate: dateValue.optional(),
 });
 
+export const saleUpdateSchema = z.object({
+    items: z.array(saleItemSchema).min(1),
+    paymentMethod: z.nativeEnum(PaymentMethod),
+    orderType: z.nativeEnum(OrderType),
+});
+
 export const saleListQuerySchema = z.object({
     status: z.nativeEnum(SaleStatus).optional(),
     from: dateValue.optional(),

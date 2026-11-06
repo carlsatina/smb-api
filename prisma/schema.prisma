@@ -420,6 +420,7 @@ model Sale {
   createdAt     DateTime      @default(now())
   finalizedAt   DateTime?
   voidedAt      DateTime?
+  editedAt      DateTime?
   deletedAt     DateTime?
 
   store   Store      @relation(fields: [storeId], references: [id], onDelete: Cascade)

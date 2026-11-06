@@ -272,6 +272,32 @@ const buildMovementDeltas = (
     return Array.from(deltaMap.values());
 };
 
+const QTY_EPSILON = 0.00005;
+
+/**
+ * Net inventory movements needed to move a sale from what it has already
+ * consumed (`existing`, summed from its SALE movements) to what the edited
+ * items should consume (`next`). Positive = stock returned, negative = more
+ * consumed. Zero-net items are dropped.
+ */
+export const computeEditDeltas = (existing: MovementDelta[], next: MovementDelta[]): MovementDelta[] => {
+    const map = new Map<string, MovementDelta>();
+    const add = (delta: MovementDelta, sign: 1 | -1) => {
+        const key = `${delta.itemType}:${delta.itemId}`;
+        const current = map.get(key);
+        if (current) {
+            current.qtyDelta += sign * delta.qtyDelta;
+        } else {
+            map.set(key, { itemType: delta.itemType, itemId: delta.itemId, qtyDelta: sign * delta.qtyDelta });
+        }
+    };
+    existing.forEach((delta) => add(delta, -1));
+    next.forEach((delta) => add(delta, 1));
+    return Array.from(map.values())
+        .map((delta) => ({ ...delta, qtyDelta: Number(delta.qtyDelta.toFixed(4)) }))
+        .filter((delta) => Math.abs(delta.qtyDelta) >= QTY_EPSILON);
+};
+
 const ensureStockAvailable = async (
     storeId: string,
     allowNegativeStock: boolean,
@@ -365,6 +391,7 @@ const mapSaleSummary = (
     createdAt: sale.createdAt,
     finalizedAt: sale.finalizedAt,
     voidedAt: sale.voidedAt,
+    editedAt: sale.editedAt,
     itemCount: sale._count.items,
     cashier: sale.cashier,
     items: sale.items.map((item) => ({
@@ -398,6 +425,7 @@ const mapSaleDetail = (
     createdAt: sale.createdAt,
     finalizedAt: sale.finalizedAt,
     voidedAt: sale.voidedAt,
+    editedAt: sale.editedAt,
     cashier: sale.cashier,
     items: sale.items.map((item) => ({
         id: item.id,
@@ -639,6 +667,244 @@ export const saleService = {
         }
 
         return mapSaleDetail(finalized);
+    },
+    update: async (
+        storeId: string,
+        userId: string,
+        saleId: string,
+        payload: {
+            items: SaleItemInput[];
+            paymentMethod: PaymentMethod;
+            orderType: OrderType;
+        }
+    ) => {
+        if (!payload.items.length) {
+            throw new AppError('INVALID_ITEMS', 'Sale must include at least one item.', 400);
+        }
+
+        const sale = await saleRepository.getById(storeId, saleId);
+        if (!sale) {
+            throw new AppError('NOT_FOUND', 'Sale not found', 404);
+        }
+        if (sale.status !== SaleStatus.FINALIZED || sale.voidedAt) {
+            throw new AppError('INVALID_STATUS', 'Only finalized sales can be edited.', 400);
+        }
+
+        const store = await ensureStore(storeId);
+        const uniqueProductIds = Array.from(new Set(payload.items.map((item) => item.productId)));
+
+        const products = await prisma.product.findMany({
+            where: {
+                storeId,
+                deletedAt: null,
+                id: { in: uniqueProductIds },
+            },
+            select: {
+                id: true,
+                name: true,
+                type: true,
+                active: true,
+                cost: true,
+            },
+        });
+
+        if (products.length !== uniqueProductIds.length) {
+            throw new AppError('PRODUCT_NOT_FOUND', 'One or more products are missing.', 404);
+        }
+
+        // Products already on the sale may have been deactivated since; keep them editable.
+        const originalProductIds = new Set(sale.items.map((item) => item.productId));
+        const inactiveProduct = products.find((product) => !product.active && !originalProductIds.has(product.id));
+        if (inactiveProduct) {
+            throw new AppError('PRODUCT_INACTIVE', 'Inactive products cannot be added to a sale.', 400);
+        }
+
+        const recipeProductIds = products
+            .filter((product) => product.type === ProductType.RECIPE)
+            .map((product) => product.id);
+        const recipeLinesByProduct = await loadRecipeLines(storeId, recipeProductIds);
+
+        const packagingLinesByProduct =
+            payload.orderType === OrderType.TAKEOUT
+                ? await loadPackagingLines(storeId, uniqueProductIds)
+                : new Map<string, PackagingLine[]>();
+
+        const { saleItems, totals } = calculateSaleItems(
+            payload.items,
+            new Map(products.map((p) => [p.id, { name: p.name }]))
+        );
+
+        const nextDeltas = buildMovementDeltas(
+            payload.items,
+            products.map((product) => ({ id: product.id, type: product.type })),
+            recipeLinesByProduct,
+            1,
+            payload.orderType,
+            packagingLinesByProduct
+        );
+
+        // What this sale has actually consumed so far (original SALE + any prior edits),
+        // rather than recomputing from today's recipes.
+        const existingRows = await prisma.inventoryMovement.groupBy({
+            by: ['itemType', 'itemId'],
+            where: {
+                storeId,
+                referenceId: saleId,
+                type: MovementType.SALE,
+            },
+            _sum: { qtyDelta: true },
+        });
+        const existingDeltas: MovementDelta[] = existingRows.map((row) => ({
+            itemType: row.itemType,
+            itemId: row.itemId,
+            qtyDelta: normalizeDecimal(row._sum.qtyDelta),
+        }));
+
+        const netDeltas = computeEditDeltas(existingDeltas, nextDeltas);
+
+        const netIngredientIds = netDeltas
+            .filter((delta) => delta.itemType === ItemType.INGREDIENT)
+            .map((delta) => delta.itemId);
+        const netProductIds = netDeltas
+            .filter((delta) => delta.itemType === ItemType.PRODUCT)
+            .map((delta) => delta.itemId);
+
+        const [ingredients, movementProducts] = await Promise.all([
+            netIngredientIds.length
+                ? prisma.ingredient.findMany({
+                      where: { id: { in: netIngredientIds }, storeId },
+                      select: { id: true, name: true, costPerUnit: true },
+                  })
+                : Promise.resolve([]),
+            netProductIds.length
+                ? prisma.product.findMany({
+                      where: { id: { in: netProductIds }, storeId },
+                      select: { id: true, name: true, cost: true },
+                  })
+                : Promise.resolve([]),
+        ]);
+
+        const productNames = new Map(movementProducts.map((product) => [product.id, product.name]));
+        const ingredientNames = new Map(ingredients.map((ingredient) => [ingredient.id, ingredient.name]));
+
+        // Only additional consumption can push stock negative.
+        await ensureStockAvailable(
+            storeId,
+            store.allowNegativeStock,
+            netDeltas.filter((delta) => delta.qtyDelta < 0),
+            productNames,
+            ingredientNames
+        );
+
+        const productCostMap = new Map(
+            movementProducts.map((product) => [product.id, product.cost ? normalizeDecimal(product.cost) : null])
+        );
+        const ingredientCostMap = new Map(
+            ingredients.map((ingredient) => [ingredient.id, normalizeDecimal(ingredient.costPerUnit)])
+        );
+
+        const before = {
+            subtotal: normalizeDecimal(sale.subtotal),
+            discount: normalizeDecimal(sale.discount),
+            tax: normalizeDecimal(sale.tax),
+            total: normalizeDecimal(sale.total),
+            paymentMethod: sale.paymentMethod,
+            orderType: sale.orderType,
+            items: sale.items.map((item) => ({
+                productId: item.productId,
+                name: item.nameSnapshot,
+                qty: normalizeDecimal(item.qty),
+                unitPrice: normalizeDecimal(item.unitPrice),
+                total: normalizeDecimal(item.total),
+            })),
+        };
+
+        await prisma.$transaction(async (tx) => {
+            const updateResult = await tx.sale.updateMany({
+                where: {
+                    id: saleId,
+                    storeId,
+                    status: SaleStatus.FINALIZED,
+                    voidedAt: null,
+                    deletedAt: null,
+                },
+                data: {
+                    subtotal: new Prisma.Decimal(totals.subtotal),
+                    discount: new Prisma.Decimal(totals.discount),
+                    tax: new Prisma.Decimal(totals.tax),
+                    total: new Prisma.Decimal(totals.total),
+                    paymentMethod: payload.paymentMethod,
+                    orderType: payload.orderType,
+                    editedAt: new Date(),
+                },
+            });
+
+            if (updateResult.count === 0) {
+                throw new AppError('INVALID_STATUS', 'Sale was voided or removed before it could be edited.', 409);
+            }
+
+            await tx.saleItem.deleteMany({ where: { saleId } });
+            await tx.saleItem.createMany({
+                data: saleItems.map((item) => ({ ...item, saleId })),
+            });
+
+            if (netDeltas.length) {
+                await tx.inventoryMovement.createMany({
+                    data: netDeltas.map((delta) => ({
+                        storeId,
+                        itemType: delta.itemType,
+                        itemId: delta.itemId,
+                        qtyDelta: new Prisma.Decimal(delta.qtyDelta),
+                        unitCost:
+                            delta.itemType === ItemType.PRODUCT
+                                ? productCostMap.get(delta.itemId) != null
+                                    ? new Prisma.Decimal(productCostMap.get(delta.itemId) ?? 0)
+                                    : null
+                                : new Prisma.Decimal(ingredientCostMap.get(delta.itemId) ?? 0),
+                        // Typed SALE so stock and usage reports net correctly; dated with
+                        // the sale so day-bucketed reports stay on the original day.
+                        type: MovementType.SALE,
+                        referenceType: 'SALE_EDIT',
+                        referenceId: saleId,
+                        createdById: userId,
+                        createdAt: sale.createdAt,
+                    })),
+                });
+            }
+
+            await tx.auditLog.create({
+                data: {
+                    store: { connect: { id: storeId } },
+                    actor: { connect: { id: userId } },
+                    action: 'SALE_EDITED',
+                    entityType: 'Sale',
+                    entityId: saleId,
+                    meta: {
+                        receiptNumber: sale.receiptNumber,
+                        before,
+                        after: {
+                            ...totals,
+                            paymentMethod: payload.paymentMethod,
+                            orderType: payload.orderType,
+                            items: saleItems.map((item) => ({
+                                productId: item.productId,
+                                name: item.nameSnapshot,
+                                qty: Number(item.qty),
+                                unitPrice: Number(item.unitPrice),
+                                total: Number(item.total),
+                            })),
+                        },
+                    },
+                },
+            });
+        });
+
+        const updated = await saleRepository.getById(storeId, saleId);
+        if (!updated) {
+            throw new AppError('NOT_FOUND', 'Sale not found', 404);
+        }
+
+        return mapSaleDetail(updated);
     },
     voidSale: async (storeId: string, userId: string, saleId: string) => {
         const sale = await saleRepository.getById(storeId, saleId);

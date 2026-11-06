@@ -3,7 +3,7 @@ import { Role } from '@prisma/client';
 import { AuthRequest } from '../../middlewares/auth';
 import { asyncHandler } from '../../shared/asyncHandler';
 import { AppError } from '../../shared/errors';
-import { saleExportQuerySchema, saleFinalizeSchema, saleListQuerySchema } from './sale.schemas';
+import { saleExportQuerySchema, saleFinalizeSchema, saleListQuerySchema, saleUpdateSchema } from './sale.schemas';
 import { saleService } from './sale.service';
 import { escapeCsvValue, parseCSV } from '../../shared/csv';
 
@@ -138,6 +138,20 @@ export const importSales = asyncHandler(async (req: AuthRequest & { file?: Expre
 
     const result = await saleService.importSales(storeId, importerId, rawRows);
     res.status(200).json(result);
+});
+
+export const updateSale = asyncHandler(async (req: AuthRequest, res: Response) => {
+    const storeId = req.params.storeId;
+    const saleId = req.params.saleId;
+    const userId = req.user?.sub;
+
+    if (!storeId || !saleId || !userId) {
+        throw new AppError('BAD_REQUEST', 'Store, sale, and user are required', 400);
+    }
+
+    const payload = saleUpdateSchema.parse(req.body);
+    const sale = await saleService.update(storeId, userId, saleId, payload);
+    res.status(200).json({ sale });
 });
 
 export const voidSale = asyncHandler(async (req: AuthRequest, res: Response) => {

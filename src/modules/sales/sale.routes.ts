@@ -4,7 +4,7 @@ import multer from 'multer';
 import { authMiddleware } from '../../middlewares/auth';
 import { requirePlanFeature } from '../../middlewares/requirePlanFeature';
 import { requireStoreRole } from '../../middlewares/requireStoreRole';
-import { exportSales, finalizeSale, getSale, importSales, listSales, voidSale } from './sale.controller';
+import { exportSales, finalizeSale, getSale, importSales, listSales, updateSale, voidSale } from './sale.controller';
 
 export const saleRouter = Router({ mergeParams: true });
 
@@ -12,6 +12,7 @@ const readRoles = [Role.OWNER, Role.ADMIN, Role.CASHIER, Role.INVENTORY_MANAGER,
 const adminRoles = [Role.OWNER, Role.ADMIN];
 const finalizeRoles = [Role.OWNER, Role.ADMIN, Role.CASHIER];
 const voidRoles = [Role.OWNER, Role.ADMIN];
+const editRoles = [Role.OWNER, Role.ADMIN];
 
 const csvUpload = multer({
     storage: multer.memoryStorage(),
@@ -32,4 +33,5 @@ saleRouter.post('/import', requireStoreRole(adminRoles), requirePlanFeature('imp
 saleRouter.get('/', requireStoreRole(readRoles), listSales);
 saleRouter.get('/:saleId', requireStoreRole(readRoles), getSale);
 saleRouter.post('/finalize', requireStoreRole(finalizeRoles), finalizeSale);
+saleRouter.patch('/:saleId', requireStoreRole(editRoles), updateSale);
 saleRouter.post('/:saleId/void', requireStoreRole(voidRoles), voidSale);
