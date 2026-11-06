@@ -57,6 +57,31 @@ interface ProductDef {
     recipeLines: RecipeLineDef[];
 }
 
+// Size tier -> product subcategory (shown as the second row of POS filters).
+const SIZE_SUBCATEGORY: Record<string, string> = {
+    Regular: 'Regular/12oz',
+    Grande: 'Grande/16oz',
+    Supreme: 'Supreme/22oz',
+    'Supreme XL': 'SupremeXL/1L',
+};
+const SIZE_ORDER = ['Regular', 'Grande', 'Supreme', 'Supreme XL'];
+
+/** Per-category subcategory lists, smallest size first, only sizes the category has. */
+const buildSubcategoryOptions = (products: ProductDef[]): Record<string, string[]> => {
+    const sizesByCategory = new Map<string, Set<string>>();
+    products.forEach((product) => {
+        if (!SIZE_SUBCATEGORY[product.size]) return;
+        if (!sizesByCategory.has(product.category)) sizesByCategory.set(product.category, new Set());
+        sizesByCategory.get(product.category)!.add(product.size);
+    });
+    return Object.fromEntries(
+        Array.from(sizesByCategory, ([category, sizes]) => [
+            category,
+            SIZE_ORDER.filter((size) => sizes.has(size)).map((size) => SIZE_SUBCATEGORY[size]),
+        ])
+    );
+};
+
 interface DeliveryDef {
     date: string;
     ingredientName: string;
@@ -129,6 +154,7 @@ export const seedLemonCo = async (customPrisma?: PrismaClient) => {
 
     const rawData = fs.readFileSync(jsonPath, 'utf8');
     const dataset: LemonCoDataset = JSON.parse(rawData);
+    const subcategoryOptions = buildSubcategoryOptions(dataset.products);
 
     // 2. Ensure Users (Owner & Cashier)
     const defaultPasswordHash = await bcrypt.hash('password123', 10);
@@ -179,6 +205,7 @@ export const seedLemonCo = async (customPrisma?: PrismaClient) => {
                     'Hot Drinks',
                     'Add-ons',
                 ],
+                subcategoryOptions,
                 expenseCategoryOptions: ['Food Allowance', 'Store Expenses', 'Supplies', 'Utilities'],
                 paymentMethods: ['CASH', 'CARD', 'TRANSFER', 'GCASH', 'MAYA', 'OTHER'],
                 allowNegativeStock: false,
@@ -199,6 +226,7 @@ export const seedLemonCo = async (customPrisma?: PrismaClient) => {
                     'Hot Drinks',
                     'Add-ons',
                 ],
+                subcategoryOptions,
             },
         });
         // Clean existing October data idempotently
@@ -411,6 +439,7 @@ export const seedLemonCo = async (customPrisma?: PrismaClient) => {
                 cost: costToUse,
                 unit: 'cup',
                 category: p.category,
+                subcategory: SIZE_SUBCATEGORY[p.size] ?? null,
                 active: true,
                 lowStockThreshold: 10,
             },
