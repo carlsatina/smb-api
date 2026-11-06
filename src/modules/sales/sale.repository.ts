@@ -9,6 +9,8 @@ export type SaleFilters = {
     cashierId?: string;
     paymentMethod?: PaymentMethod;
     productId?: string;
+    // Channel key, or 'WALK_IN' for sales without a channel.
+    channel?: string;
 };
 
 const buildWhere = (filters: SaleFilters): Prisma.SaleWhereInput => {
@@ -27,6 +29,10 @@ const buildWhere = (filters: SaleFilters): Prisma.SaleWhereInput => {
 
     if (filters.paymentMethod) {
         where.paymentMethod = filters.paymentMethod;
+    }
+
+    if (filters.channel) {
+        where.channel = filters.channel === 'WALK_IN' ? null : filters.channel;
     }
 
     if (filters.productId) {

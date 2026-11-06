@@ -3,6 +3,7 @@ import prisma from '../../../lib/prisma';
 import { AppError } from '../../shared/errors';
 import { inventoryService } from '../inventory/inventory.service';
 import type { PermissionKey } from '../../shared/permissions';
+import { parseSalesChannels } from '../../shared/salesChannels';
 import { canViewRestrictedExpenses, RESTRICTED_EXPENSE_CATEGORIES } from '../expenses/expense.constants';
 
 type SalesByDayRow = {
@@ -147,7 +148,7 @@ const buildDateKeys = (startDate: string, endDate: string) => {
 const ensureStore = async (storeId: string) => {
     const store = await prisma.store.findFirst({
         where: { id: storeId, deletedAt: null },
-        select: { id: true, timezone: true },
+        select: { id: true, timezone: true, salesChannels: true },
     });
 
     if (!store) {
@@ -757,6 +758,63 @@ export const reportsService = {
                     sharePct: grandTotal > 0 ? Math.round((amount / grandTotal) * 1000) / 10 : 0,
                 };
             }),
+        };
+    },
+    getSalesByChannel: async (storeId: string, from?: string, to?: string) => {
+        const store = await ensureStore(storeId);
+        const timeZone = store.timezone || 'UTC';
+        const { startDate, endDate } = buildDateRange(from, to, timeZone);
+
+        const totals = await prisma.$queryRaw<Array<{ channel: string | null; total: Prisma.Decimal | null; orders: bigint | number | null }>>`
+            SELECT "channel", SUM("total") AS total, COUNT(*) AS orders
+            FROM "Sale"
+            WHERE "storeId" = ${storeId}
+              AND "status" = ${SaleStatus.FINALIZED}
+              AND "deletedAt" IS NULL
+              AND timezone(${timeZone}, (COALESCE("finalizedAt", "createdAt") AT TIME ZONE 'UTC')) >= ${startDate}::date
+              AND timezone(${timeZone}, (COALESCE("finalizedAt", "createdAt") AT TIME ZONE 'UTC')) < (${endDate}::date + interval '1 day')
+            GROUP BY "channel"
+        `;
+
+        // Markup = what the channel charged above store prices (before discounts).
+        const markups = await prisma.$queryRaw<Array<{ channel: string; markup: Prisma.Decimal | null }>>`
+            SELECT s."channel", SUM((si."unitPrice" - si."basePrice") * si."qty") AS markup
+            FROM "SaleItem" si
+            JOIN "Sale" s ON s."id" = si."saleId"
+            WHERE s."storeId" = ${storeId}
+              AND s."status" = ${SaleStatus.FINALIZED}
+              AND s."deletedAt" IS NULL
+              AND s."channel" IS NOT NULL
+              AND si."basePrice" IS NOT NULL
+              AND timezone(${timeZone}, (COALESCE(s."finalizedAt", s."createdAt") AT TIME ZONE 'UTC')) >= ${startDate}::date
+              AND timezone(${timeZone}, (COALESCE(s."finalizedAt", s."createdAt") AT TIME ZONE 'UTC')) < (${endDate}::date + interval '1 day')
+            GROUP BY s."channel"
+        `;
+
+        const markupByChannel = new Map(markups.map((row) => [row.channel, roundMoney(normalizeNumber(row.markup))]));
+        const channelNames = new Map(parseSalesChannels(store.salesChannels).map((c) => [c.key, c.name]));
+        const grandTotal = totals.reduce((sum, row) => sum + normalizeNumber(row.total), 0);
+
+        const channels = totals
+            .map((row) => {
+                const total = roundMoney(normalizeNumber(row.total));
+                const markup = row.channel ? markupByChannel.get(row.channel) ?? 0 : 0;
+                return {
+                    channel: row.channel,
+                    name: row.channel ? channelNames.get(row.channel) ?? row.channel : 'Walk-in',
+                    total,
+                    orderCount: normalizeNumber(row.orders),
+                    markup,
+                    sharePct: grandTotal > 0 ? Math.round((total / grandTotal) * 1000) / 10 : 0,
+                };
+            })
+            // Walk-in first, then channels by sales.
+            .sort((a, b) => (a.channel === null ? -1 : b.channel === null ? 1 : b.total - a.total));
+
+        return {
+            range: { from: startDate, to: endDate },
+            grandTotal: roundMoney(grandTotal),
+            channels,
         };
     },
     getEmployeeSales: async (storeId: string, from?: string, to?: string) => {

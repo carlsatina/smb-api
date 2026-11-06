@@ -148,6 +148,17 @@ export const getPaymentMethodBreakdown = asyncHandler(async (req: AuthRequest, r
     res.status(200).json(data);
 });
 
+export const getSalesByChannel = asyncHandler(async (req: AuthRequest, res: Response) => {
+    const storeId = req.params.storeId;
+    if (!storeId) {
+        throw new AppError('STORE_REQUIRED', 'Store is required', 400);
+    }
+
+    const query = reportRangeSchema.parse(req.query);
+    const data = await reportsService.getSalesByChannel(storeId, query.from, query.to);
+    res.status(200).json(data);
+});
+
 export const getEmployeeSales = asyncHandler(async (req: AuthRequest, res: Response) => {
     const storeId = req.params.storeId;
     if (!storeId) {

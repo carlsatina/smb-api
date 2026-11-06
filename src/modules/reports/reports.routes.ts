@@ -8,6 +8,7 @@ import {
     getIngredientUsage,
     getLowStock,
     getPaymentMethodBreakdown,
+    getSalesByChannel,
     getProductMargins,
     getProductsSold,
     getProfitSummary,
@@ -35,4 +36,5 @@ reportsRouter.get('/product-margins', requirePermission('reports.view'), getProd
 reportsRouter.get('/profit-summary', requirePermission('reports.view'), getProfitSummary);
 reportsRouter.get('/expense-summary', requirePermission('reports.view'), requirePlanFeature('expenses'), getExpenseSummary);
 reportsRouter.get('/payment-methods', requirePermission('reports.view'), getPaymentMethodBreakdown);
+reportsRouter.get('/sales-by-channel', requirePermission('reports.view'), getSalesByChannel);
 reportsRouter.get('/employee-sales', requirePermission('reports.view'), getEmployeeSales);

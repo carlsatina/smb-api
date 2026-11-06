@@ -23,6 +23,7 @@ export const listSales = asyncHandler(async (req: AuthRequest, res: Response) =>
             cashierId: query.cashierId,
             paymentMethod: query.paymentMethod,
             productId: query.productId,
+            channel: query.channel,
         },
         query.page,
         query.pageSize
@@ -68,13 +69,14 @@ export const exportSales = asyncHandler(async (req: AuthRequest, res: Response) 
         cashierId: query.cashierId,
         paymentMethod: query.paymentMethod,
         productId: query.productId,
+        channel: query.channel,
     };
 
     const pageSize = 100;
     let page = 1;
     let total = 0;
     const rows: Array<Array<string | number | null | undefined>> = [
-        ['Receipt #', 'Date', 'Status', 'Cashier', 'Payment Method', 'Items', 'Subtotal', 'Discount', 'Tax', 'Total'],
+        ['Receipt #', 'Date', 'Status', 'Cashier', 'Payment Method', 'Channel', 'Items', 'Subtotal', 'Discount', 'Tax', 'Total'],
     ];
 
     do {
@@ -87,6 +89,7 @@ export const exportSales = asyncHandler(async (req: AuthRequest, res: Response) 
                 sale.status,
                 sale.cashier?.fullName || sale.cashier?.email || '',
                 sale.paymentMethod,
+                sale.channel ?? 'Walk-in',
                 sale.items.map((i) => `${i.name} x${i.qty}`).join('; '),
                 sale.subtotal,
                 sale.discount,

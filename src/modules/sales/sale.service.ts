@@ -12,6 +12,7 @@ import prisma from '../../../lib/prisma';
 import { AppError } from '../../shared/errors';
 import { parseImportDate } from '../../shared/datetime';
 import { saleRepository } from './sale.repository';
+import { computeChannelPrice, parseChannelPrices, parseSalesChannels } from '../../shared/salesChannels';
 
 type SaleItemInput = {
     productId: string;
@@ -50,6 +51,7 @@ const ensureStore = async (storeId: string) => {
         select: {
             id: true,
             allowNegativeStock: true,
+            salesChannels: true,
         },
     });
 
@@ -141,7 +143,10 @@ const loadPackagingLines = async (storeId: string, productIds: string[]) => {
     return map;
 };
 
-const calculateSaleItems = (items: SaleItemInput[], productMap: Map<string, { name: string }>) => {
+const calculateSaleItems = (
+    items: SaleItemInput[],
+    productMap: Map<string, { name: string; basePrice?: number | null }>
+) => {
     type SaleItemDraft = Omit<Prisma.SaleItemCreateManyInput, 'saleId'>;
     const saleItems: SaleItemDraft[] = [];
     let subtotal = 0;
@@ -185,6 +190,10 @@ const calculateSaleItems = (items: SaleItemInput[], productMap: Map<string, { na
             tax: new Prisma.Decimal(roundMoney(tax)),
             total: new Prisma.Decimal(lineTotal),
             nameSnapshot: product.name,
+            basePrice:
+                product.basePrice !== null && product.basePrice !== undefined
+                    ? new Prisma.Decimal(roundMoney(product.basePrice))
+                    : null,
         });
     });
 
@@ -388,6 +397,7 @@ const mapSaleSummary = (
     total: normalizeDecimal(sale.total),
     paymentMethod: sale.paymentMethod,
     orderType: sale.orderType,
+    channel: sale.channel,
     createdAt: sale.createdAt,
     finalizedAt: sale.finalizedAt,
     voidedAt: sale.voidedAt,
@@ -422,6 +432,7 @@ const mapSaleDetail = (
     total: normalizeDecimal(sale.total),
     paymentMethod: sale.paymentMethod,
     orderType: sale.orderType,
+    channel: sale.channel,
     createdAt: sale.createdAt,
     finalizedAt: sale.finalizedAt,
     voidedAt: sale.voidedAt,
@@ -433,6 +444,7 @@ const mapSaleDetail = (
         name: item.nameSnapshot,
         qty: normalizeDecimal(item.qty),
         unitPrice: normalizeDecimal(item.unitPrice),
+        basePrice: item.basePrice !== null ? normalizeDecimal(item.basePrice) : null,
         discount: normalizeDecimal(item.discount),
         tax: normalizeDecimal(item.tax),
         total: normalizeDecimal(item.total),
@@ -472,6 +484,7 @@ export const saleService = {
             cashierId?: string;
             paymentMethod?: PaymentMethod;
             productId?: string;
+            channel?: string;
         },
         page: number,
         pageSize: number
@@ -506,6 +519,7 @@ export const saleService = {
             paymentMethod: PaymentMethod;
             orderType: OrderType;
             customDate?: Date;
+            channel?: string | null;
         }
     ) => {
         if (!payload.items.length) {
@@ -513,6 +527,17 @@ export const saleService = {
         }
 
         const store = await ensureStore(storeId);
+
+        // Channel sales (e.g. Grab) are priced here, not by the client.
+        const channel = payload.channel
+            ? parseSalesChannels(store.salesChannels).find((entry) => entry.key === payload.channel && entry.active)
+            : undefined;
+        if (payload.channel && !channel) {
+            throw new AppError('INVALID_CHANNEL', 'That sales channel is not available.', 400);
+        }
+        if (channel?.alwaysTakeout) {
+            payload = { ...payload, orderType: OrderType.TAKEOUT };
+        }
         const uniqueProductIds = Array.from(new Set(payload.items.map((item) => item.productId)));
 
         const products = await prisma.product.findMany({
@@ -527,6 +552,9 @@ export const saleService = {
                 type: true,
                 active: true,
                 cost: true,
+                price: true,
+                channelPrices: true,
+                unavailableChannels: true,
             },
         });
 
@@ -537,6 +565,33 @@ export const saleService = {
         const inactiveProduct = products.find((product) => !product.active);
         if (inactiveProduct) {
             throw new AppError('PRODUCT_INACTIVE', 'Inactive products cannot be sold.', 400);
+        }
+
+        if (channel) {
+            const notOnChannel = products.find((product) => product.unavailableChannels.includes(channel.key));
+            if (notOnChannel) {
+                throw new AppError(
+                    'PRODUCT_NOT_ON_CHANNEL',
+                    `${notOnChannel.name} isn't sold on ${channel.name}.`,
+                    400,
+                    { productId: notOnChannel.id, channel: channel.key }
+                );
+            }
+            const byId = new Map(products.map((product) => [product.id, product]));
+            payload = {
+                ...payload,
+                items: payload.items.map((item) => {
+                    const product = byId.get(item.productId)!;
+                    const unitPrice = computeChannelPrice(
+                        normalizeDecimal(product.price),
+                        channel,
+                        parseChannelPrices(product.channelPrices)[channel.key]
+                    );
+                    // Keep the client's discount within the server-priced line.
+                    const lineSubtotal = roundMoney(item.qty * unitPrice);
+                    return { ...item, unitPrice, discount: Math.min(item.discount ?? 0, lineSubtotal) };
+                }),
+            };
         }
 
         const productMap = new Map(products.map((product) => [product.id, product]));
@@ -562,7 +617,10 @@ export const saleService = {
                 ? await loadPackagingLines(storeId, uniqueProductIds)
                 : new Map<string, PackagingLine[]>();
 
-        const { saleItems, totals } = calculateSaleItems(payload.items, new Map(products.map((p) => [p.id, { name: p.name }])));
+        const { saleItems, totals } = calculateSaleItems(
+            payload.items,
+            new Map(products.map((p) => [p.id, { name: p.name, basePrice: normalizeDecimal(p.price) }]))
+        );
 
         const movementDeltas = buildMovementDeltas(
             payload.items,
@@ -624,6 +682,7 @@ export const saleService = {
                     total: new Prisma.Decimal(totals.total),
                     paymentMethod: payload.paymentMethod,
                     orderType: payload.orderType,
+                    channel: channel?.key ?? null,
                     finalizedAt: effectiveDate,
                     createdAt: effectiveDate,
                 },
@@ -705,6 +764,8 @@ export const saleService = {
                 type: true,
                 active: true,
                 cost: true,
+                price: true,
+                unavailableChannels: true,
             },
         });
 
@@ -719,6 +780,17 @@ export const saleService = {
             throw new AppError('PRODUCT_INACTIVE', 'Inactive products cannot be added to a sale.', 400);
         }
 
+        // Items added to a channel sale must be sold on that channel.
+        const offChannel = sale.channel
+            ? products.find(
+                  (product) =>
+                      !originalProductIds.has(product.id) && product.unavailableChannels.includes(sale.channel as string)
+              )
+            : undefined;
+        if (offChannel) {
+            throw new AppError('PRODUCT_NOT_ON_CHANNEL', `${offChannel.name} isn't sold on this sale's channel.`, 400);
+        }
+
         const recipeProductIds = products
             .filter((product) => product.type === ProductType.RECIPE)
             .map((product) => product.id);
@@ -731,7 +803,7 @@ export const saleService = {
 
         const { saleItems, totals } = calculateSaleItems(
             payload.items,
-            new Map(products.map((p) => [p.id, { name: p.name }]))
+            new Map(products.map((p) => [p.id, { name: p.name, basePrice: normalizeDecimal(p.price) }]))
         );
 
         const nextDeltas = buildMovementDeltas(
@@ -810,6 +882,7 @@ export const saleService = {
             total: normalizeDecimal(sale.total),
             paymentMethod: sale.paymentMethod,
             orderType: sale.orderType,
+            channel: sale.channel,
             items: sale.items.map((item) => ({
                 productId: item.productId,
                 name: item.nameSnapshot,

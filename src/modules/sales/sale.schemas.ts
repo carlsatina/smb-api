@@ -45,6 +45,7 @@ export const saleFinalizeSchema = z.object({
     paymentMethod: z.nativeEnum(PaymentMethod),
     orderType: z.nativeEnum(OrderType).default(OrderType.DINE_IN),
     customDate: dateValue.optional(),
+    channel: z.string().min(1).max(30).nullable().optional(),
 });
 
 export const saleUpdateSchema = z.object({
@@ -60,6 +61,7 @@ export const saleListQuerySchema = z.object({
     cashierId: optionalString,
     paymentMethod: z.nativeEnum(PaymentMethod).optional(),
     productId: optionalString,
+    channel: optionalString,
     page: z
         .preprocess((value) => (value === undefined ? 1 : Number(value)), z.number().int().min(1))
         .default(1),
@@ -75,4 +77,5 @@ export const saleExportQuerySchema = z.object({
     cashierId: optionalString,
     paymentMethod: z.nativeEnum(PaymentMethod).optional(),
     productId: optionalString,
+    channel: optionalString,
 });

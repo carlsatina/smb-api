@@ -18,6 +18,9 @@ const optionalNumber = z.preprocess(
 
 const recipeLinesSchema = z.array(recipeLineSchema);
 
+// Explicit per-channel prices that don't follow the channel markup, keyed by channel: { GRAB: 115 }.
+const channelPricesSchema = z.record(z.string().min(1).max(30), z.number().nonnegative()).optional();
+
 export const productCreateSchema = z.object({
     name: z.string().min(1),
     type: z.nativeEnum(ProductType),
@@ -31,6 +34,8 @@ export const productCreateSchema = z.object({
     unit: z.string().min(1),
     category: optionalString,
     subcategory: optionalString,
+    channelPrices: channelPricesSchema,
+    unavailableChannels: z.array(z.string().min(1).max(30)).max(10).optional(),
     active: z.boolean().optional(),
     lowStockThreshold: optionalNumber,
     recipeLines: recipeLinesSchema.optional(),
@@ -48,6 +53,8 @@ export const productUpdateSchema = z.object({
     unit: z.string().min(1).optional(),
     category: optionalString,
     subcategory: optionalString,
+    channelPrices: channelPricesSchema,
+    unavailableChannels: z.array(z.string().min(1).max(30)).max(10).optional(),
     active: z.boolean().optional(),
     lowStockThreshold: optionalNumber,
     recipeLines: recipeLinesSchema.optional(),

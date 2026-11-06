@@ -6,6 +6,7 @@ import { decryptSecret, encryptSecret } from '../../shared/crypto';
 import { listAiModels, testAiConnection } from '../../shared/aiClient';
 import { DEFAULT_CATEGORY_OPTIONS, DEFAULT_EXPENSE_CATEGORY_OPTIONS, DEFAULT_UNIT_OPTIONS } from './store.defaults';
 import { normalizeSubcategoryOptions, parseSubcategoryOptions, SubcategoryOptions } from '../../shared/subcategories';
+import { normalizeSalesChannels, parseSalesChannels, SalesChannel } from '../../shared/salesChannels';
 import {
     DEFAULT_ROLE_PERMISSIONS,
     EDITABLE_ROLES,
@@ -29,6 +30,7 @@ const toStoreDto = (store: Store) => {
         defaultTaxRate: Number(store.defaultTaxRate ?? 0),
         defaultDiscount: Number(store.defaultDiscount ?? 0),
         subcategoryOptions: parseSubcategoryOptions(store.subcategoryOptions),
+        salesChannels: parseSalesChannels(store.salesChannels),
         aiApiKeySet: Boolean(aiApiKeyEncrypted),
         aiApiKeyLast4: aiApiKeyLast4 ?? null,
     };
@@ -64,6 +66,7 @@ type UpdateStoreInput = {
     defaultDiscount?: number;
     cashierSalesHistoryLimit?: number | null;
     paymentMethods?: string[];
+    salesChannels?: Array<Omit<SalesChannel, 'key'> & { key?: string | null }>;
 };
 
 const normalizeOptions = (options: string[] | undefined, fallback: string[]) => {
@@ -144,6 +147,7 @@ export const storeService = {
                 unitOptions: membership.store.unitOptions,
                 categoryOptions: membership.store.categoryOptions,
                 subcategoryOptions: parseSubcategoryOptions(membership.store.subcategoryOptions),
+                salesChannels: parseSalesChannels(membership.store.salesChannels),
                 expenseCategoryOptions: membership.store.expenseCategoryOptions,
                 defaultTaxRate: Number(membership.store.defaultTaxRate ?? 0),
                 defaultDiscount: Number(membership.store.defaultDiscount ?? 0),
@@ -309,6 +313,12 @@ export const storeService = {
         }
         if (input.paymentMethods !== undefined) {
             data.paymentMethods = input.paymentMethods;
+        }
+        if (input.salesChannels !== undefined) {
+            data.salesChannels = normalizeSalesChannels(
+                input.salesChannels,
+                parseSalesChannels(existing.salesChannels)
+            ) as Prisma.InputJsonValue;
         }
 
         const updated = await prisma.store.update({
