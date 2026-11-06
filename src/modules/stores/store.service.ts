@@ -5,6 +5,7 @@ import { AppError } from '../../shared/errors';
 import { decryptSecret, encryptSecret } from '../../shared/crypto';
 import { listAiModels, testAiConnection } from '../../shared/aiClient';
 import { DEFAULT_CATEGORY_OPTIONS, DEFAULT_EXPENSE_CATEGORY_OPTIONS, DEFAULT_UNIT_OPTIONS } from './store.defaults';
+import { normalizeSubcategoryOptions, parseSubcategoryOptions, SubcategoryOptions } from '../../shared/subcategories';
 
 // Maps a raw Store row to a client-safe shape. The encrypted AI API key is never
 // exposed — only whether a key is configured and its last 4 characters.
@@ -15,6 +16,7 @@ const toStoreDto = (store: Store) => {
         lowStockThreshold: Number(store.lowStockThreshold ?? 0),
         defaultTaxRate: Number(store.defaultTaxRate ?? 0),
         defaultDiscount: Number(store.defaultDiscount ?? 0),
+        subcategoryOptions: parseSubcategoryOptions(store.subcategoryOptions),
         aiApiKeySet: Boolean(aiApiKeyEncrypted),
         aiApiKeyLast4: aiApiKeyLast4 ?? null,
     };
@@ -29,6 +31,7 @@ type CreateStoreInput = {
     lowStockThreshold?: number;
     unitOptions?: string[];
     categoryOptions?: string[];
+    subcategoryOptions?: SubcategoryOptions;
     expenseCategoryOptions?: string[];
     defaultTaxRate?: number;
     defaultDiscount?: number;
@@ -43,6 +46,7 @@ type UpdateStoreInput = {
     lowStockThreshold?: number;
     unitOptions?: string[];
     categoryOptions?: string[];
+    subcategoryOptions?: SubcategoryOptions;
     expenseCategoryOptions?: string[];
     defaultTaxRate?: number;
     defaultDiscount?: number;
@@ -127,6 +131,7 @@ export const storeService = {
                 lowStockThreshold: Number(membership.store.lowStockThreshold ?? 0),
                 unitOptions: membership.store.unitOptions,
                 categoryOptions: membership.store.categoryOptions,
+                subcategoryOptions: parseSubcategoryOptions(membership.store.subcategoryOptions),
                 expenseCategoryOptions: membership.store.expenseCategoryOptions,
                 defaultTaxRate: Number(membership.store.defaultTaxRate ?? 0),
                 defaultDiscount: Number(membership.store.defaultDiscount ?? 0),
@@ -205,6 +210,10 @@ export const storeService = {
                     lowStockThreshold: input.lowStockThreshold ?? 0,
                     unitOptions: normalizeOptions(input.unitOptions, DEFAULT_UNIT_OPTIONS),
                     categoryOptions: normalizeOptions(input.categoryOptions, DEFAULT_CATEGORY_OPTIONS),
+                    subcategoryOptions: normalizeSubcategoryOptions(
+                        input.subcategoryOptions ?? {},
+                        normalizeOptions(input.categoryOptions, DEFAULT_CATEGORY_OPTIONS)
+                    ),
                     expenseCategoryOptions: normalizeOptions(input.expenseCategoryOptions, DEFAULT_EXPENSE_CATEGORY_OPTIONS),
                     defaultTaxRate: input.defaultTaxRate ?? 0,
                     defaultDiscount: input.defaultDiscount ?? 0,
@@ -258,6 +267,16 @@ export const storeService = {
         }
         if (input.categoryOptions !== undefined) {
             data.categoryOptions = normalizeOptions(input.categoryOptions, DEFAULT_CATEGORY_OPTIONS);
+        }
+        if (input.subcategoryOptions !== undefined || input.categoryOptions !== undefined) {
+            // Subcategories live under a category; removing a category drops its list.
+            const categories =
+                (data.categoryOptions as string[] | undefined) ??
+                normalizeOptions(existing.categoryOptions, DEFAULT_CATEGORY_OPTIONS);
+            data.subcategoryOptions = normalizeSubcategoryOptions(
+                input.subcategoryOptions ?? parseSubcategoryOptions(existing.subcategoryOptions),
+                categories
+            );
         }
         if (input.expenseCategoryOptions !== undefined) {
             data.expenseCategoryOptions = normalizeOptions(input.expenseCategoryOptions, DEFAULT_EXPENSE_CATEGORY_OPTIONS);

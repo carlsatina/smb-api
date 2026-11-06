@@ -24,6 +24,7 @@ const optionalPositiveInt = z.preprocess(
     z.number().int().positive().nullable()
 ).optional();
 const optionalStringArray = z.array(z.string().min(1)).optional();
+const optionalSubcategoryOptions = z.record(z.string().min(1), z.array(z.string().min(1).max(60))).optional();
 
 const VALID_PAYMENT_METHODS = ['CASH', 'CARD', 'TRANSFER', 'GCASH', 'MAYA', 'OTHER'] as const;
 const optionalPaymentMethods = z.preprocess(
@@ -47,6 +48,7 @@ export const createStoreSchema = z.object({
     defaultDiscount: optionalNumber,
     unitOptions: optionalStringArray,
     categoryOptions: optionalStringArray,
+    subcategoryOptions: optionalSubcategoryOptions,
     expenseCategoryOptions: optionalStringArray,
 });
 
@@ -62,6 +64,7 @@ export const updateStoreSchema = z
         defaultDiscount: optionalNumber,
         unitOptions: optionalStringArray,
         categoryOptions: optionalStringArray,
+        subcategoryOptions: optionalSubcategoryOptions,
         expenseCategoryOptions: optionalStringArray,
         cashierSalesHistoryLimit: optionalPositiveInt,
         paymentMethods: optionalPaymentMethods,
@@ -78,6 +81,7 @@ export const updateStoreSchema = z
             data.defaultDiscount !== undefined ||
             data.unitOptions !== undefined ||
             data.categoryOptions !== undefined ||
+            data.subcategoryOptions !== undefined ||
             data.expenseCategoryOptions !== undefined ||
             data.cashierSalesHistoryLimit !== undefined ||
             data.paymentMethods !== undefined,

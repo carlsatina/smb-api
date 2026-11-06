@@ -3,7 +3,7 @@ import { asyncHandler } from '../../shared/asyncHandler';
 import { AppError } from '../../shared/errors';
 import { AuthRequest } from '../../middlewares/auth';
 import { productCreateSchema, productUpdateSchema } from './product.schemas';
-import { productService } from './product.service';
+import { productService, registerCatalogOptions } from './product.service';
 import { recipeRepository } from '../recipes/recipe.repository';
 import { ingredientRepository } from '../ingredients/ingredient.repository';
 import { escapeCsvValue, parseCSV } from '../../shared/csv';
@@ -120,8 +120,8 @@ export const exportProducts = asyncHandler(async (req: AuthRequest, res: Respons
     );
 
     const rows: Array<Array<string | number | boolean | null | undefined>> = [
-        ['Name', 'Type', 'SKU', 'Barcode', 'Price', 'Cost', 'Unit', 'Category', 'Active', 'Low Stock Threshold', 'Recipe'],
-        ...products.map((p) => [p.name, p.type, p.sku, p.barcode, Number(p.price), p.cost != null ? Number(p.cost) : null, p.unit, p.category, p.active, p.lowStockThreshold != null ? Number(p.lowStockThreshold) : null, recipeByProductId.get(p.id) ?? '']),
+        ['Name', 'Type', 'SKU', 'Barcode', 'Price', 'Cost', 'Unit', 'Category', 'Subcategory', 'Active', 'Low Stock Threshold', 'Recipe'],
+        ...products.map((p) => [p.name, p.type, p.sku, p.barcode, Number(p.price), p.cost != null ? Number(p.cost) : null, p.unit, p.category, p.subcategory, p.active, p.lowStockThreshold != null ? Number(p.lowStockThreshold) : null, recipeByProductId.get(p.id) ?? '']),
     ];
 
     const csv = rows.map((row) => row.map(escapeCsvValue).join(',')).join('\n');
@@ -164,6 +164,17 @@ export const importProducts = asyncHandler(async (req: AuthRequest & { file?: Ex
     const ingredientsByName = new Map(ingredients.map((ing) => [ing.name.toLowerCase().trim(), ing]));
     const recipeCol = col('recipe');
 
+    // Register any new category/subcategory pairs first so rows pass validation.
+    const subcategoryCol = col('subcategory') !== -1 ? col('subcategory') : col('subcategoryname');
+    if (subcategoryCol !== -1 && col('category') !== -1) {
+        const pairs = rows.slice(1).flatMap((r) => {
+            const category = r[col('category')]?.trim();
+            const subcategory = r[subcategoryCol]?.trim();
+            return category && subcategory ? [{ category, subcategory }] : [];
+        });
+        await registerCatalogOptions(storeId, pairs);
+    }
+
     let imported = 0;
     let updated = 0;
     let failed = 0;
@@ -182,6 +193,10 @@ export const importProducts = asyncHandler(async (req: AuthRequest & { file?: Ex
                 cost: r[col('cost')]?.trim() ? Number(r[col('cost')]?.trim()) : null,
                 unit: r[col('unit')]?.trim() || 'pcs',
                 category: r[col('category')]?.trim() || null,
+                // Only touch subcategory when the CSV has the column, so older files don't wipe it.
+                ...(col('subcategory') !== -1 || col('subcategoryname') !== -1
+                    ? { subcategory: r[col('subcategory') !== -1 ? col('subcategory') : col('subcategoryname')]?.trim() || null }
+                    : {}),
                 active: (() => {
                     const v = r[col('active')]?.trim().toLowerCase();
                     return v === 'true' ? true : v === 'false' ? false : undefined;

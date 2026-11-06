@@ -1,6 +1,8 @@
 import { Prisma } from '@prisma/client';
 import prisma from '../../../lib/prisma';
 import { AppError } from '../../shared/errors';
+import { normalizeSubcategoryOptions, parseSubcategoryOptions, resolveSubcategory } from '../../shared/subcategories';
+import { DEFAULT_CATEGORY_OPTIONS } from '../stores/store.defaults';
 import { ingredientRepository } from '../ingredients/ingredient.repository';
 import { recipeRepository } from '../recipes/recipe.repository';
 import { productRepository } from './product.repository';
@@ -21,6 +23,38 @@ type ProductWithRecipeCount = Prisma.ProductGetPayload<{
 }>;
 
 type ProductCreateData = Omit<Prisma.ProductCreateInput, 'store'>;
+
+const loadSubcategoryOptions = async (storeId: string) => {
+    const store = await prisma.store.findFirst({
+        where: { id: storeId, deletedAt: null },
+        select: { subcategoryOptions: true },
+    });
+    return parseSubcategoryOptions(store?.subcategoryOptions);
+};
+
+/** Canonical subcategory for a product, or an error when it isn't configured under the category. */
+const requireConfiguredSubcategory = async (
+    storeId: string,
+    category: string | null | undefined,
+    subcategory: string | null | undefined
+) => {
+    if (!subcategory) return null;
+    if (!category) {
+        throw new AppError('SUBCATEGORY_REQUIRES_CATEGORY', 'Choose a category before setting a subcategory.', 400);
+    }
+    const match = resolveSubcategory(await loadSubcategoryOptions(storeId), category, subcategory);
+    if (!match) {
+        throw new AppError(
+            'INVALID_SUBCATEGORY',
+            `"${subcategory}" is not a subcategory of ${category}. Add it under ${category} in Store Settings first.`,
+            400
+        );
+    }
+    return match;
+};
+
+const asNullableString = (value: unknown): string | null | undefined =>
+    value === undefined ? undefined : typeof value === 'string' ? value : null;
 
 const withRecipeLineCount = (product: ProductWithRecipeCount) => {
     const { recipe, ...rest } = product;
@@ -111,6 +145,40 @@ const ensureRecipeActivationAllowed = async ({
     }
 };
 
+/**
+ * Add categories and subcategories referenced by imported rows to the store's
+ * catalog lists, so the rows pass subcategory validation.
+ */
+export const registerCatalogOptions = async (
+    storeId: string,
+    pairs: Array<{ category: string; subcategory: string }>
+) => {
+    if (!pairs.length) return;
+    const store = await prisma.store.findFirst({
+        where: { id: storeId, deletedAt: null },
+        select: { categoryOptions: true, subcategoryOptions: true },
+    });
+    if (!store) return;
+
+    const categories = store.categoryOptions.length ? [...store.categoryOptions] : [...DEFAULT_CATEGORY_OPTIONS];
+    const options = parseSubcategoryOptions(store.subcategoryOptions);
+    pairs.forEach(({ category, subcategory }) => {
+        const existingCategory = categories.find((entry) => entry.toLowerCase() === category.toLowerCase());
+        const key = existingCategory ?? category;
+        if (!existingCategory) categories.push(category);
+        const optionKey = Object.keys(options).find((entry) => entry.toLowerCase() === key.toLowerCase()) ?? key;
+        options[optionKey] = [...(options[optionKey] ?? []), subcategory];
+    });
+
+    await prisma.store.update({
+        where: { id: storeId },
+        data: {
+            categoryOptions: categories,
+            subcategoryOptions: normalizeSubcategoryOptions(options, categories),
+        },
+    });
+};
+
 export const productService = {
     list: async (storeId: string) => {
         const products = await productRepository.listByStore(storeId);
@@ -125,6 +193,10 @@ export const productService = {
     },
     create: async (storeId: string, data: ProductCreateData, recipeLines?: RecipeLineInput[]) => {
         try {
+            data = {
+                ...data,
+                subcategory: await requireConfiguredSubcategory(storeId, data.category, data.subcategory),
+            };
             const nextActive = data.active ?? (data.type === 'RECIPE' ? false : true);
             ensureRecipeLinesAllowed({ nextType: data.type, recipeLines });
             if (recipeLines) {
@@ -186,6 +258,23 @@ export const productService = {
             const existing = await productRepository.getById(storeId, productId);
             if (!existing) {
                 throw new AppError('NOT_FOUND', 'Product not found', 404);
+            }
+
+            const nextCategory = asNullableString(data.category);
+            const nextSubcategory = asNullableString(data.subcategory);
+            if (nextSubcategory !== undefined) {
+                data = {
+                    ...data,
+                    subcategory: await requireConfiguredSubcategory(
+                        storeId,
+                        nextCategory !== undefined ? nextCategory : existing.category,
+                        nextSubcategory
+                    ),
+                };
+            } else if (nextCategory !== undefined && existing.subcategory) {
+                // Category changed on its own: keep the subcategory only if it exists under the new one.
+                const kept = resolveSubcategory(await loadSubcategoryOptions(storeId), nextCategory, existing.subcategory);
+                data = { ...data, subcategory: kept };
             }
 
             const nextType = (data.type ?? existing.type) as Prisma.ProductCreateInput['type'];
