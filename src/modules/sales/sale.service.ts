@@ -765,6 +765,7 @@ export const saleService = {
                 active: true,
                 cost: true,
                 price: true,
+                channelPrices: true,
                 unavailableChannels: true,
             },
         });
@@ -778,6 +779,43 @@ export const saleService = {
         const inactiveProduct = products.find((product) => !product.active && !originalProductIds.has(product.id));
         if (inactiveProduct) {
             throw new AppError('PRODUCT_INACTIVE', 'Inactive products cannot be added to a sale.', 400);
+        }
+
+        // Lines already on the sale keep the price they were sold at and their
+        // original store price, so edits don't rewrite the markup history.
+        const originalLines = new Map<string, { unitPrice: number; basePrice: number | null }>();
+        sale.items.forEach((item) => {
+            if (!originalLines.has(item.productId)) {
+                originalLines.set(item.productId, {
+                    unitPrice: normalizeDecimal(item.unitPrice),
+                    basePrice: item.basePrice !== null ? normalizeDecimal(item.basePrice) : null,
+                });
+            }
+        });
+
+        // Channel (e.g. Grab) sales are priced by the server, as at checkout.
+        const channel = sale.channel
+            ? parseSalesChannels(store.salesChannels).find((entry) => entry.key === sale.channel)
+            : undefined;
+        if (channel) {
+            const byId = new Map(products.map((product) => [product.id, product]));
+            payload = {
+                ...payload,
+                orderType: channel.alwaysTakeout ? OrderType.TAKEOUT : payload.orderType,
+                items: payload.items.map((item) => {
+                    const product = byId.get(item.productId)!;
+                    const original = originalLines.get(item.productId);
+                    const unitPrice = original
+                        ? original.unitPrice
+                        : computeChannelPrice(
+                              normalizeDecimal(product.price),
+                              channel,
+                              parseChannelPrices(product.channelPrices)[channel.key]
+                          );
+                    const lineSubtotal = roundMoney(item.qty * unitPrice);
+                    return { ...item, unitPrice, discount: Math.min(item.discount ?? 0, lineSubtotal) };
+                }),
+            };
         }
 
         // Items added to a channel sale must be sold on that channel.
@@ -803,7 +841,12 @@ export const saleService = {
 
         const { saleItems, totals } = calculateSaleItems(
             payload.items,
-            new Map(products.map((p) => [p.id, { name: p.name, basePrice: normalizeDecimal(p.price) }]))
+            new Map(
+                products.map((p) => [
+                    p.id,
+                    { name: p.name, basePrice: originalLines.get(p.id)?.basePrice ?? normalizeDecimal(p.price) },
+                ])
+            )
         );
 
         const nextDeltas = buildMovementDeltas(

@@ -1,6 +1,8 @@
+import { Role } from '@prisma/client';
 import { Router } from 'express';
 import { authMiddleware } from '../../middlewares/auth';
 import { requirePlanFeature } from '../../middlewares/requirePlanFeature';
+import { requireStoreRole } from '../../middlewares/requireStoreRole';
 import { requirePermission } from '../../middlewares/requirePermission';
 import { csvUploadSingle } from '../../middlewares/csvUpload';
 import {
@@ -15,12 +17,16 @@ import {
 
 export const ingredientRouter = Router({ mergeParams: true });
 
+// Bulk catalog import/export (includes costs) stays with owners and admins who
+// can manage products & stock; it isn't delegable through the permissions grid.
+const catalogCsvGuard = [requireStoreRole([Role.OWNER, Role.ADMIN]), requirePermission('inventory.manage')];
+
 
 ingredientRouter.use(authMiddleware);
 ingredientRouter.use(requirePlanFeature('ingredients'));
 
-ingredientRouter.get('/export', requirePermission('inventory.manage'), requirePlanFeature('importExport'), exportIngredients);
-ingredientRouter.post('/import', requirePermission('inventory.manage'), requirePlanFeature('importExport'), csvUploadSingle, importIngredients);
+ingredientRouter.get('/export', ...catalogCsvGuard, requirePlanFeature('importExport'), exportIngredients);
+ingredientRouter.post('/import', ...catalogCsvGuard, requirePlanFeature('importExport'), csvUploadSingle, importIngredients);
 ingredientRouter.get('/', requirePermission('inventory.view'), listIngredients);
 ingredientRouter.get('/:ingredientId', requirePermission('inventory.view'), getIngredient);
 ingredientRouter.post('/', requirePermission('inventory.manage'), createIngredient);

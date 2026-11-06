@@ -63,6 +63,25 @@ describe('channel pricing', () => {
     });
 });
 
+describe('channel keys stay stable', () => {
+    it('never gives an existing key to a new channel, whatever the order', () => {
+        const result = normalizeSalesChannels(
+            [
+                { ...grab, key: null, name: 'Grab' },
+                { ...grab, key: 'GRAB', name: 'Grab Food' },
+            ],
+            [grab]
+        );
+        expect(result.find((channel) => channel.name === 'Grab Food')?.key).toBe('GRAB');
+        expect(result.find((channel) => channel.name === 'Grab')?.key).toBe('GRAB_2');
+    });
+
+    it('keeps saved channels that were left out, turned off', () => {
+        const result = normalizeSalesChannels([], [grab]);
+        expect(result).toEqual([{ ...grab, active: false }]);
+    });
+});
+
 describe('finalizing a channel sale', () => {
     beforeEach(() => {
         vi.clearAllMocks();

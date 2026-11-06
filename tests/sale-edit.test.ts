@@ -143,3 +143,51 @@ describe('saleService.update', () => {
         });
     });
 });
+
+describe('editing a Grab sale', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        prismaMock.store.findFirst.mockResolvedValue({
+            id: 'store-1',
+            allowNegativeStock: true,
+            salesChannels: [
+                { key: 'GRAB', name: 'Grab', markupPercent: 25, rounding: 'NEAREST_1', alwaysTakeout: true, active: true },
+            ],
+        } as never);
+        prismaMock.recipeLine.findMany.mockResolvedValue([]);
+        prismaMock.productPackaging.findMany.mockResolvedValue([]);
+        prismaMock.ingredient.findMany.mockResolvedValue([]);
+        prismaMock.inventoryMovement.groupBy.mockResolvedValue([]);
+        prismaMock.sale.updateMany.mockResolvedValue({ count: 1 });
+    });
+
+    it('keeps existing line prices, prices new lines server-side, and stays takeout', async () => {
+        const grabSale = saleRow();
+        Object.assign(grabSale, { channel: 'GRAB', orderType: OrderType.TAKEOUT });
+        grabSale.items[0] = { ...grabSale.items[0], unitPrice: dec(113), basePrice: dec(90) } as never;
+        prismaMock.sale.findFirst.mockResolvedValue(grabSale as never);
+        prismaMock.product.findMany.mockImplementation((async (args: { select: Record<string, boolean> }) =>
+            args.select.type
+                ? [
+                      { id: 'prod-a', name: 'Bottled Water', type: ProductType.READY_MADE, active: true, cost: dec(20), price: dec(95), channelPrices: {}, unavailableChannels: [] },
+                      { id: 'prod-b', name: 'Lemon Shake', type: ProductType.READY_MADE, active: true, cost: dec(30), price: dec(100), channelPrices: {}, unavailableChannels: [] },
+                  ]
+                : []) as never);
+
+        await saleService.update('store-1', 'owner-1', 'sale-1', {
+            items: [
+                { productId: 'prod-a', qty: 1, unitPrice: 1 },
+                { productId: 'prod-b', qty: 1, unitPrice: 1 },
+            ],
+            paymentMethod: PaymentMethod.CASH,
+            orderType: OrderType.DINE_IN,
+        });
+
+        expect(prismaMock.sale.updateMany.mock.calls[0]?.[0]?.data).toMatchObject({ orderType: OrderType.TAKEOUT });
+        const items = prismaMock.saleItem.createMany.mock.calls[0]?.[0]?.data as Array<Record<string, unknown>>;
+        expect(items.map((item) => [Number(item.unitPrice), Number(item.basePrice)])).toEqual([
+            [113, 90], // existing line: original Grab price and original store price
+            [125, 100], // new line: +25% of today's price
+        ]);
+    });
+});

@@ -97,7 +97,9 @@ export const revokeInvite = asyncHandler(async (req: AuthRequest, res: Response)
         throw new AppError('STORE_REQUIRED', 'Store and invite are required', 400);
     }
 
-    await storeMemberService.revokeInvite(storeId, inviteId);
+    const actorId = req.user?.sub;
+    if (!actorId) throw new AppError('UNAUTHORIZED', 'Authentication required', 401);
+    await storeMemberService.revokeInvite(storeId, inviteId, actorId);
     res.status(204).send();
 });
 

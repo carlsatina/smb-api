@@ -22,6 +22,13 @@ import {
     upsertWeekSchema,
 } from './schedule.schemas';
 import { scheduleService, Viewer } from './schedule.service';
+import {
+    assertNotOwnPayroll,
+    assertOwnOvertimeUnchanged,
+    memberIdForCashAdvance,
+    memberIdForTimeEntry,
+    memberIdForWeekRow,
+} from './schedule.payrollGuard';
 import { attendanceService } from './schedule.attendance.service';
 
 // Every handler resolves the viewer from the authenticated session, never from
@@ -55,6 +62,7 @@ export const listWeeks = asyncHandler(async (req: AuthRequest, res: Response) =>
 export const upsertWeek = asyncHandler(async (req: AuthRequest, res: Response) => {
     const { storeId, viewer } = requireContext(req);
     const body = upsertWeekSchema.parse(req.body);
+    await assertOwnOvertimeUnchanged(req, storeId, body.weekStart, body.rows);
     await scheduleService.upsertWeek(storeId, viewer.userId, body);
     const week = await scheduleService.getWeek(storeId, body.weekStart, viewer);
     res.status(200).json({ week });
@@ -155,6 +163,7 @@ export const setCompensation = asyncHandler(async (req: AuthRequest, res: Respon
     const storeMemberId = req.params.storeMemberId;
     if (!storeMemberId) throw new AppError('BAD_REQUEST', 'Staff member is required', 400);
     const body = upsertCompensationSchema.parse(req.body);
+    await assertNotOwnPayroll(req, storeId, storeMemberId);
     const rate = await scheduleService.setCompensation(storeId, storeMemberId, viewer.userId, body);
     res.status(200).json({ rate });
 });
@@ -170,6 +179,7 @@ export const listCashAdvances = asyncHandler(async (req: AuthRequest, res: Respo
 export const createCashAdvance = asyncHandler(async (req: AuthRequest, res: Response) => {
     const { storeId, viewer } = requireContext(req);
     const body = createCashAdvanceSchema.parse(req.body);
+    await assertNotOwnPayroll(req, storeId, body.storeMemberId);
     const advance = await scheduleService.createCashAdvance(storeId, viewer.userId, body);
     res.status(201).json({ advance });
 });
@@ -178,6 +188,7 @@ export const deleteCashAdvance = asyncHandler(async (req: AuthRequest, res: Resp
     const { storeId } = requireContext(req);
     const cashAdvanceId = req.params.cashAdvanceId;
     if (!cashAdvanceId) throw new AppError('BAD_REQUEST', 'Cash advance is required', 400);
+    await assertNotOwnPayroll(req, storeId, await memberIdForCashAdvance(storeId, cashAdvanceId));
     await scheduleService.deleteCashAdvance(storeId, cashAdvanceId);
     res.status(204).send();
 });
@@ -187,6 +198,7 @@ export const setDeduction = asyncHandler(async (req: AuthRequest, res: Response)
     const rowId = req.params.rowId;
     if (!rowId) throw new AppError('BAD_REQUEST', 'Schedule row is required', 400);
     const body = setDeductionSchema.parse(req.body);
+    await assertNotOwnPayroll(req, storeId, await memberIdForWeekRow(storeId, rowId));
     const deduction = await scheduleService.setDeduction(storeId, rowId, body);
     res.status(200).json({ deduction });
 });
@@ -196,6 +208,7 @@ export const setTotalDeductions = asyncHandler(async (req: AuthRequest, res: Res
     const rowId = req.params.rowId;
     if (!rowId) throw new AppError('BAD_REQUEST', 'Schedule row is required', 400);
     const body = setTotalDeductionsSchema.parse(req.body);
+    await assertNotOwnPayroll(req, storeId, await memberIdForWeekRow(storeId, rowId));
     const result = await scheduleService.setTotalDeductions(storeId, rowId, body);
     res.status(200).json(result);
 });
@@ -204,6 +217,7 @@ export const removeDeduction = asyncHandler(async (req: AuthRequest, res: Respon
     const { storeId } = requireContext(req);
     const { rowId, deductionId } = req.params;
     if (!rowId || !deductionId) throw new AppError('BAD_REQUEST', 'Row and deduction are required', 400);
+    await assertNotOwnPayroll(req, storeId, await memberIdForWeekRow(storeId, rowId));
     await scheduleService.removeDeduction(storeId, rowId, deductionId);
     res.status(204).send();
 });
@@ -240,6 +254,7 @@ export const listAttendance = asyncHandler(async (req: AuthRequest, res: Respons
 export const createTimeEntry = asyncHandler(async (req: AuthRequest, res: Response) => {
     const { storeId, viewer } = requireContext(req);
     const body = upsertTimeEntrySchema.parse(req.body);
+    await assertNotOwnPayroll(req, storeId, body.storeMemberId);
     const entry = await attendanceService.upsertEntry(storeId, viewer, body);
     res.status(201).json({ entry });
 });
@@ -249,6 +264,9 @@ export const updateTimeEntry = asyncHandler(async (req: AuthRequest, res: Respon
     const entryId = req.params.entryId;
     if (!entryId) throw new AppError('BAD_REQUEST', 'Time entry is required', 400);
     const body = upsertTimeEntrySchema.parse(req.body);
+    // Check both the entry's current owner and the member it's being moved to.
+    await assertNotOwnPayroll(req, storeId, await memberIdForTimeEntry(storeId, entryId));
+    await assertNotOwnPayroll(req, storeId, body.storeMemberId);
     const entry = await attendanceService.upsertEntry(storeId, viewer, { ...body, entryId });
     res.status(200).json({ entry });
 });
@@ -257,6 +275,7 @@ export const deleteTimeEntry = asyncHandler(async (req: AuthRequest, res: Respon
     const { storeId } = requireContext(req);
     const entryId = req.params.entryId;
     if (!entryId) throw new AppError('BAD_REQUEST', 'Time entry is required', 400);
+    await assertNotOwnPayroll(req, storeId, await memberIdForTimeEntry(storeId, entryId));
     await attendanceService.deleteEntry(storeId, entryId);
     res.status(204).send();
 });

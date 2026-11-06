@@ -41,7 +41,7 @@ export const PERMISSIONS = [
         group: 'Inventory',
         label: 'Manage products & stock',
         description:
-            'Add and edit products, ingredients, recipes and suppliers; adjust and transfer stock; create and receive purchase orders; import catalog CSVs.',
+            'Add and edit products, ingredients, recipes and suppliers; adjust and transfer stock; create and receive purchase orders.',
         implies: ['inventory.view'],
     },
     {

@@ -42,23 +42,46 @@ const ensureStoreExists = async (storeId: string) => {
     return store;
 };
 
-const getActorRole = async (storeId: string, userId: string) => {
+// The acting member's role and effective permissions, for delegation checks.
+const getActorAccess = async (storeId: string, userId: string) => {
     const membership = await prisma.storeMember.findFirst({
-        where: {
-            storeId,
-            userId,
-            deletedAt: null,
-        },
-        select: {
-            role: true,
-        },
+        where: { storeId, userId, deletedAt: null },
+        select: { role: true, permissionOverrides: true, store: { select: { rolePermissions: true } } },
     });
-
     if (!membership) {
         throw new AppError('FORBIDDEN', 'Not a store member', 403);
     }
+    const storeOverrides = parseRolePermissionOverrides(membership.store?.rolePermissions);
+    return {
+        role: membership.role,
+        storeOverrides,
+        permissions: effectivePermissions(
+            membership.role,
+            storeOverrides,
+            parseMemberPermissionOverrides(membership.permissionOverrides)
+        ),
+    };
+};
 
-    return membership.role;
+type ActorAccess = Awaited<ReturnType<typeof getActorAccess>>;
+
+/**
+ * A non-owner can only act on (or hand out) a role whose permissions they hold
+ * themselves, so delegated team management can't grant more than the manager has.
+ */
+const assertWithinActorPermissions = (actor: ActorAccess, targetRole: Role, action: string) => {
+    if (actor.role === Role.OWNER) return;
+    const missing = effectivePermissions(targetRole, actor.storeOverrides).filter(
+        (permission) => !actor.permissions.includes(permission)
+    );
+    if (missing.length) {
+        throw new AppError(
+            'FORBIDDEN',
+            `You can only ${action} roles whose permissions you have yourself.`,
+            403,
+            { missing }
+        );
+    }
 };
 
 // Team management can be delegated to any role via the store.manage permission.
@@ -269,7 +292,8 @@ export const storeMemberService = {
         }));
     },
     updateMemberRole: async (storeId: string, memberId: string, role: Role, actorId: string) => {
-        const actorRole = await getActorRole(storeId, actorId);
+        const actor = await getActorAccess(storeId, actorId);
+        const actorRole = actor.role;
 
         if (role === Role.OWNER && actorRole !== Role.OWNER) {
             throw new AppError('FORBIDDEN', 'Only owners can assign the owner role.', 403);
@@ -293,6 +317,19 @@ export const storeMemberService = {
 
         assertCanManageRole(actorRole, member.role, 'change the role of');
         assertCanManageRole(actorRole, role, 'assign the role of');
+        assertWithinActorPermissions(actor, member.role, 'manage members in');
+        assertWithinActorPermissions(actor, role, 'assign');
+
+        // A role change clears personal exceptions, which only the owner may set.
+        const previousOverrides = parseMemberPermissionOverrides(member.permissionOverrides);
+        const clearsOverrides = role !== member.role && Object.keys(previousOverrides).length > 0;
+        if (clearsOverrides && actorRole !== Role.OWNER) {
+            throw new AppError(
+                'FORBIDDEN',
+                'This member has custom permissions set by the owner. Only the owner can change their role.',
+                403
+            );
+        }
         if (!ELEVATED_ROLES.includes(actorRole) && member.userId === actorId) {
             throw new AppError('FORBIDDEN', 'You cannot change your own role.', 403);
         }
@@ -313,6 +350,24 @@ export const storeMemberService = {
 
         if (updateResult.count === 0) {
             throw new AppError('NOT_FOUND', 'Store member not found', 404);
+        }
+
+        if (clearsOverrides) {
+            await prisma.auditLog.create({
+                data: {
+                    store: { connect: { id: storeId } },
+                    actor: { connect: { id: actorId } },
+                    action: 'MEMBER_PERMISSIONS_CLEARED',
+                    entityType: 'StoreMember',
+                    entityId: member.id,
+                    meta: {
+                        memberUserId: member.userId,
+                        fromRole: member.role,
+                        toRole: role,
+                        clearedOverrides: previousOverrides,
+                    } as Prisma.InputJsonValue,
+                },
+            });
         }
 
         const updated = await prisma.storeMember.findFirst({
@@ -348,7 +403,8 @@ export const storeMemberService = {
     // Idempotent: suspending an already-suspended member is a no-op, so a
     // double-tapped button cannot rewrite who suspended them or when.
     setMemberSuspension: async (storeId: string, memberId: string, suspended: boolean, actorId: string) => {
-        const actorRole = await getActorRole(storeId, actorId);
+        const actor = await getActorAccess(storeId, actorId);
+        const actorRole = actor.role;
         const member = await prisma.storeMember.findFirst({
             where: {
                 id: memberId,
@@ -373,6 +429,7 @@ export const storeMemberService = {
             throw new AppError('FORBIDDEN', 'Only owners can suspend another owner.', 403);
         }
         assertCanManageRole(actorRole, member.role, 'suspend');
+        assertWithinActorPermissions(actor, member.role, 'suspend members in');
 
         if (Boolean(member.suspendedAt) === suspended) {
             return;
@@ -416,7 +473,8 @@ export const storeMemberService = {
         });
     },
     removeMember: async (storeId: string, memberId: string, actorId: string) => {
-        const actorRole = await getActorRole(storeId, actorId);
+        const actor = await getActorAccess(storeId, actorId);
+        const actorRole = actor.role;
         const member = await prisma.storeMember.findFirst({
             where: {
                 id: memberId,
@@ -433,6 +491,7 @@ export const storeMemberService = {
             throw new AppError('FORBIDDEN', 'Only owners can remove another owner.', 403);
         }
         assertCanManageRole(actorRole, member.role, 'remove');
+        assertWithinActorPermissions(actor, member.role, 'remove members in');
 
         if (member.role === Role.OWNER) {
             await ensureOwnerRemaining(storeId, member.id);
@@ -547,13 +606,15 @@ export const storeMemberService = {
         });
     },
     createInvite: async (storeId: string, actorId: string, input: InviteInput) => {
-        const actorRole = await getActorRole(storeId, actorId);
+        const actor = await getActorAccess(storeId, actorId);
+        const actorRole = actor.role;
         const store = await ensureStoreExists(storeId);
 
         if (input.role === Role.OWNER && actorRole !== Role.OWNER) {
             throw new AppError('FORBIDDEN', 'Only owners can invite another owner.', 403);
         }
         assertCanManageRole(actorRole, input.role, 'invite');
+        assertWithinActorPermissions(actor, input.role, 'invite people to');
 
         const email = normalizeEmail(input.email);
         const existingUser = await prisma.user.findUnique({ where: { email } });
@@ -649,7 +710,7 @@ export const storeMemberService = {
             emailSent,
         };
     },
-    revokeInvite: async (storeId: string, inviteId: string) => {
+    revokeInvite: async (storeId: string, inviteId: string, actorId: string) => {
         const invite = await prisma.storeInvite.findFirst({
             where: {
                 id: inviteId,
@@ -660,6 +721,10 @@ export const storeMemberService = {
         if (!invite) {
             throw new AppError('NOT_FOUND', 'Invite not found', 404);
         }
+
+        const actor = await getActorAccess(storeId, actorId);
+        assertCanManageRole(actor.role, invite.role, 'revoke an invite for');
+        assertWithinActorPermissions(actor, invite.role, 'revoke invites for');
 
         const deleteResult = await prisma.storeInvite.deleteMany({
             where: {

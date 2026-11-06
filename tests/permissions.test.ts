@@ -13,6 +13,7 @@ import {
     permissionMatrix,
 } from '../src/shared/permissions';
 import { storeMemberService } from '../src/modules/storeMembers/storeMember.service';
+import { assertNotOwnPayroll, assertOwnOvertimeUnchanged } from '../src/modules/schedules/schedule.payrollGuard';
 
 vi.mock('../lib/prisma', () => {
     const storeMember = { findFirst: vi.fn(), updateMany: vi.fn(), update: vi.fn() };
@@ -21,6 +22,8 @@ vi.mock('../lib/prisma', () => {
         default: {
             storeMember,
             auditLog,
+            storeInvite: { findFirst: vi.fn(), deleteMany: vi.fn() },
+            scheduleWeekRow: { findFirst: vi.fn() },
             store: { findFirst: vi.fn() },
             $transaction: vi.fn((fn: (tx: unknown) => unknown) => fn({ storeMember, auditLog })),
         },
@@ -253,6 +256,82 @@ describe('per-person permission exceptions', () => {
         expect(prismaMock.storeMember.updateMany.mock.calls[0]?.[0]?.data).toEqual({
             role: IM,
             permissionOverrides: {},
+        });
+    });
+});
+
+describe('review fixes: delegation and loopholes', () => {
+    beforeEach(() => vi.clearAllMocks());
+
+    const actor = (role: Role, permissionOverrides: Record<string, boolean> = {}) =>
+        ({ role, permissionOverrides, store: { rolePermissions: {} } }) as never;
+
+    it('blocks a non-owner from clearing personal exceptions through a role change', async () => {
+        prismaMock.storeMember.findFirst
+            .mockResolvedValueOnce(actor(ADMIN))
+            .mockResolvedValueOnce({
+                id: 'm2',
+                userId: 'u2',
+                role: CASHIER,
+                permissionOverrides: { 'sales.void': false },
+            } as never);
+        await expect(storeMemberService.updateMemberRole('s1', 'm2', VIEWER, 'u1')).rejects.toMatchObject({
+            code: 'FORBIDDEN',
+        });
+        expect(prismaMock.storeMember.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('lets the owner change that role and audits the cleared exceptions', async () => {
+        prismaMock.storeMember.findFirst
+            .mockResolvedValueOnce(actor(OWNER))
+            .mockResolvedValueOnce({
+                id: 'm2',
+                userId: 'u2',
+                role: CASHIER,
+                permissionOverrides: { 'sales.void': false },
+            } as never)
+            .mockResolvedValueOnce({ id: 'm2', userId: 'u2', role: VIEWER, user: { id: 'u2', fullName: 'B', email: 'b@x' } } as never);
+        prismaMock.storeMember.updateMany.mockResolvedValue({ count: 1 } as never);
+        await storeMemberService.updateMemberRole('s1', 'm2', VIEWER, 'owner');
+        expect(prismaMock.auditLog.create.mock.calls[0]?.[0]?.data).toMatchObject({
+            action: 'MEMBER_PERMISSIONS_CLEARED',
+            meta: { clearedOverrides: { 'sales.void': false } },
+        });
+    });
+
+    it('stops a delegated manager from assigning a role with permissions they lack', async () => {
+        prismaMock.storeMember.findFirst
+            .mockResolvedValueOnce(actor(CASHIER, { 'store.manage': true }))
+            .mockResolvedValueOnce({ id: 'm2', userId: 'u2', role: VIEWER, permissionOverrides: {} } as never);
+        await expect(storeMemberService.updateMemberRole('s1', 'm2', IM, 'u1')).rejects.toMatchObject({
+            code: 'FORBIDDEN',
+        });
+    });
+
+    it('stops a delegated manager from revoking an admin invite', async () => {
+        prismaMock.storeInvite.findFirst.mockResolvedValue({ id: 'i1', role: ADMIN } as never);
+        prismaMock.storeMember.findFirst.mockResolvedValueOnce(actor(CASHIER, { 'store.manage': true }));
+        await expect(storeMemberService.revokeInvite('s1', 'i1', 'u1')).rejects.toMatchObject({ code: 'FORBIDDEN' });
+        expect(prismaMock.storeInvite.deleteMany).not.toHaveBeenCalled();
+    });
+
+    const req = (role: Role) => ({ storeRole: role, user: { sub: 'u1' } }) as never;
+
+    it('blocks non-owners from editing their own payroll, but not the owner', async () => {
+        prismaMock.storeMember.findFirst.mockResolvedValue({ userId: 'u1' } as never);
+        await expect(assertNotOwnPayroll(req(CASHIER), 's1', 'm1')).rejects.toMatchObject({ code: 'FORBIDDEN' });
+        await expect(assertNotOwnPayroll(req(OWNER), 's1', 'm1')).resolves.toBeUndefined();
+        prismaMock.storeMember.findFirst.mockResolvedValue({ userId: 'someone-else' } as never);
+        await expect(assertNotOwnPayroll(req(CASHIER), 's1', 'm2')).resolves.toBeUndefined();
+    });
+
+    it("blocks non-owners from changing their own row's manual overtime", async () => {
+        prismaMock.storeMember.findFirst.mockResolvedValue({ id: 'm1' } as never);
+        prismaMock.scheduleWeekRow.findFirst.mockResolvedValue({ otAuto: false, otHours: 2 } as never);
+        const rows = (otHours: number) => [{ storeMemberId: 'm1', otHours, otAuto: false }];
+        await expect(assertOwnOvertimeUnchanged(req(ADMIN), 's1', '2026-11-01', rows(2))).resolves.toBeUndefined();
+        await expect(assertOwnOvertimeUnchanged(req(ADMIN), 's1', '2026-11-01', rows(10))).rejects.toMatchObject({
+            code: 'FORBIDDEN',
         });
     });
 });

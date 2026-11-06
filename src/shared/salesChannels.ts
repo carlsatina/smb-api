@@ -77,20 +77,32 @@ export const parseSalesChannels = (value: Prisma.JsonValue | null | undefined): 
 
 /**
  * Normalises a submitted channel list. Keys are stable identifiers stored on
- * sales, so existing keys are kept and new channels get one from their name.
+ * sales and products, so:
+ * - submitted channels that carry an existing key keep it;
+ * - every existing key is reserved first, so a new channel can never take one
+ *   (even if its generated key matches, e.g. a second "Grab");
+ * - existing channels missing from the submission are kept, turned off.
  */
 export const normalizeSalesChannels = (
     input: Array<Omit<SalesChannel, 'key'> & { key?: string | null }>,
     existing: SalesChannel[]
 ): SalesChannel[] => {
-    const used = new Set<string>();
     const existingKeys = new Set(existing.map((channel) => channel.key));
-    return input.map((channel) => {
-        let key = channel.key && existingKeys.has(channel.key) ? channel.key : channelKeyFromName(channel.name);
-        const base = key;
-        let suffix = 2;
-        while (used.has(key)) key = `${base}_${suffix++}`;
-        used.add(key);
+    const used = new Set<string>(existingKeys);
+    const kept = new Set<string>();
+
+    const normalized = input.map((channel) => {
+        let key: string;
+        if (channel.key && existingKeys.has(channel.key) && !kept.has(channel.key)) {
+            key = channel.key;
+            kept.add(key);
+        } else {
+            const base = channelKeyFromName(channel.name);
+            key = base;
+            let suffix = 2;
+            while (used.has(key)) key = `${base}_${suffix++}`;
+            used.add(key);
+        }
         return {
             key,
             name: channel.name.trim(),
@@ -100,6 +112,12 @@ export const normalizeSalesChannels = (
             active: channel.active,
         };
     });
+
+    const dropped = existing
+        .filter((channel) => !kept.has(channel.key))
+        .map((channel) => ({ ...channel, active: false }));
+
+    return [...normalized, ...dropped];
 };
 
 /** Product.channelPrices: { [channelKey]: price } — only explicit overrides. */
