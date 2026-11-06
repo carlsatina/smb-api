@@ -1,8 +1,7 @@
 import { Router } from 'express';
-import { Role } from '@prisma/client';
 import { authMiddleware } from '../../middlewares/auth';
 import { createRateLimiter } from '../../middlewares/rateLimit';
-import { requireStoreRole } from '../../middlewares/requireStoreRole';
+import { requirePermission, requireStoreMember } from '../../middlewares/requirePermission';
 import {
     acceptInvite,
     createInvite,
@@ -18,8 +17,6 @@ import {
 export const storeMemberRouter = Router({ mergeParams: true });
 export const storeInviteRouter = Router({ mergeParams: true });
 
-const readRoles = [Role.OWNER, Role.ADMIN, Role.CASHIER, Role.INVENTORY_MANAGER, Role.VIEWER];
-const manageRoles = [Role.OWNER, Role.ADMIN];
 
 const inviteLimiter = createRateLimiter({
     windowMs: 10 * 60 * 1000,
@@ -39,12 +36,12 @@ storeInviteRouter.get('/preview', acceptLimiter, previewInvite);
 storeMemberRouter.use(authMiddleware);
 storeInviteRouter.use(authMiddleware);
 
-storeMemberRouter.get('/', requireStoreRole(readRoles), listMembers);
-storeMemberRouter.patch('/:memberId', requireStoreRole(manageRoles), updateMemberRole);
-storeMemberRouter.patch('/:memberId/suspension', requireStoreRole(manageRoles), setMemberSuspension);
-storeMemberRouter.delete('/:memberId', requireStoreRole(manageRoles), removeMember);
+storeMemberRouter.get('/', requireStoreMember(), listMembers);
+storeMemberRouter.patch('/:memberId', requirePermission('store.manage'), updateMemberRole);
+storeMemberRouter.patch('/:memberId/suspension', requirePermission('store.manage'), setMemberSuspension);
+storeMemberRouter.delete('/:memberId', requirePermission('store.manage'), removeMember);
 
-storeInviteRouter.get('/', requireStoreRole(readRoles), listInvites);
-storeInviteRouter.post('/', inviteLimiter, requireStoreRole(manageRoles), createInvite);
+storeInviteRouter.get('/', requireStoreMember(), listInvites);
+storeInviteRouter.post('/', inviteLimiter, requirePermission('store.manage'), createInvite);
 storeInviteRouter.post('/accept', acceptLimiter, acceptInvite);
-storeInviteRouter.delete('/:inviteId', requireStoreRole(manageRoles), revokeInvite);
+storeInviteRouter.delete('/:inviteId', requirePermission('store.manage'), revokeInvite);

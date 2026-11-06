@@ -3,6 +3,7 @@ import { Role } from '@prisma/client';
 import jwt from 'jsonwebtoken';
 import { env } from '../config/env';
 import { AppError } from '../shared/errors';
+import type { PermissionKey } from '../shared/permissions';
 
 export type AuthUser = {
     sub: string;
@@ -13,8 +14,10 @@ export type AuthUser = {
 
 export type AuthRequest = Request & {
     user?: AuthUser;
-    // Populated by requireStoreRole once membership is verified for the route's :storeId.
+    // Populated by requireStoreRole / requirePermission once membership is verified for the route's :storeId.
     storeRole?: Role;
+    // Effective store permissions for the member (role defaults plus the store's overrides).
+    permissions?: PermissionKey[];
 };
 
 export const authMiddleware = (req: AuthRequest, res: Response, next: NextFunction) => {

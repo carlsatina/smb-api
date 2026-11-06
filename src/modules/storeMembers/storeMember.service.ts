@@ -53,6 +53,16 @@ const getActorRole = async (storeId: string, userId: string) => {
     return membership.role;
 };
 
+// Team management can be delegated to any role via the store.manage permission.
+// Owner and Admin stay above that: a delegated (non-admin) manager can only act
+// on, invite, or assign roles below Admin, and can't change their own role.
+const ELEVATED_ROLES: Role[] = [Role.OWNER, Role.ADMIN];
+const assertCanManageRole = (actorRole: Role, targetRole: Role, action: string) => {
+    if (!ELEVATED_ROLES.includes(actorRole) && ELEVATED_ROLES.includes(targetRole)) {
+        throw new AppError('FORBIDDEN', `Only owners and admins can ${action} an owner or admin.`, 403);
+    }
+};
+
 const ensureOwnerRemaining = async (storeId: string, excludeMemberId: string) => {
     const owners = await prisma.storeMember.count({
         where: {
@@ -235,6 +245,12 @@ export const storeMemberService = {
             throw new AppError('FORBIDDEN', 'Only owners can change another owner role.', 403);
         }
 
+        assertCanManageRole(actorRole, member.role, 'change the role of');
+        assertCanManageRole(actorRole, role, 'assign the role of');
+        if (!ELEVATED_ROLES.includes(actorRole) && member.userId === actorId) {
+            throw new AppError('FORBIDDEN', 'You cannot change your own role.', 403);
+        }
+
         if (member.role === Role.OWNER && role !== Role.OWNER) {
             await ensureOwnerRemaining(storeId, member.id);
         }
@@ -309,6 +325,7 @@ export const storeMemberService = {
         if (member.role === Role.OWNER && actorRole !== Role.OWNER) {
             throw new AppError('FORBIDDEN', 'Only owners can suspend another owner.', 403);
         }
+        assertCanManageRole(actorRole, member.role, 'suspend');
 
         if (Boolean(member.suspendedAt) === suspended) {
             return;
@@ -368,6 +385,7 @@ export const storeMemberService = {
         if (member.role === Role.OWNER && actorRole !== Role.OWNER) {
             throw new AppError('FORBIDDEN', 'Only owners can remove another owner.', 403);
         }
+        assertCanManageRole(actorRole, member.role, 'remove');
 
         if (member.role === Role.OWNER) {
             await ensureOwnerRemaining(storeId, member.id);
@@ -432,6 +450,7 @@ export const storeMemberService = {
         if (input.role === Role.OWNER && actorRole !== Role.OWNER) {
             throw new AppError('FORBIDDEN', 'Only owners can invite another owner.', 403);
         }
+        assertCanManageRole(actorRole, input.role, 'invite');
 
         const email = normalizeEmail(input.email);
         const existingUser = await prisma.user.findUnique({ where: { email } });

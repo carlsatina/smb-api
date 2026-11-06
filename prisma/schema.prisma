@@ -203,6 +203,7 @@ model Store {
   unitOptions              String[]    @default([])
   categoryOptions          String[]    @default([])
   subcategoryOptions       Json        @default("{}")
+  rolePermissions          Json        @default("{}")
   expenseCategoryOptions   String[]    @default([])
   allowNegativeStock       Boolean     @default(false)
   lowStockThreshold        Decimal     @default(0) @db.Decimal(12, 4)

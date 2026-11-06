@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { Role } from '@prisma/client';
 import { AuthRequest } from '../../middlewares/auth';
+import { hasPermission } from '../../middlewares/requirePermission';
 import { asyncHandler } from '../../shared/asyncHandler';
 import { AppError } from '../../shared/errors';
 import {
@@ -31,7 +32,10 @@ const requireContext = (req: AuthRequest): { storeId: string; viewer: Viewer } =
     if (!storeId) throw new AppError('STORE_REQUIRED', 'Store is required', 400);
     if (!userId) throw new AppError('UNAUTHORIZED', 'Authentication required', 401);
     if (!req.storeRole) throw new AppError('FORBIDDEN', 'Not a member of this store', 403);
-    return { storeId, viewer: { userId, role: req.storeRole as Role } };
+    return {
+        storeId,
+        viewer: { userId, role: req.storeRole as Role, canManage: hasPermission(req, 'schedule.manage') },
+    };
 };
 
 export const getWeek = asyncHandler(async (req: AuthRequest, res: Response) => {

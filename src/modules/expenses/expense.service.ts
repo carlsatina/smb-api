@@ -2,6 +2,7 @@ import { ExpenseSource, Prisma, Role } from '@prisma/client';
 import { AppError } from '../../shared/errors';
 import prisma from '../../../lib/prisma';
 import { expenseRepository, type ExpenseListFilters } from './expense.repository';
+import type { PermissionKey } from '../../shared/permissions';
 import { canViewRestrictedExpenses, isRestrictedCategory } from './expense.constants';
 
 type ExpenseInput = {
@@ -35,19 +36,19 @@ const buildExpenseChanges = (
 };
 
 export const expenseService = {
-    list: async (storeId: string, role: Role | undefined, filters: ExpenseListFilters = {}) => {
+    list: async (storeId: string, permissions: readonly PermissionKey[] | undefined, filters: ExpenseListFilters = {}) => {
         return expenseRepository.listByStore(storeId, {
             ...filters,
-            excludeRestricted: !canViewRestrictedExpenses(role),
+            excludeRestricted: !canViewRestrictedExpenses(permissions),
         });
     },
-    get: async (storeId: string, role: Role | undefined, expenseId: string) => {
+    get: async (storeId: string, permissions: readonly PermissionKey[] | undefined, expenseId: string) => {
         const expense = await expenseRepository.getById(storeId, expenseId);
         if (!expense) {
             throw new AppError('NOT_FOUND', 'Expense not found', 404);
         }
         // Don't leak restricted-category expenses to non-privileged roles.
-        if (!canViewRestrictedExpenses(role) && isRestrictedCategory(expense.category)) {
+        if (!canViewRestrictedExpenses(permissions) && isRestrictedCategory(expense.category)) {
             throw new AppError('NOT_FOUND', 'Expense not found', 404);
         }
         return expense;

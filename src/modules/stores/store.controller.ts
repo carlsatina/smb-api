@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { asyncHandler } from '../../shared/asyncHandler';
-import { createStoreSchema, updateAiSettingsSchema, updateStoreSchema } from './store.schemas';
+import { createStoreSchema, updateAiSettingsSchema, updateRolePermissionsSchema, updateStoreSchema } from './store.schemas';
+import type { EditableRole, PermissionKey } from '../../shared/permissions';
 import { storeService } from './store.service';
 import { AuthRequest } from '../../middlewares/auth';
 import { AppError } from '../../shared/errors';
@@ -113,4 +114,25 @@ export const deleteStore = asyncHandler(async (req: AuthRequest, res: Response) 
     }
 
     res.status(200).json({ storeId: store.id });
+});
+
+export const getRolePermissions = asyncHandler(async (req: AuthRequest, res: Response) => {
+    const storeId = req.params.storeId;
+    if (!storeId) throw new AppError('STORE_REQUIRED', 'Store is required', 400);
+    const data = await storeService.getRolePermissions(storeId);
+    res.status(200).json({ ...data, canEdit: req.storeRole === 'OWNER' });
+});
+
+export const updateRolePermissions = asyncHandler(async (req: AuthRequest, res: Response) => {
+    const storeId = req.params.storeId;
+    const userId = req.user?.sub;
+    if (!storeId) throw new AppError('STORE_REQUIRED', 'Store is required', 400);
+    if (!userId) throw new AppError('UNAUTHORIZED', 'Unauthorized', 401);
+    const { matrix } = updateRolePermissionsSchema.parse(req.body);
+    const data = await storeService.updateRolePermissions(
+        storeId,
+        userId,
+        matrix as Partial<Record<EditableRole, PermissionKey[]>>
+    );
+    res.status(200).json({ ...data, canEdit: true });
 });

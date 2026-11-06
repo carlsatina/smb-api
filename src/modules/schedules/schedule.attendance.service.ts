@@ -29,8 +29,7 @@ const STALE_OPEN_AFTER_MS = STALE_OPEN_AFTER_MINUTES * 60 * 1000;
 // for ~31 days; this is headroom, not a target.
 const MAX_RANGE_DAYS = 62;
 
-const MANAGER_ROLES: Role[] = [Role.OWNER, Role.ADMIN];
-const isManager = (viewer: Viewer) => MANAGER_ROLES.includes(viewer.role);
+const isManager = (viewer: Viewer) => viewer.canManage;
 
 // Date-only columns are stored at UTC midnight, matching the rest of the module.
 const toUtcDate = (value: string): Date => new Date(`${value}T00:00:00.000Z`);

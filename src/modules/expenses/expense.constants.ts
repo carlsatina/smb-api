@@ -1,4 +1,4 @@
-import { Role } from '@prisma/client';
+import type { PermissionKey } from '../../shared/permissions';
 
 // Categories that contain sensitive financial info (rent, payroll). Only store
 // owners and admins may see expenses in these categories; cashiers, inventory
@@ -9,5 +9,6 @@ export const RESTRICTED_EXPENSE_CATEGORIES = ['rent', 'salaries'];
 export const isRestrictedCategory = (category: string) =>
     RESTRICTED_EXPENSE_CATEGORIES.includes(category.trim().toLowerCase());
 
-export const canViewRestrictedExpenses = (role: Role | undefined | null) =>
-    role === Role.OWNER || role === Role.ADMIN;
+// Sensitive (rent, salaries) expenses follow the payroll permission.
+export const canViewRestrictedExpenses = (permissions: readonly PermissionKey[] | undefined | null) =>
+    Boolean(permissions?.includes('schedule.manage'));

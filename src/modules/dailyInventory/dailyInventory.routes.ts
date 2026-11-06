@@ -7,10 +7,11 @@ import { getDailyReport, saveDailyReport } from './dailyInventory.controller';
 
 export const dailyInventoryRouter = Router({ mergeParams: true });
 
-const allowedRoles = [Role.OWNER, Role.ADMIN, Role.INVENTORY_MANAGER, Role.CASHIER];
 
 dailyInventoryRouter.use(authMiddleware);
-dailyInventoryRouter.use(requireStoreRole(allowedRoles));
+// Customer-specific report, gated by the DAILY_SALES user feature; kept on a fixed
+// role rule rather than in the Roles & permissions grid.
+dailyInventoryRouter.use(requireStoreRole([Role.OWNER, Role.ADMIN, Role.INVENTORY_MANAGER, Role.CASHIER]));
 dailyInventoryRouter.use(requireUserFeature('DAILY_SALES'));
 
 dailyInventoryRouter.get('/', getDailyReport);

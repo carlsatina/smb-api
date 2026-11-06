@@ -1,8 +1,7 @@
 import { Router } from 'express';
-import { Role } from '@prisma/client';
 import { authMiddleware } from '../../middlewares/auth';
 import { requirePlanFeature } from '../../middlewares/requirePlanFeature';
-import { requireStoreRole } from '../../middlewares/requireStoreRole';
+import { requirePermission } from '../../middlewares/requirePermission';
 import { csvUploadSingle } from '../../middlewares/csvUpload';
 import {
     createProduct,
@@ -16,16 +15,13 @@ import {
 
 export const productRouter = Router({ mergeParams: true });
 
-const readRoles = [Role.OWNER, Role.ADMIN, Role.INVENTORY_MANAGER, Role.CASHIER, Role.VIEWER];
-const writeRoles = [Role.OWNER, Role.ADMIN, Role.INVENTORY_MANAGER];
-const adminRoles = [Role.OWNER, Role.ADMIN];
 
 productRouter.use(authMiddleware);
 
-productRouter.get('/export', requireStoreRole(adminRoles), requirePlanFeature('importExport'), exportProducts);
-productRouter.post('/import', requireStoreRole(adminRoles), requirePlanFeature('importExport'), csvUploadSingle, importProducts);
-productRouter.get('/', requireStoreRole(readRoles), listProducts);
-productRouter.get('/:productId', requireStoreRole(readRoles), getProduct);
-productRouter.post('/', requireStoreRole(writeRoles), createProduct);
-productRouter.patch('/:productId', requireStoreRole(writeRoles), updateProduct);
-productRouter.delete('/:productId', requireStoreRole(writeRoles), deleteProduct);
+productRouter.get('/export', requirePermission('inventory.manage'), requirePlanFeature('importExport'), exportProducts);
+productRouter.post('/import', requirePermission('inventory.manage'), requirePlanFeature('importExport'), csvUploadSingle, importProducts);
+productRouter.get('/', requirePermission('inventory.view', 'pos.use'), listProducts);
+productRouter.get('/:productId', requirePermission('inventory.view', 'pos.use'), getProduct);
+productRouter.post('/', requirePermission('inventory.manage'), createProduct);
+productRouter.patch('/:productId', requirePermission('inventory.manage'), updateProduct);
+productRouter.delete('/:productId', requirePermission('inventory.manage'), deleteProduct);

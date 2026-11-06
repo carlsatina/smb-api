@@ -2,7 +2,18 @@ import { Router } from 'express';
 import { Role } from '@prisma/client';
 import { authMiddleware } from '../../middlewares/auth';
 import { requireStoreRole } from '../../middlewares/requireStoreRole';
-import { createStore, deleteStore, listAiModels, listStores, testAiConnection, updateAiSettings, updateStore } from './store.controller';
+import { requirePermission } from '../../middlewares/requirePermission';
+import {
+    createStore,
+    deleteStore,
+    getRolePermissions,
+    listAiModels,
+    listStores,
+    testAiConnection,
+    updateAiSettings,
+    updateRolePermissions,
+    updateStore,
+} from './store.controller';
 
 export const storeRouter = Router();
 
@@ -14,8 +25,11 @@ export const storeRouter = Router();
 // this router's own endpoints.
 storeRouter.get('/', authMiddleware, listStores);
 storeRouter.post('/', authMiddleware, createStore);
-storeRouter.patch('/:storeId', authMiddleware, requireStoreRole([Role.OWNER, Role.ADMIN]), updateStore);
-storeRouter.patch('/:storeId/ai-settings', authMiddleware, requireStoreRole([Role.OWNER, Role.ADMIN]), updateAiSettings);
-storeRouter.post('/:storeId/ai-settings/test', authMiddleware, requireStoreRole([Role.OWNER, Role.ADMIN]), testAiConnection);
-storeRouter.get('/:storeId/ai-settings/models', authMiddleware, requireStoreRole([Role.OWNER, Role.ADMIN]), listAiModels);
+storeRouter.patch('/:storeId', authMiddleware, requirePermission('store.manage'), updateStore);
+storeRouter.patch('/:storeId/ai-settings', authMiddleware, requirePermission('store.manage'), updateAiSettings);
+storeRouter.post('/:storeId/ai-settings/test', authMiddleware, requirePermission('store.manage'), testAiConnection);
+storeRouter.get('/:storeId/ai-settings/models', authMiddleware, requirePermission('store.manage'), listAiModels);
 storeRouter.delete('/:storeId', authMiddleware, requireStoreRole([Role.OWNER]), deleteStore);
+// Anyone who manages the store can see the grid; only owners can change it (never delegable).
+storeRouter.get('/:storeId/permissions', authMiddleware, requirePermission('store.manage'), getRolePermissions);
+storeRouter.put('/:storeId/permissions', authMiddleware, requireStoreRole([Role.OWNER]), updateRolePermissions);

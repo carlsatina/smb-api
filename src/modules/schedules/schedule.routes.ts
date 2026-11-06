@@ -1,7 +1,6 @@
 import { Router } from 'express';
-import { Role } from '@prisma/client';
 import { authMiddleware } from '../../middlewares/auth';
-import { requireStoreRole } from '../../middlewares/requireStoreRole';
+import { requirePermission, requireStoreMember } from '../../middlewares/requirePermission';
 import {
     clockIn,
     clockOut,
@@ -40,12 +39,12 @@ export const scheduleRouter = Router({ mergeParams: true });
 // shifts to coordinate. The service masks the pay columns per row.
 const anyMember = [
     authMiddleware,
-    requireStoreRole([Role.OWNER, Role.ADMIN, Role.CASHIER, Role.INVENTORY_MANAGER, Role.VIEWER]),
+    requireStoreMember(),
 ];
 
 // Writes are owner/admin only. This is the real read-only enforcement for
 // staff; the frontend hiding controls is only UX.
-const managers = [authMiddleware, requireStoreRole([Role.OWNER, Role.ADMIN])];
+const managers = [authMiddleware, requirePermission('schedule.manage')];
 
 // Weeks
 scheduleRouter.get('/weeks', ...anyMember, listWeeks);

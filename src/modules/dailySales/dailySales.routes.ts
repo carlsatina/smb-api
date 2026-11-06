@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { Role } from '@prisma/client';
 import { authMiddleware } from '../../middlewares/auth';
 import { requireStoreRole } from '../../middlewares/requireStoreRole';
+import { requireStoreMember } from '../../middlewares/requirePermission';
 import { requireUserFeature } from '../../middlewares/requireUserFeature';
 import {
     createDailySalesEntry,
@@ -24,7 +25,7 @@ const ownerWithFeature = [
 
 const anyMember = [
     authMiddleware,
-    requireStoreRole([Role.OWNER, Role.ADMIN, Role.CASHIER, Role.INVENTORY_MANAGER, Role.VIEWER]),
+    requireStoreMember(),
 ];
 
 // POS for date (used by inline add row)

@@ -10,7 +10,6 @@ import { otHoursFromActual, toHours } from './schedule.attendance';
 // column; until then it is a single constant rather than a hidden assumption.
 const WEEK_START_DAY = 0; // 0 = Sunday
 
-const MANAGER_ROLES: Role[] = [Role.OWNER, Role.ADMIN];
 
 const toNum = (v: Prisma.Decimal | null | undefined) => Number(v ?? 0);
 
@@ -36,9 +35,10 @@ const assertWeekStart = (weekStart: string): Date => {
 const weekDates = (weekStart: Date): string[] =>
     Array.from({ length: 7 }, (_, i) => toDateString(addDays(weekStart, i)));
 
-export type Viewer = { userId: string; role: Role };
+// canManage comes from the member's schedule.manage permission (see requirePermission).
+export type Viewer = { userId: string; role: Role; canManage: boolean };
 
-const isManager = (viewer: Viewer) => MANAGER_ROLES.includes(viewer.role);
+const isManager = (viewer: Viewer) => viewer.canManage;
 
 // The owner runs the store rather than working a rostered shift, so they are
 // left out of the schedulable-staff list and the pay-rate list. Filtered here at
@@ -456,7 +456,7 @@ export const scheduleService = {
             });
         });
 
-        return scheduleService.getWeek(storeId, payload.weekStart, { userId, role: Role.OWNER });
+        return scheduleService.getWeek(storeId, payload.weekStart, { userId, role: Role.OWNER, canManage: true });
     },
 
     setPublished: async (storeId: string, weekStartStr: string, publish: boolean, viewer: Viewer) => {

@@ -1,5 +1,6 @@
 import { AiProvider, StoreType } from '@prisma/client';
 import { z } from 'zod';
+import { EDITABLE_ROLES, PERMISSION_KEYS } from '../../shared/permissions';
 
 const optionalString = z.string().min(1).optional();
 const optionalNumber = z.preprocess(
@@ -96,4 +97,20 @@ export const updateAiSettingsSchema = z.object({
     aiProvider: z.nativeEnum(AiProvider).nullable().optional(),
     aiModel: z.string().trim().max(120).nullable().optional(),
     aiApiKey: z.string().max(500).nullable().optional(),
+});
+
+// Full grid for the editable roles: role -> granted permission keys. Owner is
+// implicit (always everything) and can't be sent.
+const permissionKey = z.string().refine((value) => (PERMISSION_KEYS as string[]).includes(value), {
+    message: 'Unknown permission.',
+});
+export const updateRolePermissionsSchema = z.object({
+    matrix: z
+        .object(
+            Object.fromEntries(EDITABLE_ROLES.map((role) => [role, z.array(permissionKey).optional()])) as Record<
+                (typeof EDITABLE_ROLES)[number],
+                z.ZodOptional<z.ZodArray<typeof permissionKey>>
+            >
+        )
+        .strict(),
 });

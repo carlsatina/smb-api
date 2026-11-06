@@ -1,8 +1,7 @@
 import { Router } from 'express';
-import { Role } from '@prisma/client';
 import { authMiddleware } from '../../middlewares/auth';
 import { requirePlanFeature } from '../../middlewares/requirePlanFeature';
-import { requireStoreRole } from '../../middlewares/requireStoreRole';
+import { requirePermission } from '../../middlewares/requirePermission';
 import { csvUploadSingle } from '../../middlewares/csvUpload';
 import {
     createIngredient,
@@ -16,17 +15,14 @@ import {
 
 export const ingredientRouter = Router({ mergeParams: true });
 
-const readRoles = [Role.OWNER, Role.ADMIN, Role.INVENTORY_MANAGER, Role.VIEWER];
-const writeRoles = [Role.OWNER, Role.ADMIN, Role.INVENTORY_MANAGER];
-const adminRoles = [Role.OWNER, Role.ADMIN];
 
 ingredientRouter.use(authMiddleware);
 ingredientRouter.use(requirePlanFeature('ingredients'));
 
-ingredientRouter.get('/export', requireStoreRole(adminRoles), requirePlanFeature('importExport'), exportIngredients);
-ingredientRouter.post('/import', requireStoreRole(adminRoles), requirePlanFeature('importExport'), csvUploadSingle, importIngredients);
-ingredientRouter.get('/', requireStoreRole(readRoles), listIngredients);
-ingredientRouter.get('/:ingredientId', requireStoreRole(readRoles), getIngredient);
-ingredientRouter.post('/', requireStoreRole(writeRoles), createIngredient);
-ingredientRouter.patch('/:ingredientId', requireStoreRole(writeRoles), updateIngredient);
-ingredientRouter.delete('/:ingredientId', requireStoreRole(writeRoles), deleteIngredient);
+ingredientRouter.get('/export', requirePermission('inventory.manage'), requirePlanFeature('importExport'), exportIngredients);
+ingredientRouter.post('/import', requirePermission('inventory.manage'), requirePlanFeature('importExport'), csvUploadSingle, importIngredients);
+ingredientRouter.get('/', requirePermission('inventory.view'), listIngredients);
+ingredientRouter.get('/:ingredientId', requirePermission('inventory.view'), getIngredient);
+ingredientRouter.post('/', requirePermission('inventory.manage'), createIngredient);
+ingredientRouter.patch('/:ingredientId', requirePermission('inventory.manage'), updateIngredient);
+ingredientRouter.delete('/:ingredientId', requirePermission('inventory.manage'), deleteIngredient);

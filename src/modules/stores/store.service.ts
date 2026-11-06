@@ -6,6 +6,17 @@ import { decryptSecret, encryptSecret } from '../../shared/crypto';
 import { listAiModels, testAiConnection } from '../../shared/aiClient';
 import { DEFAULT_CATEGORY_OPTIONS, DEFAULT_EXPENSE_CATEGORY_OPTIONS, DEFAULT_UNIT_OPTIONS } from './store.defaults';
 import { normalizeSubcategoryOptions, parseSubcategoryOptions, SubcategoryOptions } from '../../shared/subcategories';
+import {
+    DEFAULT_ROLE_PERMISSIONS,
+    EDITABLE_ROLES,
+    EditableRole,
+    effectivePermissions,
+    overridesFromMatrix,
+    parseRolePermissionOverrides,
+    PERMISSIONS,
+    PermissionKey,
+    permissionMatrix,
+} from '../../shared/permissions';
 
 // Maps a raw Store row to a client-safe shape. The encrypted AI API key is never
 // exposed — only whether a key is configured and its last 4 characters.
@@ -142,6 +153,10 @@ export const storeService = {
                 aiApiKeySet: Boolean(membership.store.aiApiKeyEncrypted),
                 aiApiKeyLast4: membership.store.aiApiKeyLast4 ?? null,
                 role: membership.role,
+                permissions: effectivePermissions(
+                    membership.role,
+                    parseRolePermissionOverrides(membership.store.rolePermissions)
+                ),
                 ownerPlanTier: owner?.planTier ?? 'STARTER',
                 ownerSubscriptionActive: owner?.subscriptionActive ?? false,
             };
@@ -299,6 +314,70 @@ export const storeService = {
             data,
         });
         return toStoreDto(updated);
+    },
+    getRolePermissions: async (storeId: string) => {
+        const store = await prisma.store.findFirst({
+            where: { id: storeId, deletedAt: null },
+            select: { rolePermissions: true },
+        });
+        if (!store) {
+            throw new AppError('NOT_FOUND', 'Store not found', 404);
+        }
+        const overrides = parseRolePermissionOverrides(store.rolePermissions);
+        return {
+            permissions: PERMISSIONS,
+            roles: EDITABLE_ROLES,
+            defaults: DEFAULT_ROLE_PERMISSIONS,
+            matrix: permissionMatrix(overrides),
+            isCustomized: Object.keys(overrides).length > 0,
+        };
+    },
+    updateRolePermissions: async (
+        storeId: string,
+        actorId: string,
+        matrix: Partial<Record<EditableRole, PermissionKey[]>>
+    ) => {
+        const store = await prisma.store.findFirst({
+            where: { id: storeId, deletedAt: null },
+            select: { rolePermissions: true },
+        });
+        if (!store) {
+            throw new AppError('NOT_FOUND', 'Store not found', 404);
+        }
+
+        const currentOverrides = parseRolePermissionOverrides(store.rolePermissions);
+        const before = permissionMatrix(currentOverrides);
+        const nextOverrides = overridesFromMatrix(matrix, currentOverrides);
+        const after = permissionMatrix(nextOverrides);
+
+        const changes = EDITABLE_ROLES.flatMap((role) =>
+            PERMISSIONS.flatMap(({ key }) => {
+                const had = before[role].includes(key);
+                const has = after[role].includes(key);
+                return had === has ? [] : [{ role, permission: key, granted: has }];
+            })
+        );
+
+        if (changes.length) {
+            await prisma.$transaction(async (tx) => {
+                await tx.store.update({
+                    where: { id: storeId },
+                    data: { rolePermissions: nextOverrides as Prisma.InputJsonValue },
+                });
+                await tx.auditLog.create({
+                    data: {
+                        store: { connect: { id: storeId } },
+                        actor: { connect: { id: actorId } },
+                        action: 'ROLE_PERMISSIONS_UPDATED',
+                        entityType: 'Store',
+                        entityId: storeId,
+                        meta: { changes } as Prisma.InputJsonValue,
+                    },
+                });
+            });
+        }
+
+        return storeService.getRolePermissions(storeId);
     },
     updateAiSettings: async (
         storeId: string,
