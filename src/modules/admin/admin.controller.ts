@@ -14,10 +14,12 @@ import {
     PricedStatement,
     pricingSummary,
 } from '../../config/billing';
+import { findOverdueByOwner, isMonthEnded } from '../../shared/billingStatus';
 import { adminRepository } from './admin.repository';
 import {
     billingPaymentSchema,
     ownerDiscountSchema,
+    ownerSuspensionSchema,
     sendBillingSchema,
     storeExemptionSchema,
     toggleSuperAdminSchema,
@@ -120,6 +122,8 @@ type OwnerRecord = {
     billingDiscountValue: Prisma.Decimal | null;
     billingDiscountEndsAt: Date | null;
     billingDiscountNote: string | null;
+    billingSuspendedAt: Date | null;
+    billingSuspendedReason: string | null;
 };
 
 // The discount as configured (it may not apply to the month being viewed).
@@ -136,6 +140,9 @@ const serializeOwner = (owner: OwnerRecord) => ({
                   note: owner.billingDiscountNote,
               }
             : null,
+    suspension: owner.billingSuspendedAt
+        ? { suspendedAt: owner.billingSuspendedAt, reason: owner.billingSuspendedReason }
+        : null,
 });
 
 const periodLabelOf = (month: number, year: number) => `${MONTH_NAMES[month - 1]} ${year}`;
@@ -147,12 +154,20 @@ const endsAfterMonth = (year?: number | null, month?: number | null) =>
 export const listBilling = asyncHandler(async (req: AuthRequest, res: Response) => {
     const { month, year } = parseBillingPeriod(req.query);
     const rows = await adminRepository.findBillingOwners(year, month);
+    const overdueByOwner = await findOverdueByOwner(rows.map((row) => row.owner.id));
+    const monthEnded = isMonthEnded(year, month);
     const owners = rows
         .map((row) => ({
             owner: serializeOwner(row.owner),
             ...row.priced,
             stores: row.stores,
             statement: serializeStatement(row.statement),
+            // This month's bill was sent, the month is over, and it's unpaid.
+            overdue: Boolean(
+                monthEnded && row.statement?.sentAt && !row.statement.paidAt && Number(row.statement.amount) > 0
+            ),
+            // Every overdue month for this owner, across all months.
+            overdueMonths: overdueByOwner.get(row.owner.id) ?? [],
         }))
         .sort((a, b) => b.lines.length - a.lines.length || a.owner.email.localeCompare(b.owner.email));
     res.status(200).json({ owners, month, year, pricing: pricingSummary() });
@@ -182,8 +197,10 @@ export const listBillingHistory = asyncHandler(async (req: AuthRequest, res: Res
 });
 
 // Paid statements are frozen: what the owner paid for stays what we show.
+// With keepSent, a statement that was already emailed is also kept as-is, so
+// recording a payment matches the bill the owner actually received.
 // Anything else is re-priced from the owner's current stores and discount.
-const resolveStatement = async (ownerId: string, year: number, month: number) => {
+const resolveStatement = async (ownerId: string, year: number, month: number, keepSent = false) => {
     const [existing, live] = await Promise.all([
         adminRepository.findBillingStatement(ownerId, year, month),
         adminRepository.priceOwnerForMonth(ownerId, year, month),
@@ -191,7 +208,7 @@ const resolveStatement = async (ownerId: string, year: number, month: number) =>
     if (!live) {
         throw new AppError('NOT_FOUND', 'Owner not found.', 404);
     }
-    if (existing?.paidAt) {
+    if (existing?.paidAt || (keepSent && existing?.sentAt)) {
         const priced: PricedStatement = {
             lines: existing.lines as unknown as BillingLine[],
             subtotal: Number(existing.subtotal),
@@ -250,13 +267,24 @@ export const setBillingPayment = asyncHandler(async (req: AuthRequest, res: Resp
     const payload = billingPaymentSchema.parse(req.body);
 
     if (payload.paid) {
-        const { priced, frozen } = await resolveStatement(ownerId, payload.year, payload.month);
+        const { priced, frozen } = await resolveStatement(ownerId, payload.year, payload.month, true);
         assertBillable(priced);
         const statement = await adminRepository.upsertBillingStatement(ownerId, payload.year, payload.month, {
             ...(frozen ? {} : { priced }),
             paid: { paidAt: new Date(), paymentNote: payload.note ?? null },
         });
-        res.status(200).json({ statement: serializeStatement(statement) });
+
+        // Paying off the last overdue bill lifts a non-payment suspension.
+        let reinstated = false;
+        const owner = await prisma.user.findUnique({ where: { id: ownerId }, select: { billingSuspendedAt: true } });
+        if (owner?.billingSuspendedAt) {
+            const stillOverdue = (await findOverdueByOwner([ownerId])).get(ownerId) ?? [];
+            if (stillOverdue.length === 0) {
+                await adminRepository.updateOwnerSuspension(ownerId, null);
+                reinstated = true;
+            }
+        }
+        res.status(200).json({ statement: serializeStatement(statement), reinstated });
         return;
     }
 
@@ -290,6 +318,25 @@ export const setOwnerDiscount = asyncHandler(async (req: AuthRequest, res: Respo
                   note: discount.note || null,
               }
             : null
+    );
+    res.status(200).json({ owner: serializeOwner(owner) });
+});
+
+export const setOwnerSuspension = asyncHandler(async (req: AuthRequest, res: Response) => {
+    const ownerId = req.params.ownerId;
+    const payload = ownerSuspensionSchema.parse(req.body);
+
+    const existing = await prisma.user.findUnique({ where: { id: ownerId }, select: { id: true, isSuperAdmin: true } });
+    if (!existing) {
+        throw new AppError('NOT_FOUND', 'Owner not found.', 404);
+    }
+    if (existing.isSuperAdmin && payload.suspended) {
+        throw new AppError('FORBIDDEN', 'Platform admins cannot be suspended for billing.', 403);
+    }
+
+    const owner = await adminRepository.updateOwnerSuspension(
+        ownerId,
+        payload.suspended ? { reason: payload.reason || null } : null
     );
     res.status(200).json({ owner: serializeOwner(owner) });
 });
@@ -353,6 +400,7 @@ export const getStats = asyncHandler(async (req: AuthRequest, res: Response) => 
                     .filter((row) => row.statement?.paidAt)
                     .reduce((total, row) => total + amountFor(row), 0),
                 paidOwners: billable.filter((row) => row.statement?.paidAt).length,
+                suspendedOwners: billing.filter((row) => row.owner.billingSuspendedAt).length,
                 pricing: pricingSummary(),
             },
         },

@@ -108,6 +108,10 @@ model User {
   billingDiscountValue  Decimal?             @db.Decimal(12, 2)
   billingDiscountEndsAt DateTime?
   billingDiscountNote   String?
+  // Set by a platform admin for non-payment: the owner's stores become
+  // read-only for everyone until it is cleared (or the overdue bill is paid).
+  billingSuspendedAt     DateTime?
+  billingSuspendedReason String?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 

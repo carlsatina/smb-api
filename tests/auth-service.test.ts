@@ -46,6 +46,8 @@ describe('authService.login', () => {
             billingDiscountValue: null,
             billingDiscountEndsAt: null,
             billingDiscountNote: null,
+            billingSuspendedAt: null,
+            billingSuspendedReason: null,
             createdAt: new Date(),
             updatedAt: new Date(),
         });

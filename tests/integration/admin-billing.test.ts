@@ -161,11 +161,18 @@ describe('admin per-store billing', () => {
         await auth(agent.patch(`/api/v1/admin/billing/stores/${second.id}/exemption`).send({ exempt: true }));
         ({ row } = await rowFor());
         expect(row.amount).toBe(0);
+        // Re-sending re-prices from current settings, and a ₱0 month isn't billed.
         const refused = await auth(
-            agent.patch(`/api/v1/admin/billing/${owner.id}/payment`).send({ month: body.month, year: body.year, paid: true })
+            agent.post(`/api/v1/admin/billing/${owner.id}/send`).send({ month: body.month, year: body.year })
         );
         expect(refused.status).toBe(400);
         expect(refused.body.error?.code).toBe('NOTHING_TO_BILL');
+
+        // Recording payment for the bill already sent keeps the amount that was sent.
+        const paid = await auth(
+            agent.patch(`/api/v1/admin/billing/${owner.id}/payment`).send({ month: body.month, year: body.year, paid: true })
+        );
+        expect(paid.body.statement.amount).toBe(400);
 
         // Clearing works.
         const cleared = await auth(agent.patch(`/api/v1/admin/billing/owners/${owner.id}/discount`).send({ discount: null }));

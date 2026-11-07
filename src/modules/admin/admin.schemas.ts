@@ -45,6 +45,11 @@ export const ownerDiscountSchema = z.object({
         .nullable(),
 });
 
+export const ownerSuspensionSchema = z.object({
+    suspended: z.boolean(),
+    reason: z.string().trim().max(200).nullable().optional(),
+});
+
 export const storeExemptionSchema = z
     .object({
         exempt: z.boolean(),

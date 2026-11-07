@@ -14,6 +14,7 @@ import {
     sendBillingNotice,
     setBillingPayment,
     setOwnerDiscount,
+    setOwnerSuspension,
     setStoreExemption,
     toggleSuperAdmin,
 } from './admin.controller';
@@ -29,6 +30,7 @@ adminRouter.get('/billing/history', listBillingHistory);
 adminRouter.post('/billing/:ownerId/send', sendBillingNotice);
 adminRouter.patch('/billing/:ownerId/payment', setBillingPayment);
 adminRouter.patch('/billing/owners/:ownerId/discount', setOwnerDiscount);
+adminRouter.patch('/billing/owners/:ownerId/suspension', setOwnerSuspension);
 adminRouter.patch('/billing/stores/:storeId/exemption', setStoreExemption);
 adminRouter.patch('/users/:userId/super-admin', toggleSuperAdmin);
 adminRouter.get('/stats', getStats);

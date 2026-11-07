@@ -1,6 +1,7 @@
 import { AiProvider, Prisma, Role, Store, StoreType } from '@prisma/client';
 import prisma from '../../../lib/prisma';
 import { AppError } from '../../shared/errors';
+import { BILLING_SUSPENDED_MESSAGE, findOverdueByOwner, OverdueMonth } from '../../shared/billingStatus';
 import { decryptSecret, encryptSecret } from '../../shared/crypto';
 import { listAiModels, testAiConnection } from '../../shared/aiClient';
 import { DEFAULT_CATEGORY_OPTIONS, DEFAULT_EXPENSE_CATEGORY_OPTIONS, DEFAULT_UNIT_OPTIONS } from './store.defaults';
@@ -101,7 +102,27 @@ export const storeService = {
             },
         });
 
+        // Billing status per store comes from its billed (earliest) owner.
+        const billedOwners = await prisma.storeMember.findMany({
+            where: {
+                storeId: { in: memberships.map((m) => m.store.id) },
+                role: Role.OWNER,
+                deletedAt: null,
+            },
+            orderBy: { createdAt: 'asc' },
+            select: { storeId: true, userId: true, user: { select: { billingSuspendedAt: true } } },
+        });
+        const ownerByStore = new Map<string, (typeof billedOwners)[number]>();
+        for (const row of billedOwners) {
+            if (!ownerByStore.has(row.storeId)) ownerByStore.set(row.storeId, row);
+        }
+        const overdueByOwner = await findOverdueByOwner([...new Set(billedOwners.map((o) => o.userId))]);
+
         return memberships.map((membership) => {
+            const billedOwner = ownerByStore.get(membership.store.id);
+            // Amounts owed are only shown to people who manage the account.
+            const seesBilling = membership.role === Role.OWNER || membership.role === Role.ADMIN;
+            const overdue: OverdueMonth[] = billedOwner ? overdueByOwner.get(billedOwner.userId) ?? [] : [];
             return {
                 id: membership.store.id,
                 name: membership.store.name,
@@ -129,13 +150,15 @@ export const storeService = {
                     parseRolePermissionOverrides(membership.store.rolePermissions),
                     parseMemberPermissionOverrides(membership.permissionOverrides)
                 ),
+                billingSuspended: Boolean(billedOwner?.user.billingSuspendedAt),
+                billingOverdue: seesBilling ? overdue : [],
             };
         });
     },
     createStore: async (userId: string, input: CreateStoreInput) => {
         const user = await prisma.user.findUnique({
             where: { id: userId },
-            select: { emailVerifiedAt: true },
+            select: { emailVerifiedAt: true, billingSuspendedAt: true },
         });
 
         if (!user) {
@@ -144,6 +167,9 @@ export const storeService = {
 
         if (!user.emailVerifiedAt) {
             throw new AppError('EMAIL_NOT_VERIFIED', 'Verify your email to create a store.', 403);
+        }
+        if (user.billingSuspendedAt) {
+            throw new AppError('BILLING_SUSPENDED', BILLING_SUSPENDED_MESSAGE, 402);
         }
 
         const memberships = await prisma.storeMember.findMany({

@@ -19,6 +19,8 @@ const billingOwnerSelect = {
     billingDiscountValue: true,
     billingDiscountEndsAt: true,
     billingDiscountNote: true,
+    billingSuspendedAt: true,
+    billingSuspendedReason: true,
 } as const;
 
 const billableStoreSelect = {
@@ -258,6 +260,17 @@ export const adminRepository = {
                 billingDiscountValue: discount?.value ?? null,
                 billingDiscountEndsAt: discount?.endsAt ?? null,
                 billingDiscountNote: discount?.note ?? null,
+            },
+            select: billingOwnerSelect,
+        });
+    },
+
+    updateOwnerSuspension: async (ownerId: string, suspension: { reason: string | null } | null) => {
+        return prisma.user.update({
+            where: { id: ownerId },
+            data: {
+                billingSuspendedAt: suspension ? new Date() : null,
+                billingSuspendedReason: suspension?.reason ?? null,
             },
             select: billingOwnerSelect,
         });

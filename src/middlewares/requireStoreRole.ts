@@ -2,6 +2,7 @@ import { NextFunction, Response } from 'express';
 import { Role } from '@prisma/client';
 import prisma from '../../lib/prisma';
 import { AppError } from '../shared/errors';
+import { BILLING_SUSPENDED_MESSAGE, READ_ONLY_METHODS } from '../shared/billingStatus';
 import {
     effectivePermissions,
     parseMemberPermissionOverrides,
@@ -35,7 +36,19 @@ export const loadStoreMembership = async (req: AuthRequest) => {
             role: true,
             suspendedAt: true,
             permissionOverrides: true,
-            store: { select: { rolePermissions: true } },
+            store: {
+                select: {
+                    rolePermissions: true,
+                    // The billed owner (earliest active owner) decides whether
+                    // the store is locked for non-payment.
+                    members: {
+                        where: { role: Role.OWNER, deletedAt: null },
+                        orderBy: { createdAt: 'asc' },
+                        take: 1,
+                        select: { user: { select: { billingSuspendedAt: true } } },
+                    },
+                },
+            },
         },
     });
 
@@ -47,6 +60,13 @@ export const loadStoreMembership = async (req: AuthRequest) => {
     // so the client can say why access stopped instead of a blank "forbidden".
     if (membership.suspendedAt) {
         throw new AppError('MEMBER_SUSPENDED', 'Your access to this store has been suspended.', 403);
+    }
+
+    // Non-payment makes the whole store read-only for every member: reads and
+    // exports still work so nobody loses access to their records.
+    const billingSuspended = Boolean(membership.store?.members?.[0]?.user?.billingSuspendedAt);
+    if (billingSuspended && !READ_ONLY_METHODS.has(req.method)) {
+        throw new AppError('BILLING_SUSPENDED', BILLING_SUSPENDED_MESSAGE, 402);
     }
 
     req.storeRole = membership.role;
