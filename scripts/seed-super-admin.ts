@@ -41,7 +41,6 @@ const run = async () => {
                 fullName,
                 isSuperAdmin: true,
                 emailVerifiedAt: existing.emailVerifiedAt ?? new Date(),
-                subscriptionActive: true,
             },
         });
         console.log(`Updated existing user "${email}" — isSuperAdmin = true`);
@@ -53,7 +52,6 @@ const run = async () => {
                 fullName,
                 isSuperAdmin: true,
                 emailVerifiedAt: new Date(),
-                subscriptionActive: true,
             },
         });
         console.log(`Created super admin "${email}"`);

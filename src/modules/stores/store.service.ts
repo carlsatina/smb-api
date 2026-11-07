@@ -1,6 +1,5 @@
 import { AiProvider, Prisma, Role, Store, StoreType } from '@prisma/client';
 import prisma from '../../../lib/prisma';
-import { getPlanConfig } from '../../config/plans';
 import { AppError } from '../../shared/errors';
 import { decryptSecret, encryptSecret } from '../../shared/crypto';
 import { listAiModels, testAiConnection } from '../../shared/aiClient';
@@ -102,40 +101,7 @@ export const storeService = {
             },
         });
 
-        // Get store IDs to find owners
-        const storeIds = memberships.map((m) => m.store.id);
-
-        // Find owners for all stores
-        const ownerMemberships = await prisma.storeMember.findMany({
-            where: {
-                storeId: { in: storeIds },
-                role: 'OWNER',
-                deletedAt: null,
-            },
-            include: {
-                user: {
-                    select: {
-                        id: true,
-                        planTier: true,
-                        subscriptionActive: true,
-                    },
-                },
-            },
-        });
-
-        // Map store ID to owner info
-        const ownerByStoreId = new Map(
-            ownerMemberships.map((om) => [
-                om.storeId,
-                {
-                    planTier: om.user.planTier,
-                    subscriptionActive: om.user.subscriptionActive,
-                },
-            ])
-        );
-
         return memberships.map((membership) => {
-            const owner = ownerByStoreId.get(membership.store.id);
             return {
                 id: membership.store.id,
                 name: membership.store.name,
@@ -163,46 +129,21 @@ export const storeService = {
                     parseRolePermissionOverrides(membership.store.rolePermissions),
                     parseMemberPermissionOverrides(membership.permissionOverrides)
                 ),
-                ownerPlanTier: owner?.planTier ?? 'STARTER',
-                ownerSubscriptionActive: owner?.subscriptionActive ?? false,
             };
         });
     },
     createStore: async (userId: string, input: CreateStoreInput) => {
         const user = await prisma.user.findUnique({
             where: { id: userId },
-            select: { subscriptionActive: true, planTier: true, emailVerifiedAt: true },
+            select: { emailVerifiedAt: true },
         });
 
         if (!user) {
             throw new AppError('NOT_FOUND', 'User not found', 404);
         }
 
-        if (!user.subscriptionActive) {
-            throw new AppError('SUBSCRIPTION_REQUIRED', 'Active subscription required to create a store.', 403);
-        }
         if (!user.emailVerifiedAt) {
             throw new AppError('EMAIL_NOT_VERIFIED', 'Verify your email to create a store.', 403);
-        }
-
-        const plan = getPlanConfig(user.planTier);
-        const ownedStores = await prisma.storeMember.count({
-            where: {
-                userId,
-                role: Role.OWNER,
-                deletedAt: null,
-                store: {
-                    deletedAt: null,
-                },
-            },
-        });
-
-        if (ownedStores >= plan.maxStores) {
-            throw new AppError(
-                'PLAN_LIMIT',
-                `${plan.label} plan allows up to ${plan.maxStores} store${plan.maxStores === 1 ? '' : 's'}.`,
-                403
-            );
         }
 
         const memberships = await prisma.storeMember.findMany({

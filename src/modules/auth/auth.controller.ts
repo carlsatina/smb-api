@@ -30,7 +30,7 @@ import {
 
 export const register = asyncHandler(async (req: Request, res: Response) => {
     const payload = registerSchema.parse(req.body);
-    const result = await authService.register(payload.email, payload.password, payload.fullName, payload.plan, payload.inviteToken);
+    const result = await authService.register(payload.email, payload.password, payload.fullName, payload.inviteToken);
     setRefreshTokenCookie(res, result.refreshToken);
     const csrfToken = generateCsrfToken();
     setCsrfTokenCookie(res, csrfToken);
@@ -158,10 +158,6 @@ export const me = asyncHandler(async (req: AuthRequest, res: Response) => {
             id: true,
             email: true,
             fullName: true,
-            subscriptionActive: true,
-            planTier: true,
-            grantedPlan: true,
-            grantedUntil: true,
             isSuperAdmin: true,
             emailVerifiedAt: true,
             userFeatures: {

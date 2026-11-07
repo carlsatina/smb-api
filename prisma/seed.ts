@@ -5,7 +5,6 @@ import {
     ItemType,
     MovementType,
     PaymentMethod,
-    PlanTier,
     Prisma,
     PrismaClient,
     ProductType,
@@ -46,8 +45,6 @@ const main = async () => {
     const ensureUser = async (input: {
         email: string;
         fullName: string;
-        subscriptionActive: boolean;
-        planTier: PlanTier;
     }) => {
         let record = await prisma.user.findUnique({ where: { email: input.email } });
         if (!record) {
@@ -57,8 +54,6 @@ const main = async () => {
                     passwordHash: defaultPasswordHash,
                     fullName: input.fullName,
                     emailVerifiedAt: new Date(),
-                    subscriptionActive: input.subscriptionActive,
-                    planTier: input.planTier,
                 },
             });
             return record;
@@ -67,12 +62,6 @@ const main = async () => {
         const updates: Prisma.UserUpdateInput = {};
         if (record.fullName !== input.fullName) {
             updates.fullName = input.fullName;
-        }
-        if (record.subscriptionActive !== input.subscriptionActive) {
-            updates.subscriptionActive = input.subscriptionActive;
-        }
-        if (record.planTier !== input.planTier) {
-            updates.planTier = input.planTier;
         }
         if (!record.emailVerifiedAt) {
             updates.emailVerifiedAt = new Date();
@@ -90,8 +79,6 @@ const main = async () => {
     const ownerUser = await ensureUser({
         email: seedUserEmail,
         fullName: 'Owner User',
-        subscriptionActive: true,
-        planTier: PlanTier.STANDARD,
     });
 
     const roleUsers = await Promise.all(
@@ -100,8 +87,6 @@ const main = async () => {
             user: await ensureUser({
                 email: entry.email,
                 fullName: entry.fullName,
-                subscriptionActive: true,
-                planTier: PlanTier.STANDARD,
             }),
         }))
     );
@@ -109,15 +94,11 @@ const main = async () => {
     const starterOwner = await ensureUser({
         email: starterOwnerEmail,
         fullName: 'Starter Owner',
-        subscriptionActive: true,
-        planTier: PlanTier.STARTER,
     });
 
     const growthOwner = await ensureUser({
         email: growthOwnerEmail,
         fullName: 'Growth Owner',
-        subscriptionActive: true,
-        planTier: PlanTier.GROWTH,
     });
 
     let store = await prisma.store.findFirst({

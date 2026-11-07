@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { PlanTier } from '@prisma/client';
 import prisma from '../../lib/prisma';
 import { createStoreWithOwner, createTestApp, createUser, resetDb } from './helpers';
 
@@ -90,8 +89,8 @@ describe('ingredient CSV import/export', () => {
         expect(res.body.error?.code).toBe('INVALID_FILE_TYPE');
     });
 
-    it('blocks import/export on the Starter plan', async () => {
-        const { user, password } = await createUser({ planTier: PlanTier.STARTER });
+    it('allows import/export for every owner (no plan gating)', async () => {
+        const { user, password } = await createUser();
         const store = await createStoreWithOwner(user.id);
 
         const agent = createTestApp();
@@ -101,6 +100,6 @@ describe('ingredient CSV import/export', () => {
             .get(`/api/v1/stores/${store.id}/ingredients/export`)
             .set('Authorization', `Bearer ${token}`);
 
-        expect(res.status).toBe(403);
+        expect(res.status).toBe(200);
     });
 });

@@ -1,6 +1,5 @@
 import { Router } from 'express';
 import { authMiddleware } from '../../middlewares/auth';
-import { requirePlanFeature } from '../../middlewares/requirePlanFeature';
 import { requirePermission, requireStoreMember } from '../../middlewares/requirePermission';
 import { createExpense, deleteExpense, getExpense, listExpenses, updateExpense } from './expense.controller';
 
@@ -8,7 +7,6 @@ export const expenseRouter = Router({ mergeParams: true });
 
 
 expenseRouter.use(authMiddleware);
-expenseRouter.use(requirePlanFeature('expenses'));
 
 expenseRouter.get('/', requireStoreMember(), listExpenses);
 expenseRouter.get('/:expenseId', requireStoreMember(), getExpense);

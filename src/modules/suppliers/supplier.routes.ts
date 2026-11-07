@@ -1,6 +1,5 @@
 import { Router } from 'express';
 import { authMiddleware } from '../../middlewares/auth';
-import { requirePlanFeature } from '../../middlewares/requirePlanFeature';
 import { requirePermission } from '../../middlewares/requirePermission';
 import { createSupplier, deleteSupplier, getSupplier, listSuppliers, updateSupplier } from './supplier.controller';
 
@@ -8,7 +7,6 @@ export const supplierRouter = Router({ mergeParams: true });
 
 
 supplierRouter.use(authMiddleware);
-supplierRouter.use(requirePlanFeature('purchaseOrders'));
 
 supplierRouter.get('/', requirePermission('inventory.view'), listSuppliers);
 supplierRouter.get('/:supplierId', requirePermission('inventory.view'), getSupplier);

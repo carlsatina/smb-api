@@ -3,14 +3,12 @@ import crypto from 'crypto';
 import prisma from '../../lib/prisma';
 import { createApp } from '../../src/app';
 import request from 'supertest';
-import { PlanTier, ProductType, Role } from '@prisma/client';
+import { ProductType, Role } from '@prisma/client';
 
 type CreateUserInput = {
     email?: string;
     password?: string;
     fullName?: string;
-    subscriptionActive?: boolean;
-    planTier?: PlanTier;
 };
 
 type CreateStoreInput = {
@@ -51,7 +49,7 @@ export const resetDb = async () => {
     await prisma.dailySalesCashierEntry.deleteMany();
     await prisma.dailySalesEntry.deleteMany();
     await prisma.dailySalesGoal.deleteMany();
-    await prisma.billingNotice.deleteMany();
+    await prisma.billingStatement.deleteMany();
     await prisma.userFeature.deleteMany();
     await prisma.storeInvite.deleteMany();
     await prisma.storeMember.deleteMany();
@@ -72,8 +70,6 @@ export const createUser = async (input: CreateUserInput = {}) => {
             email,
             passwordHash,
             fullName: input.fullName ?? 'Test User',
-            subscriptionActive: input.subscriptionActive ?? true,
-            planTier: input.planTier ?? PlanTier.STANDARD,
         },
     });
 

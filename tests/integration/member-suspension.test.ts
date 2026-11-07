@@ -255,38 +255,4 @@ describe('member suspension', () => {
         expect(res.body.error?.code).toBe('ALREADY_MEMBER');
         expect(res.body.error?.message).toContain('suspended');
     });
-
-    it('frees the suspended member’s plan seat for someone else', async () => {
-        const { user: owner, password: ownerPassword } = await createUser();
-        const store = await createStoreWithOwner(owner.id);
-        const plan = (await import('../../src/config/plans')).getPlanConfig(owner.planTier);
-
-        // Fill the store to its plan limit — the owner already holds one seat.
-        const filler: string[] = [];
-        for (let i = 0; i < plan.maxUsersPerStore - 1; i += 1) {
-            const { user } = await createUser();
-            const created = await addMember(store.id, user.id, Role.CASHIER);
-            filler.push(created.id);
-        }
-
-        const agent = createTestApp();
-        const ownerToken = await login(agent, owner.email, ownerPassword);
-        const invite = (email: string) =>
-            agent
-                .post(`/api/v1/stores/${store.id}/invites`)
-                .set('Authorization', `Bearer ${ownerToken}`)
-                .send({ email, role: Role.CASHIER });
-
-        const full = await invite('over-the-limit@example.com');
-        expect(full.status).toBe(403);
-        expect(full.body.error?.code).toBe('PLAN_LIMIT');
-
-        await agent
-            .patch(`/api/v1/stores/${store.id}/members/${filler[0]}/suspension`)
-            .set('Authorization', `Bearer ${ownerToken}`)
-            .send({ suspended: true });
-
-        const withSeat = await invite('now-there-is-room@example.com');
-        expect(withSeat.status).toBe(201);
-    });
 });

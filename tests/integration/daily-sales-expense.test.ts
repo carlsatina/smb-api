@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { PlanTier, Prisma, Role } from '@prisma/client';
+import { Prisma, Role } from '@prisma/client';
 import prisma from '../../lib/prisma';
 import { createStoreWithOwner, createTestApp, createUser, resetDb } from './helpers';
 
@@ -32,7 +32,7 @@ describe('daily-sales expense (add-only, stored on the entry)', () => {
     });
 
     it('reports the stored entry expense and never reads itemized Expense records', async () => {
-        const { user: owner, password: ownerPw } = await createUser({ planTier: PlanTier.STANDARD });
+        const { user: owner, password: ownerPw } = await createUser();
         const store = await createStoreWithOwner(owner.id, { timezone: 'UTC' });
         await grantDailySales(owner.id, owner.id);
 

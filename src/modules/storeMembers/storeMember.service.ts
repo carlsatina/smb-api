@@ -2,7 +2,6 @@ import crypto from 'crypto';
 import { Prisma, Role } from '@prisma/client';
 import prisma from '../../../lib/prisma';
 import { env } from '../../config/env';
-import { getPlanConfig } from '../../config/plans';
 import { AppError } from '../../shared/errors';
 import {
     effectivePermissions,
@@ -146,72 +145,6 @@ const ensureOwnerRemaining = async (storeId: string, excludeMemberId: string) =>
 
     if (owners === 0) {
         throw new AppError('OWNER_REQUIRED', 'At least one owner must remain on the store.', 400);
-    }
-};
-
-const getStorePlanOwner = async (storeId: string) => {
-    const owner = await prisma.storeMember.findFirst({
-        where: {
-            storeId,
-            role: Role.OWNER,
-            deletedAt: null,
-        },
-        orderBy: {
-            createdAt: 'asc',
-        },
-        select: {
-            user: {
-                select: {
-                    planTier: true,
-                    subscriptionActive: true,
-                },
-            },
-        },
-    });
-
-    if (!owner?.user) {
-        throw new AppError('OWNER_REQUIRED', 'Store owner not found.', 400);
-    }
-
-    return owner.user;
-};
-
-const ensureMemberCapacity = async (storeId: string, includeInvites: boolean) => {
-    const owner = await getStorePlanOwner(storeId);
-    if (!owner.subscriptionActive) {
-        throw new AppError('SUBSCRIPTION_REQUIRED', 'Active subscription required to manage members.', 403);
-    }
-
-    const plan = getPlanConfig(owner.planTier);
-    // Suspended members are excluded: they cannot use the store, so holding a
-    // seat for them would tax the owner for access nobody has. The cost is that
-    // reinstating runs this check again and can be refused by a store that has
-    // since filled up — which setMemberSuspension says out loud.
-    const memberCount = await prisma.storeMember.count({
-        where: {
-            storeId,
-            deletedAt: null,
-            suspendedAt: null,
-        },
-    });
-    const inviteCount = includeInvites
-        ? await prisma.storeInvite.count({
-              where: {
-                  storeId,
-                  acceptedAt: null,
-                  expiresAt: {
-                      gt: new Date(),
-                  },
-              },
-          })
-        : 0;
-
-    if (memberCount + inviteCount >= plan.maxUsersPerStore) {
-        throw new AppError(
-            'PLAN_LIMIT',
-            `${plan.label} plan allows up to ${plan.maxUsersPerStore} users per store.`,
-            403
-        );
     }
 };
 
@@ -435,14 +368,8 @@ export const storeMemberService = {
             return;
         }
 
-        if (suspended) {
-            if (member.role === Role.OWNER) {
-                await ensureOwnerRemaining(storeId, member.id);
-            }
-        } else {
-            // Their seat was released on suspension, so coming back needs one
-            // free — the store may have invited someone else in the meantime.
-            await ensureMemberCapacity(storeId, false);
+        if (suspended && member.role === Role.OWNER) {
+            await ensureOwnerRemaining(storeId, member.id);
         }
 
         // One transaction so the log cannot claim a suspension the column never
@@ -655,8 +582,6 @@ export const storeMemberService = {
             throw new AppError('INVITE_EXISTS', 'An active invite already exists for this email.', 409);
         }
 
-        await ensureMemberCapacity(storeId, true);
-
         const token = crypto.randomBytes(24).toString('hex');
         const tokenHash = hashToken(token);
         const expiresInDays = input.expiresInDays ?? 7;
@@ -791,8 +716,6 @@ export const storeMemberService = {
         if (existingMember) {
             throw new AppError('ALREADY_MEMBER', 'You are already a member of this store.', 409);
         }
-
-        await ensureMemberCapacity(storeId, false);
 
         const membership = await prisma.$transaction(async (tx) => {
             const member = await tx.storeMember.create({

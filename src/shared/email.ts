@@ -203,22 +203,21 @@ const formatPeso = (amount: number) =>
     `₱${amount.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 const buildBillingMessage = (payload: {
-    storeName: string;
+    ownerName?: string | null;
     periodLabel: string;
-    receiptCount: number;
-    feeRate: number;
+    lines: { storeName: string; position: number; fee: number }[];
     amount: number;
     appLink: string;
 }) => {
+    const storeWord = payload.lines.length === 1 ? 'store' : 'stores';
     return buildStyledEmail({
-        subject: `Billing summary for ${payload.storeName} — ${payload.periodLabel}`,
-        preheader: `Your ${payload.periodLabel} usage summary for ${payload.storeName}.`,
+        subject: `SmB-PoS billing — ${payload.periodLabel}`,
+        preheader: `Your ${payload.periodLabel} bill for ${payload.lines.length} ${storeWord}: ${formatPeso(payload.amount)}.`,
         eyebrow: 'Billing',
-        title: `${payload.periodLabel} billing summary`,
+        title: `${payload.periodLabel} billing statement`,
         body: [
-            `Here is the usage summary for ${payload.storeName} for ${payload.periodLabel}.`,
-            `Receipts processed: ${payload.receiptCount.toLocaleString('en-PH')}`,
-            `Convenience fee: ${formatPeso(payload.feeRate)} per receipt`,
+            `${payload.ownerName ? `Hi ${payload.ownerName}, here` : 'Here'} is your monthly bill for ${payload.periodLabel}.`,
+            ...payload.lines.map((line) => `${line.position}. ${line.storeName}: ${formatPeso(line.fee)}`),
             `Total amount due: ${formatPeso(payload.amount)}`,
         ],
         ctaLabel: 'Open SmB-PoS',
@@ -313,10 +312,9 @@ export const sendPasswordResetEmail = async (payload: {
 
 export const sendBillingEmail = async (payload: {
     to: string;
-    storeName: string;
+    ownerName?: string | null;
     periodLabel: string;
-    receiptCount: number;
-    feeRate: number;
+    lines: { storeName: string; position: number; fee: number }[];
     amount: number;
     appLink: string;
 }) => {

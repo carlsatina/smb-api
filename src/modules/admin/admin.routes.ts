@@ -5,17 +5,14 @@ import {
     getMetrics,
     getStats,
     grantUserFeature,
-    grantUserPlan,
     getUserFeatures,
     listBilling,
     listBillingHistory,
     listStores,
     listUsers,
-    overrideUserPlan,
     revokeUserFeature,
-    revokeUserGrant,
     sendBillingNotice,
-    toggleBillingMode,
+    setBillingPayment,
     toggleSuperAdmin,
 } from './admin.controller';
 
@@ -27,12 +24,9 @@ adminRouter.get('/users', listUsers);
 adminRouter.get('/stores', listStores);
 adminRouter.get('/billing', listBilling);
 adminRouter.get('/billing/history', listBillingHistory);
-adminRouter.post('/billing/:storeId/send', sendBillingNotice);
-adminRouter.patch('/users/:userId/plan', overrideUserPlan);
-adminRouter.patch('/users/:userId/grant', grantUserPlan);
-adminRouter.delete('/users/:userId/grant', revokeUserGrant);
+adminRouter.post('/billing/:ownerId/send', sendBillingNotice);
+adminRouter.patch('/billing/:ownerId/payment', setBillingPayment);
 adminRouter.patch('/users/:userId/super-admin', toggleSuperAdmin);
-adminRouter.patch('/users/:userId/billing-mode', toggleBillingMode);
 adminRouter.get('/stats', getStats);
 adminRouter.get('/metrics', getMetrics);
 adminRouter.get('/users/:userId/features', getUserFeatures);

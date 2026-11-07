@@ -1,7 +1,6 @@
 import { Role } from '@prisma/client';
 import { Router } from 'express';
 import { authMiddleware } from '../../middlewares/auth';
-import { requirePlanFeature } from '../../middlewares/requirePlanFeature';
 import { requireStoreRole } from '../../middlewares/requireStoreRole';
 import { requirePermission } from '../../middlewares/requirePermission';
 import { csvUploadSingle } from '../../middlewares/csvUpload';
@@ -23,10 +22,9 @@ const catalogCsvGuard = [requireStoreRole([Role.OWNER, Role.ADMIN]), requirePerm
 
 
 ingredientRouter.use(authMiddleware);
-ingredientRouter.use(requirePlanFeature('ingredients'));
 
-ingredientRouter.get('/export', ...catalogCsvGuard, requirePlanFeature('importExport'), exportIngredients);
-ingredientRouter.post('/import', ...catalogCsvGuard, requirePlanFeature('importExport'), csvUploadSingle, importIngredients);
+ingredientRouter.get('/export', ...catalogCsvGuard, exportIngredients);
+ingredientRouter.post('/import', ...catalogCsvGuard, csvUploadSingle, importIngredients);
 ingredientRouter.get('/', requirePermission('inventory.view'), listIngredients);
 ingredientRouter.get('/:ingredientId', requirePermission('inventory.view'), getIngredient);
 ingredientRouter.post('/', requirePermission('inventory.manage'), createIngredient);

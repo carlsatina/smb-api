@@ -9,7 +9,6 @@ import {
     MovementType,
     OrderType,
     PaymentMethod,
-    PlanTier,
     Prisma,
     PrismaClient,
     ProductType,
@@ -179,8 +178,6 @@ export const seedLemonCo = async (customPrisma?: PrismaClient) => {
                     passwordHash: defaultPasswordHash,
                     fullName,
                     emailVerifiedAt: new Date(),
-                    subscriptionActive: true,
-                    planTier: PlanTier.GROWTH,
                 },
             });
             console.log(`Created user ${email} (${fullName})`);

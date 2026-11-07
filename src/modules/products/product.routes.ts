@@ -1,7 +1,6 @@
 import { Role } from '@prisma/client';
 import { Router } from 'express';
 import { authMiddleware } from '../../middlewares/auth';
-import { requirePlanFeature } from '../../middlewares/requirePlanFeature';
 import { requireStoreRole } from '../../middlewares/requireStoreRole';
 import { requirePermission } from '../../middlewares/requirePermission';
 import { csvUploadSingle } from '../../middlewares/csvUpload';
@@ -24,8 +23,8 @@ const catalogCsvGuard = [requireStoreRole([Role.OWNER, Role.ADMIN]), requirePerm
 
 productRouter.use(authMiddleware);
 
-productRouter.get('/export', ...catalogCsvGuard, requirePlanFeature('importExport'), exportProducts);
-productRouter.post('/import', ...catalogCsvGuard, requirePlanFeature('importExport'), csvUploadSingle, importProducts);
+productRouter.get('/export', ...catalogCsvGuard, exportProducts);
+productRouter.post('/import', ...catalogCsvGuard, csvUploadSingle, importProducts);
 productRouter.get('/', requirePermission('inventory.view', 'pos.use'), listProducts);
 productRouter.get('/:productId', requirePermission('inventory.view', 'pos.use'), getProduct);
 productRouter.post('/', requirePermission('inventory.manage'), createProduct);

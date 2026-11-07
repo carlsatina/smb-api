@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { PlanTier, Role } from '@prisma/client';
+import { Role } from '@prisma/client';
 import prisma from '../../lib/prisma';
 import { createStoreWithOwner, createTestApp, createUser, resetDb } from './helpers';
 
@@ -14,8 +14,8 @@ describe('expense CRUD', () => {
         await resetDb();
     });
 
-    it('lets an owner create, list, update and delete expenses (STANDARD plan)', async () => {
-        const { user, password } = await createUser({ planTier: PlanTier.STANDARD });
+    it('lets an owner create, list, update and delete expenses', async () => {
+        const { user, password } = await createUser();
         const store = await createStoreWithOwner(user.id);
         const agent = createTestApp();
         const token = await login(agent, user.email, password);
@@ -52,7 +52,7 @@ describe('expense CRUD', () => {
     });
 
     it('filters by date range and category', async () => {
-        const { user, password } = await createUser({ planTier: PlanTier.STANDARD });
+        const { user, password } = await createUser();
         const store = await createStoreWithOwner(user.id);
         const agent = createTestApp();
         const token = await login(agent, user.email, password);
@@ -71,7 +71,7 @@ describe('expense CRUD', () => {
     });
 
     it('defaults source to MANUAL and filters by source', async () => {
-        const { user, password } = await createUser({ planTier: PlanTier.STANDARD });
+        const { user, password } = await createUser();
         const store = await createStoreWithOwner(user.id);
         const agent = createTestApp();
         const token = await login(agent, user.email, password);
@@ -98,8 +98,8 @@ describe('expense CRUD', () => {
         expect(manualOnly.body.expenses[0].category).toBe('Utilities');
     });
 
-    it('blocks a STARTER plan owner via requirePlanFeature', async () => {
-        const { user, password } = await createUser({ planTier: PlanTier.STARTER });
+    it('lets every owner use expenses (no plan gating)', async () => {
+        const { user, password } = await createUser();
         const store = await createStoreWithOwner(user.id);
         const agent = createTestApp();
         const token = await login(agent, user.email, password);
@@ -107,12 +107,11 @@ describe('expense CRUD', () => {
         const res = await agent
             .get(`/api/v1/stores/${store.id}/expenses`)
             .set('Authorization', `Bearer ${token}`);
-        expect(res.status).toBe(403);
-        expect(res.body.error?.code).toBe('PLAN_LIMIT');
+        expect(res.status).toBe(200);
     });
 
     it('allows a VIEWER to read but not write', async () => {
-        const { user: owner } = await createUser({ planTier: PlanTier.STANDARD });
+        const { user: owner } = await createUser();
         const store = await createStoreWithOwner(owner.id);
         const { user: viewer, password } = await createUser();
         await prisma.storeMember.create({ data: { storeId: store.id, userId: viewer.id, role: Role.VIEWER } });
@@ -131,7 +130,7 @@ describe('expense CRUD', () => {
     });
 
     it('hides Rent/Salaries from non-privileged roles but shows them to owner/admin', async () => {
-        const { user: owner, password: ownerPw } = await createUser({ planTier: PlanTier.STANDARD });
+        const { user: owner, password: ownerPw } = await createUser();
         const store = await createStoreWithOwner(owner.id);
         const { user: cashier, password: cashierPw } = await createUser();
         await prisma.storeMember.create({ data: { storeId: store.id, userId: cashier.id, role: Role.CASHIER } });

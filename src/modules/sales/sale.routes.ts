@@ -2,7 +2,6 @@ import { Role } from '@prisma/client';
 import { Router } from 'express';
 import multer from 'multer';
 import { authMiddleware } from '../../middlewares/auth';
-import { requirePlanFeature } from '../../middlewares/requirePlanFeature';
 import { requireStoreRole } from '../../middlewares/requireStoreRole';
 import { requirePermission, requireStoreMember } from '../../middlewares/requirePermission';
 import { exportSales, finalizeSale, getSale, importSales, listSales, updateSale, voidSale, deleteSale } from './sale.controller';
@@ -24,8 +23,8 @@ const csvUpload = multer({
 
 saleRouter.use(authMiddleware);
 
-saleRouter.get('/export', requireStoreMember(), requirePlanFeature('importExport'), exportSales);
-saleRouter.post('/import', requirePermission('sales.edit'), requirePlanFeature('importExport'), csvUpload.single('file'), importSales);
+saleRouter.get('/export', requireStoreMember(), exportSales);
+saleRouter.post('/import', requirePermission('sales.edit'), csvUpload.single('file'), importSales);
 saleRouter.get('/', requireStoreMember(), listSales);
 saleRouter.get('/:saleId', requireStoreMember(), getSale);
 saleRouter.post('/finalize', requirePermission('pos.use'), finalizeSale);

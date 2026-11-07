@@ -15,12 +15,6 @@ enum Role {
   VIEWER
 }
 
-enum PlanTier {
-  STARTER
-  STANDARD
-  GROWTH
-}
-
 enum ProductType {
   READY_MADE
   RECIPE
@@ -102,11 +96,6 @@ model User {
   passwordHash       String
   fullName           String?
   emailVerifiedAt    DateTime?
-  subscriptionActive Boolean   @default(true)
-  payPerReceipt      Boolean   @default(false)
-  planTier           PlanTier  @default(STARTER)
-  grantedPlan        PlanTier?
-  grantedUntil       DateTime?
   isSuperAdmin       Boolean   @default(false)
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
@@ -125,7 +114,8 @@ model User {
   dailySalesEntries       DailySalesEntry[]        @relation("DailySalesCreatedBy")
   dailySalesGoals         DailySalesGoal[]         @relation("DailySalesGoalCreatedBy")
   cashierEntries          DailySalesCashierEntry[] @relation("CashierEntryUser")
-  billingNoticesSent      BillingNotice[]          @relation("BillingNoticeSentBy")
+  billingStatements       BillingStatement[]       @relation("BillingStatementOwner")
+  billingStatementsSent   BillingStatement[]       @relation("BillingStatementSentBy")
   expenses                Expense[]                @relation("ExpenseCreatedBy")
   staffCompensations      StaffCompensation[]      @relation("StaffCompensationCreatedBy")
   scheduleWeeks           ScheduleWeek[]           @relation("ScheduleWeekCreatedBy")
@@ -134,25 +124,34 @@ model User {
   dailyInventoryReports   DailyInventoryReport[]   @relation("DailyInventoryCreatedBy")
 }
 
-model BillingNotice {
-  id           String   @id @default(cuid())
-  storeId      String
-  year         Int
-  month        Int
-  receiptCount Int
-  feeRate      Decimal  @db.Decimal(12, 2)
-  amount       Decimal  @db.Decimal(12, 2)
-  sentToEmail  String
-  sentById     String
-  sentAt       DateTime @default(now())
+// Monthly per-store billing, one statement per store owner per month.
+// Stores are priced by their position in the owner's store list (oldest first):
+// see src/config/billing.ts. `lines` snapshots the per-store breakdown at the
+// time the statement was sent or marked paid, so later store changes don't
+// rewrite what the owner was billed.
+model BillingStatement {
+  id          String    @id @default(cuid())
+  ownerId     String
+  year        Int
+  month       Int
+  storeCount  Int
+  // [{ storeId, storeName, storeType, position, fee }]
+  lines       Json      @default("[]")
+  amount      Decimal   @db.Decimal(12, 2)
+  sentAt      DateTime?
+  sentToEmail String?
+  sentById    String?
+  sendCount   Int       @default(0)
+  paidAt      DateTime?
+  paymentNote String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
-  store  Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  sentBy User  @relation("BillingNoticeSentBy", fields: [sentById], references: [id])
+  owner  User  @relation("BillingStatementOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  sentBy User? @relation("BillingStatementSentBy", fields: [sentById], references: [id], onDelete: SetNull)
 
-  // Append-only billing log: one row per send (no upsert), so resends are
-  // recorded individually. The "last billed" is just the most recent row.
-  @@index([storeId, year, month])
-  @@index([sentAt])
+  @@unique([ownerId, year, month])
+  @@index([year, month])
 }
 
 model RefreshToken {
@@ -234,7 +233,6 @@ model Store {
   suppliers          Supplier[]
   dailySalesEntries  DailySalesEntry[]
   dailySalesGoals    DailySalesGoal[]
-  billingNotices     BillingNotice[]
   expenses           Expense[]
   shiftPresets       ShiftPreset[]
   staffCompensations StaffCompensation[]

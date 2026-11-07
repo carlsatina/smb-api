@@ -164,7 +164,6 @@ export const authService = {
         email: string,
         password: string,
         fullName?: string,
-        plan?: 'STANDARD' | 'GROWTH',
         inviteToken?: string
     ) => {
         const normalizedEmail = normalizeEmail(email);
@@ -180,15 +179,12 @@ export const authService = {
             : false;
 
         const passwordHash = await bcrypt.hash(password, 10);
-        const trialEndsAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
         const user = await prisma.user.create({
             data: {
                 email: normalizedEmail,
                 passwordHash,
                 fullName,
-                subscriptionActive: true,
                 ...(invitePreVerified && { emailVerifiedAt: new Date() }),
-                ...(plan && { grantedPlan: plan, grantedUntil: trialEndsAt }),
             },
         });
 
@@ -205,10 +201,6 @@ export const authService = {
                 id: user.id,
                 email: user.email,
                 fullName: user.fullName,
-                subscriptionActive: user.subscriptionActive,
-                planTier: user.planTier,
-                grantedPlan: user.grantedPlan,
-                grantedUntil: user.grantedUntil,
                 isSuperAdmin: user.isSuperAdmin,
                 emailVerified: Boolean(user.emailVerifiedAt),
             },
@@ -246,10 +238,6 @@ export const authService = {
                 id: user.id,
                 email: user.email,
                 fullName: user.fullName,
-                subscriptionActive: user.subscriptionActive,
-                planTier: user.planTier,
-                grantedPlan: user.grantedPlan,
-                grantedUntil: user.grantedUntil,
                 isSuperAdmin: user.isSuperAdmin,
                 emailVerified: Boolean(user.emailVerifiedAt),
             },

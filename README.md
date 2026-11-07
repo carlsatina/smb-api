@@ -62,7 +62,6 @@ Store-scoped routes follow `/api/v1/stores/:storeId/<feature>` and run, in order
 
 1. `authMiddleware` — validates the JWT, populates `req.user` with `{ sub, email }`.
 2. `requireStoreRole([roles])` — checks the user's membership/role in the store.
-3. `requirePlanFeature(feature)` — gates premium features by the store owner's subscription.
 
 ### Error handling
 
@@ -79,7 +78,7 @@ PostgreSQL via Prisma. Schema: `prisma/schema.prisma`.
 Key models: `User`, `Store`, `StoreMember`, `Product` (`READY_MADE` / `RECIPE`),
 `Ingredient`, `Recipe`, `Sale`, `PurchaseOrder`, `InventoryMovement`.
 
-Key enums: `Role`, `PlanTier`, `ProductType`, `MovementType`, `SaleStatus`,
+Key enums: `Role`, `ProductType`, `MovementType`, `SaleStatus`,
 `PurchaseOrderStatus`.
 
 ## Environment variables

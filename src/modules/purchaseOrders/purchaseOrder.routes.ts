@@ -1,6 +1,5 @@
 import { Router } from 'express';
 import { authMiddleware } from '../../middlewares/auth';
-import { requirePlanFeature } from '../../middlewares/requirePlanFeature';
 import { requirePermission } from '../../middlewares/requirePermission';
 import {
     createPurchaseOrder,
@@ -17,7 +16,6 @@ export const purchaseOrderRouter = Router({ mergeParams: true });
 
 
 purchaseOrderRouter.use(authMiddleware);
-purchaseOrderRouter.use(requirePlanFeature('purchaseOrders'));
 
 purchaseOrderRouter.get('/', requirePermission('inventory.view'), listPurchaseOrders);
 purchaseOrderRouter.get('/receipts/summary', requirePermission('inventory.view'), getPurchaseReceiptSummary);

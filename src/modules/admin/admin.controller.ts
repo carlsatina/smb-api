@@ -6,18 +6,19 @@ import { asyncHandler } from '../../shared/asyncHandler';
 import { sendBillingEmail } from '../../shared/email';
 import { AppError } from '../../shared/errors';
 import { getMetricsSnapshot } from '../../shared/metrics';
+import { BillingLine, buildBillingLines, currentBillingMonth, pricingSummary } from '../../config/billing';
 import { adminRepository } from './admin.repository';
-import { grantPlanSchema, planOverrideSchema, sendBillingSchema, toggleBillingModeSchema, toggleSuperAdminSchema } from './admin.schemas';
+import { billingPaymentSchema, sendBillingSchema, toggleSuperAdminSchema } from './admin.schemas';
 
 const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
 export const listUsers = asyncHandler(async (req: AuthRequest, res: Response) => {
     const page = Math.max(1, Number(req.query.page) || 1);
     const result = await adminRepository.findAllUsers(page);
-    const users = result.users.map((u) => ({
+    const users = result.users.map(({ _count, emailVerifiedAt, ...u }) => ({
         ...u,
-        emailVerified: Boolean(u.emailVerifiedAt),
-        emailVerifiedAt: undefined,
+        emailVerified: Boolean(emailVerifiedAt),
+        ownedStores: _count.memberships,
     }));
     res.status(200).json({ users, total: result.total, page: result.page, pageSize: result.pageSize });
 });
@@ -39,78 +40,6 @@ export const listStores = asyncHandler(async (req: AuthRequest, res: Response) =
         salesThisMonth: s.salesThisMonth,
     }));
     res.status(200).json({ stores, total: result.total, page: result.page, pageSize: result.pageSize, month, year });
-});
-
-export const overrideUserPlan = asyncHandler(async (req: AuthRequest, res: Response) => {
-    const payload = planOverrideSchema.parse(req.body);
-    const userId = req.params.userId;
-
-    const existing = await prisma.user.findUnique({ where: { id: userId } });
-    if (!existing) {
-        throw new AppError('NOT_FOUND', 'User not found.', 404);
-    }
-
-    const data = {
-        planTier: payload.planTier,
-        subscriptionActive: payload.subscriptionActive,
-        ...(payload.emailVerified === undefined
-            ? {}
-            : { emailVerifiedAt: payload.emailVerified ? (existing.emailVerifiedAt ?? new Date()) : null }),
-    };
-
-    const updated = await adminRepository.updateUserPlan(userId, data);
-    res.status(200).json({
-        user: {
-            id: updated.id,
-            email: updated.email,
-            planTier: updated.planTier,
-            subscriptionActive: updated.subscriptionActive,
-            emailVerified: Boolean(updated.emailVerifiedAt),
-        },
-    });
-});
-
-export const grantUserPlan = asyncHandler(async (req: AuthRequest, res: Response) => {
-    const payload = grantPlanSchema.parse(req.body);
-    const userId = req.params.userId;
-
-    const existing = await prisma.user.findUnique({ where: { id: userId } });
-    if (!existing) {
-        throw new AppError('NOT_FOUND', 'User not found.', 404);
-    }
-
-    const grantedUntil = payload.grantedUntil ? new Date(payload.grantedUntil) : null;
-    const updated = await adminRepository.updateUserGrant(userId, payload.grantedPlan, grantedUntil);
-
-    res.status(200).json({
-        user: {
-            id: updated.id,
-            email: updated.email,
-            planTier: updated.planTier,
-            grantedPlan: updated.grantedPlan,
-            grantedUntil: updated.grantedUntil,
-        },
-    });
-});
-
-export const revokeUserGrant = asyncHandler(async (req: AuthRequest, res: Response) => {
-    const userId = req.params.userId;
-
-    const existing = await prisma.user.findUnique({ where: { id: userId } });
-    if (!existing) {
-        throw new AppError('NOT_FOUND', 'User not found.', 404);
-    }
-
-    const updated = await adminRepository.revokeUserGrant(userId);
-    res.status(200).json({
-        user: {
-            id: updated.id,
-            email: updated.email,
-            planTier: updated.planTier,
-            grantedPlan: updated.grantedPlan,
-            grantedUntil: updated.grantedUntil,
-        },
-    });
 });
 
 export const toggleSuperAdmin = asyncHandler(async (req: AuthRequest, res: Response) => {
@@ -137,41 +66,50 @@ export const toggleSuperAdmin = asyncHandler(async (req: AuthRequest, res: Respo
     });
 });
 
-export const toggleBillingMode = asyncHandler(async (req: AuthRequest, res: Response) => {
-    const payload = toggleBillingModeSchema.parse(req.body);
-    const userId = req.params.userId;
+const parseBillingPeriod = (query: AuthRequest['query']) => {
+    const current = currentBillingMonth();
+    const monthRaw = Number(query.month);
+    const yearRaw = Number(query.year);
+    return {
+        month: monthRaw >= 1 && monthRaw <= 12 ? monthRaw : current.month,
+        year: yearRaw >= 2020 && yearRaw <= 2100 ? yearRaw : current.year,
+    };
+};
 
-    const existing = await prisma.user.findUnique({ where: { id: userId } });
-    if (!existing) {
-        throw new AppError('NOT_FOUND', 'User not found.', 404);
-    }
+type StatementRecord = NonNullable<Awaited<ReturnType<typeof adminRepository.findBillingStatement>>> & {
+    sentBy?: { email: string } | null;
+};
 
-    const updated = await adminRepository.updateUserBillingMode(userId, payload.payPerReceipt);
-    res.status(200).json({
-        user: {
-            id: updated.id,
-            email: updated.email,
-            payPerReceipt: updated.payPerReceipt,
-        },
-    });
-});
+const serializeStatement = (statement: StatementRecord | null) =>
+    statement
+        ? {
+              id: statement.id,
+              storeCount: statement.storeCount,
+              lines: statement.lines as unknown as BillingLine[],
+              amount: Number(statement.amount),
+              sentAt: statement.sentAt,
+              sentToEmail: statement.sentToEmail,
+              sentByEmail: statement.sentBy?.email ?? null,
+              sendCount: statement.sendCount,
+              paidAt: statement.paidAt,
+              paymentNote: statement.paymentNote,
+          }
+        : null;
+
+const periodLabelOf = (month: number, year: number) => `${MONTH_NAMES[month - 1]} ${year}`;
 
 export const listBilling = asyncHandler(async (req: AuthRequest, res: Response) => {
-    const now = new Date();
-    const month = Math.min(12, Math.max(1, Number(req.query.month) || now.getMonth() + 1));
-    const year = Math.max(2020, Number(req.query.year) || now.getFullYear());
-    const result = await adminRepository.findBillingStores(month, year);
-    const stores = result.map((s) => ({
-        id: s.id,
-        name: s.name,
-        currency: s.currency,
-        owner: s.owner,
-        receiptCount: s.receiptCount,
-        lastBilledAt: s.lastNotice?.sentAt ?? null,
-        lastBilledAmount: s.lastNotice ? Number(s.lastNotice.amount) : null,
-        lastBilledReceipts: s.lastNotice?.receiptCount ?? null,
-    }));
-    res.status(200).json({ stores, month, year });
+    const { month, year } = parseBillingPeriod(req.query);
+    const rows = await adminRepository.findBillingOwners(year, month);
+    const owners = rows
+        .map((row) => ({
+            owner: row.owner,
+            lines: row.lines,
+            amount: row.amount,
+            statement: serializeStatement(row.statement),
+        }))
+        .sort((a, b) => b.lines.length - a.lines.length || a.owner.email.localeCompare(b.owner.email));
+    res.status(200).json({ owners, month, year, pricing: pricingSummary() });
 });
 
 export const listBillingHistory = asyncHandler(async (req: AuthRequest, res: Response) => {
@@ -182,49 +120,55 @@ export const listBillingHistory = asyncHandler(async (req: AuthRequest, res: Res
     const filterByMonth = Boolean(month && year);
 
     const rows = await adminRepository.findBillingHistory(
-        filterByMonth ? month : undefined,
-        filterByMonth ? year : undefined
+        filterByMonth ? year : undefined,
+        filterByMonth ? month : undefined
     );
 
     const entries = rows.map((r) => ({
-        id: r.id,
-        storeName: r.store.name,
-        sentToEmail: r.sentToEmail,
-        sentByEmail: r.sentBy?.email ?? null,
+        ...serializeStatement(r)!,
         year: r.year,
         month: r.month,
-        receiptCount: r.receiptCount,
-        feeRate: Number(r.feeRate),
-        amount: Number(r.amount),
-        sentAt: r.sentAt,
+        ownerEmail: r.owner.email,
+        ownerName: r.owner.fullName,
     }));
 
     res.status(200).json({ entries });
 });
 
+// Paid statements are frozen: what the owner paid for stays what we show.
+// Anything else is re-priced from the owner's current stores.
+const resolveStatementLines = async (ownerId: string, year: number, month: number) => {
+    const existing = await adminRepository.findBillingStatement(ownerId, year, month);
+    if (existing?.paidAt) {
+        return { lines: existing.lines as unknown as BillingLine[], frozen: true };
+    }
+    const stores = await adminRepository.findOwnerBillableStores(ownerId, year, month);
+    return { lines: buildBillingLines(stores), frozen: false };
+};
+
 export const sendBillingNotice = asyncHandler(async (req: AuthRequest, res: Response) => {
-    const storeId = req.params.storeId;
+    const ownerId = req.params.ownerId;
     const payload = sendBillingSchema.parse(req.body);
 
-    const store = await adminRepository.findStoreWithOwner(storeId);
-    if (!store) {
-        throw new AppError('NOT_FOUND', 'Store not found.', 404);
-    }
-    const owner = store.members[0]?.user;
-    if (!owner?.email) {
-        throw new AppError('NO_OWNER', 'This store has no owner email to bill.', 400);
+    const owner = await prisma.user.findUnique({
+        where: { id: ownerId },
+        select: { id: true, email: true, fullName: true },
+    });
+    if (!owner) {
+        throw new AppError('NOT_FOUND', 'Owner not found.', 404);
     }
 
-    const receiptCount = await adminRepository.getStoreReceiptCount(storeId, payload.month, payload.year);
-    const amount = Math.round(receiptCount * payload.feeRate * 100) / 100;
-    const periodLabel = `${MONTH_NAMES[payload.month - 1]} ${payload.year}`;
+    const { lines } = await resolveStatementLines(ownerId, payload.year, payload.month);
+    if (lines.length === 0) {
+        throw new AppError('NOTHING_TO_BILL', 'This owner had no stores in that month.', 400);
+    }
+    const amount = lines.reduce((total, line) => total + line.fee, 0);
 
     const result = await sendBillingEmail({
         to: owner.email,
-        storeName: store.name,
-        periodLabel,
-        receiptCount,
-        feeRate: payload.feeRate,
+        ownerName: owner.fullName,
+        periodLabel: periodLabelOf(payload.month, payload.year),
+        lines,
         amount,
         appLink: env.appBaseUrl,
     });
@@ -234,31 +178,76 @@ export const sendBillingNotice = asyncHandler(async (req: AuthRequest, res: Resp
         return;
     }
 
-    const notice = await adminRepository.recordBillingNotice({
-        storeId,
-        year: payload.year,
-        month: payload.month,
-        receiptCount,
-        feeRate: payload.feeRate,
-        amount,
-        sentToEmail: owner.email,
-        sentById: req.user!.sub,
+    const statement = await adminRepository.upsertBillingStatement(ownerId, payload.year, payload.month, {
+        lines,
+        sent: { sentToEmail: owner.email, sentById: req.user!.sub },
     });
 
-    res.status(200).json({
-        sent: true,
-        notice: {
-            sentAt: notice.sentAt,
-            amount: Number(notice.amount),
-            receiptCount: notice.receiptCount,
-            sentToEmail: notice.sentToEmail,
-        },
+    res.status(200).json({ sent: true, statement: serializeStatement(statement) });
+});
+
+export const setBillingPayment = asyncHandler(async (req: AuthRequest, res: Response) => {
+    const ownerId = req.params.ownerId;
+    const payload = billingPaymentSchema.parse(req.body);
+
+    const owner = await prisma.user.findUnique({ where: { id: ownerId }, select: { id: true } });
+    if (!owner) {
+        throw new AppError('NOT_FOUND', 'Owner not found.', 404);
+    }
+
+    if (payload.paid) {
+        const { lines, frozen } = await resolveStatementLines(ownerId, payload.year, payload.month);
+        if (lines.length === 0) {
+            throw new AppError('NOTHING_TO_BILL', 'This owner had no stores in that month.', 400);
+        }
+        const statement = await adminRepository.upsertBillingStatement(ownerId, payload.year, payload.month, {
+            ...(frozen ? {} : { lines }),
+            paid: { paidAt: new Date(), paymentNote: payload.note ?? null },
+        });
+        res.status(200).json({ statement: serializeStatement(statement) });
+        return;
+    }
+
+    const existing = await adminRepository.findBillingStatement(ownerId, payload.year, payload.month);
+    if (!existing) {
+        res.status(200).json({ statement: null });
+        return;
+    }
+    const statement = await adminRepository.upsertBillingStatement(ownerId, payload.year, payload.month, {
+        paid: { paidAt: null, paymentNote: null },
     });
+    res.status(200).json({ statement: serializeStatement(statement) });
 });
 
 export const getStats = asyncHandler(async (req: AuthRequest, res: Response) => {
-    const stats = await adminRepository.getPlatformStats();
-    res.status(200).json({ stats });
+    const { year, month } = currentBillingMonth();
+    const [base, billing] = await Promise.all([
+        adminRepository.getPlatformStats(),
+        adminRepository.findBillingOwners(year, month),
+    ]);
+
+    // A paid statement's snapshot is what was collected; otherwise use live pricing.
+    const amountFor = (row: (typeof billing)[number]) =>
+        row.statement?.paidAt ? Number(row.statement.amount) : row.amount;
+    const billable = billing.filter((row) => row.lines.length > 0 || row.statement?.paidAt);
+
+    res.status(200).json({
+        stats: {
+            ...base,
+            billing: {
+                month,
+                year,
+                billableOwners: billable.length,
+                billableStores: billing.reduce((total, row) => total + row.lines.length, 0),
+                expectedRevenue: billable.reduce((total, row) => total + amountFor(row), 0),
+                collectedRevenue: billable
+                    .filter((row) => row.statement?.paidAt)
+                    .reduce((total, row) => total + amountFor(row), 0),
+                paidOwners: billable.filter((row) => row.statement?.paidAt).length,
+                pricing: pricingSummary(),
+            },
+        },
+    });
 });
 
 export const getMetrics = asyncHandler(async (req: AuthRequest, res: Response) => {
