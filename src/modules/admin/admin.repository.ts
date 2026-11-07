@@ -1,8 +1,75 @@
-import { Prisma } from '@prisma/client';
+import { BillingDiscountType, Prisma } from '@prisma/client';
 import prisma from '../../../lib/prisma';
-import { billingMonthRange, BillingLine, buildBillingLines, sumBillingLines } from '../../config/billing';
+import {
+    billingMonthRange,
+    buildBillingLines,
+    isActiveForMonth,
+    ownerDiscountForMonth,
+    PricedStatement,
+    priceStatement,
+} from '../../config/billing';
 
 const PAGE_SIZE = 50;
+
+const billingOwnerSelect = {
+    id: true,
+    email: true,
+    fullName: true,
+    billingDiscountType: true,
+    billingDiscountValue: true,
+    billingDiscountEndsAt: true,
+    billingDiscountNote: true,
+} as const;
+
+const billableStoreSelect = {
+    id: true,
+    name: true,
+    storeType: true,
+    createdAt: true,
+    billingExempt: true,
+    billingExemptEndsAt: true,
+    billingExemptNote: true,
+} as const;
+
+type BillableStoreRow = {
+    id: string;
+    name: string;
+    storeType: string;
+    createdAt: Date;
+    billingExempt: boolean;
+    billingExemptEndsAt: Date | null;
+    billingExemptNote: string | null;
+};
+
+type BillingOwnerRow = {
+    billingDiscountType: BillingDiscountType | null;
+    billingDiscountValue: Prisma.Decimal | null;
+    billingDiscountEndsAt: Date | null;
+    billingDiscountNote: string | null;
+};
+
+const priceOwnerMonth = (stores: BillableStoreRow[], owner: BillingOwnerRow, monthStart: Date) =>
+    priceStatement(
+        buildBillingLines(
+            stores.map((store) => ({
+                id: store.id,
+                name: store.name,
+                storeType: store.storeType,
+                createdAt: store.createdAt,
+                exempt: store.billingExempt && isActiveForMonth(store.billingExemptEndsAt, monthStart),
+            }))
+        ),
+        ownerDiscountForMonth(owner, monthStart)
+    );
+
+const serializeStoreBilling = (store: BillableStoreRow) => ({
+    id: store.id,
+    name: store.name,
+    storeType: store.storeType,
+    billingExempt: store.billingExempt,
+    billingExemptEndsAt: store.billingExemptEndsAt,
+    billingExemptNote: store.billingExemptNote,
+});
 
 export const adminRepository = {
     findAllUsers: async (page: number) => {
@@ -98,7 +165,8 @@ export const adminRepository = {
     },
 
     // Every owner with at least one store that existed during the month, with
-    // their stores priced oldest-first, alongside any statement already on file.
+    // their stores priced oldest-first (free stores excluded from ranking) and
+    // their discount applied, alongside any statement already on file.
     findBillingOwners: async (year: number, month: number) => {
         const { start, end } = billingMonthRange(year, month);
 
@@ -109,28 +177,25 @@ export const adminRepository = {
                     OR: [{ deletedAt: null }, { deletedAt: { gte: start } }],
                 },
                 select: {
-                    id: true,
-                    name: true,
-                    storeType: true,
-                    createdAt: true,
+                    ...billableStoreSelect,
                     members: {
                         where: { role: 'OWNER', deletedAt: null },
                         orderBy: { createdAt: 'asc' },
                         take: 1,
-                        select: { user: { select: { id: true, email: true, fullName: true } } },
+                        select: { user: { select: billingOwnerSelect } },
                     },
                 },
             }),
             prisma.billingStatement.findMany({
                 where: { year, month },
                 include: {
-                    owner: { select: { id: true, email: true, fullName: true } },
+                    owner: { select: billingOwnerSelect },
                     sentBy: { select: { email: true } },
                 },
             }),
         ]);
 
-        type Owner = { id: string; email: string; fullName: string | null };
+        type Owner = (typeof stores)[number]['members'][number]['user'];
         const byOwner = new Map<string, { owner: Owner; stores: typeof stores }>();
         for (const store of stores) {
             const owner = store.members[0]?.user;
@@ -145,40 +210,72 @@ export const adminRepository = {
 
         return [...ownerIds].map((ownerId) => {
             const entry = byOwner.get(ownerId);
-            const statement = statementByOwner.get(ownerId) ?? null;
-            const lines = buildBillingLines(entry?.stores ?? []);
+            const owner = entry?.owner ?? statementByOwner.get(ownerId)!.owner;
             return {
-                owner: entry?.owner ?? statement!.owner,
-                lines,
-                amount: sumBillingLines(lines),
-                statement,
+                owner,
+                priced: priceOwnerMonth(entry?.stores ?? [], owner, start),
+                stores: (entry?.stores ?? []).map(serializeStoreBilling),
+                statement: statementByOwner.get(ownerId) ?? null,
             };
         });
     },
 
-    findOwnerBillableStores: async (ownerId: string, year: number, month: number) => {
+    priceOwnerForMonth: async (ownerId: string, year: number, month: number) => {
         const { start, end } = billingMonthRange(year, month);
-        const stores = await prisma.store.findMany({
-            where: {
-                createdAt: { lt: end },
-                OR: [{ deletedAt: null }, { deletedAt: { gte: start } }],
-                members: { some: { userId: ownerId, role: 'OWNER', deletedAt: null } },
-            },
-            select: {
-                id: true,
-                name: true,
-                storeType: true,
-                createdAt: true,
-                members: {
-                    where: { role: 'OWNER', deletedAt: null },
-                    orderBy: { createdAt: 'asc' },
-                    take: 1,
-                    select: { userId: true },
+        const [owner, stores] = await Promise.all([
+            prisma.user.findUnique({ where: { id: ownerId }, select: billingOwnerSelect }),
+            prisma.store.findMany({
+                where: {
+                    createdAt: { lt: end },
+                    OR: [{ deletedAt: null }, { deletedAt: { gte: start } }],
+                    members: { some: { userId: ownerId, role: 'OWNER', deletedAt: null } },
                 },
-            },
-        });
+                select: {
+                    ...billableStoreSelect,
+                    members: {
+                        where: { role: 'OWNER', deletedAt: null },
+                        orderBy: { createdAt: 'asc' },
+                        take: 1,
+                        select: { userId: true },
+                    },
+                },
+            }),
+        ]);
+        if (!owner) return null;
         // Only stores where this user is the billed (earliest) owner.
-        return stores.filter((s) => s.members[0]?.userId === ownerId);
+        const billed = stores.filter((s) => s.members[0]?.userId === ownerId);
+        return { owner, priced: priceOwnerMonth(billed, owner, start) };
+    },
+
+    updateOwnerDiscount: async (
+        ownerId: string,
+        discount: { type: BillingDiscountType; value: number; endsAt: Date | null; note: string | null } | null
+    ) => {
+        return prisma.user.update({
+            where: { id: ownerId },
+            data: {
+                billingDiscountType: discount?.type ?? null,
+                billingDiscountValue: discount?.value ?? null,
+                billingDiscountEndsAt: discount?.endsAt ?? null,
+                billingDiscountNote: discount?.note ?? null,
+            },
+            select: billingOwnerSelect,
+        });
+    },
+
+    updateStoreExemption: async (
+        storeId: string,
+        exemption: { endsAt: Date | null; note: string | null } | null
+    ) => {
+        return prisma.store.update({
+            where: { id: storeId },
+            data: {
+                billingExempt: Boolean(exemption),
+                billingExemptEndsAt: exemption?.endsAt ?? null,
+                billingExemptNote: exemption?.note ?? null,
+            },
+            select: billableStoreSelect,
+        });
     },
 
     findBillingStatement: async (ownerId: string, year: number, month: number) => {
@@ -192,16 +289,19 @@ export const adminRepository = {
         year: number,
         month: number,
         data: {
-            lines?: BillingLine[];
+            priced?: PricedStatement;
             sent?: { sentToEmail: string; sentById: string };
             paid?: { paidAt: Date | null; paymentNote: string | null };
         }
     ) => {
-        const snapshot = data.lines
+        const snapshot = data.priced
             ? {
-                  lines: data.lines as unknown as Prisma.InputJsonValue,
-                  storeCount: data.lines.length,
-                  amount: sumBillingLines(data.lines),
+                  lines: data.priced.lines as unknown as Prisma.InputJsonValue,
+                  storeCount: data.priced.lines.length,
+                  subtotal: data.priced.subtotal,
+                  discountAmount: data.priced.discountAmount,
+                  discountNote: data.priced.discountNote,
+                  amount: data.priced.amount,
               }
             : {};
         const sent = data.sent

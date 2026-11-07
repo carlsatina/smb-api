@@ -102,4 +102,86 @@ describe('admin per-store billing', () => {
             expect(res.status).toBe(201);
         }
     });
+
+    it('applies owner discounts and free stores, and refuses a fully-free month', async () => {
+        const { user: owner } = await createUser();
+        const first = await createStoreWithOwner(owner.id, { name: 'First' });
+        const second = await createStoreWithOwner(owner.id, { name: 'Second' });
+        await prisma.store.update({ where: { id: first.id }, data: { createdAt: new Date(Date.now() - 10 * 86400000) } });
+
+        const agent = createTestApp();
+        const token = await adminLogin(agent);
+        const auth = (req: any) => req.set('Authorization', `Bearer ${token}`);
+        const rowFor = async () => {
+            const list = await auth(agent.get('/api/v1/admin/billing'));
+            return { body: list.body, row: list.body.owners.find((o: any) => o.owner.id === owner.id) };
+        };
+
+        // Free the oldest store: the second store takes the 500 slot.
+        const exempt = await auth(
+            agent.patch(`/api/v1/admin/billing/stores/${first.id}/exemption`).send({ exempt: true, note: 'Pilot' })
+        );
+        expect(exempt.status).toBe(200);
+        expect(exempt.body.store.billingExempt).toBe(true);
+        let { row, body } = await rowFor();
+        expect(row.lines.map((l: any) => [l.storeName, l.position, l.fee])).toEqual([
+            ['Second', 1, 500],
+            ['First', null, 0],
+        ]);
+        expect(row.amount).toBe(500);
+
+        // 20% off on top.
+        const discount = await auth(
+            agent.patch(`/api/v1/admin/billing/owners/${owner.id}/discount`).send({
+                discount: { type: 'PERCENT', value: 20, note: 'Friend' },
+            })
+        );
+        expect(discount.status).toBe(200);
+        expect(discount.body.owner.discount).toMatchObject({ type: 'PERCENT', value: 20, note: 'Friend' });
+        ({ row, body } = await rowFor());
+        expect(row).toMatchObject({ subtotal: 500, discountAmount: 100, amount: 400 });
+
+        const sent = await auth(
+            agent.post(`/api/v1/admin/billing/${owner.id}/send`).send({ month: body.month, year: body.year })
+        );
+        expect(sent.body.statement).toMatchObject({ subtotal: 500, discountAmount: 100, amount: 400 });
+        expect(sent.body.statement.discountNote).toBe('20% off (Friend)');
+
+        // A discount that ended last month no longer applies.
+        const lastMonth = body.month === 1 ? { y: body.year - 1, m: 12 } : { y: body.year, m: body.month - 1 };
+        await auth(
+            agent.patch(`/api/v1/admin/billing/owners/${owner.id}/discount`).send({
+                discount: { type: 'FIXED', value: 100, throughYear: lastMonth.y, throughMonth: lastMonth.m },
+            })
+        );
+        ({ row } = await rowFor());
+        expect(row.discountAmount).toBe(0);
+
+        // Both stores free: nothing to bill.
+        await auth(agent.patch(`/api/v1/admin/billing/stores/${second.id}/exemption`).send({ exempt: true }));
+        ({ row } = await rowFor());
+        expect(row.amount).toBe(0);
+        const refused = await auth(
+            agent.patch(`/api/v1/admin/billing/${owner.id}/payment`).send({ month: body.month, year: body.year, paid: true })
+        );
+        expect(refused.status).toBe(400);
+        expect(refused.body.error?.code).toBe('NOTHING_TO_BILL');
+
+        // Clearing works.
+        const cleared = await auth(agent.patch(`/api/v1/admin/billing/owners/${owner.id}/discount`).send({ discount: null }));
+        expect(cleared.body.owner.discount).toBeNull();
+        const unexempt = await auth(agent.patch(`/api/v1/admin/billing/stores/${second.id}/exemption`).send({ exempt: false }));
+        expect(unexempt.body.store).toMatchObject({ billingExempt: false, billingExemptNote: null });
+    });
+
+    it('rejects a percent discount above 100', async () => {
+        const { user: owner } = await createUser();
+        const agent = createTestApp();
+        const token = await adminLogin(agent);
+        const res = await agent
+            .patch(`/api/v1/admin/billing/owners/${owner.id}/discount`)
+            .set('Authorization', `Bearer ${token}`)
+            .send({ discount: { type: 'PERCENT', value: 120 } });
+        expect(res.status).toBe(400);
+    });
 });

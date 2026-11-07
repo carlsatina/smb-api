@@ -31,6 +31,11 @@ enum MovementType {
   TRANSFER_IN
 }
 
+enum BillingDiscountType {
+  PERCENT
+  FIXED
+}
+
 enum StoreType {
   RETAIL
   WAREHOUSE
@@ -97,6 +102,12 @@ model User {
   fullName           String?
   emailVerifiedAt    DateTime?
   isSuperAdmin       Boolean   @default(false)
+  // Owner-level billing discount, set by platform admins. Applies to billing
+  // months that start before billingDiscountEndsAt (null = no end).
+  billingDiscountType   BillingDiscountType?
+  billingDiscountValue  Decimal?             @db.Decimal(12, 2)
+  billingDiscountEndsAt DateTime?
+  billingDiscountNote   String?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
@@ -135,9 +146,12 @@ model BillingStatement {
   year        Int
   month       Int
   storeCount  Int
-  // [{ storeId, storeName, storeType, position, fee }]
-  lines       Json      @default("[]")
-  amount      Decimal   @db.Decimal(12, 2)
+  // [{ storeId, storeName, storeType, position, fee, exempt }]
+  lines          Json      @default("[]")
+  subtotal       Decimal   @default(0) @db.Decimal(12, 2)
+  discountAmount Decimal   @default(0) @db.Decimal(12, 2)
+  discountNote   String?
+  amount         Decimal   @db.Decimal(12, 2)
   sentAt      DateTime?
   sentToEmail String?
   sentById    String?
@@ -216,6 +230,11 @@ model Store {
   aiModel                  String?
   aiApiKeyEncrypted        String?
   aiApiKeyLast4            String?
+  // Complimentary store: billed at 0 and left out of the owner's price ranking
+  // for billing months that start before billingExemptEndsAt (null = no end).
+  billingExempt            Boolean     @default(false)
+  billingExemptEndsAt      DateTime?
+  billingExemptNote        String?
   createdAt                DateTime    @default(now())
   updatedAt                DateTime    @updatedAt
   deletedAt                DateTime?

@@ -6,9 +6,22 @@ import { asyncHandler } from '../../shared/asyncHandler';
 import { sendBillingEmail } from '../../shared/email';
 import { AppError } from '../../shared/errors';
 import { getMetricsSnapshot } from '../../shared/metrics';
-import { BillingLine, buildBillingLines, currentBillingMonth, pricingSummary } from '../../config/billing';
+import { BillingDiscountType, Prisma } from '@prisma/client';
+import {
+    billingMonthRange,
+    BillingLine,
+    currentBillingMonth,
+    PricedStatement,
+    pricingSummary,
+} from '../../config/billing';
 import { adminRepository } from './admin.repository';
-import { billingPaymentSchema, sendBillingSchema, toggleSuperAdminSchema } from './admin.schemas';
+import {
+    billingPaymentSchema,
+    ownerDiscountSchema,
+    sendBillingSchema,
+    storeExemptionSchema,
+    toggleSuperAdminSchema,
+} from './admin.schemas';
 
 const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
@@ -86,6 +99,9 @@ const serializeStatement = (statement: StatementRecord | null) =>
               id: statement.id,
               storeCount: statement.storeCount,
               lines: statement.lines as unknown as BillingLine[],
+              subtotal: Number(statement.subtotal),
+              discountAmount: Number(statement.discountAmount),
+              discountNote: statement.discountNote,
               amount: Number(statement.amount),
               sentAt: statement.sentAt,
               sentToEmail: statement.sentToEmail,
@@ -96,16 +112,46 @@ const serializeStatement = (statement: StatementRecord | null) =>
           }
         : null;
 
+type OwnerRecord = {
+    id: string;
+    email: string;
+    fullName: string | null;
+    billingDiscountType: BillingDiscountType | null;
+    billingDiscountValue: Prisma.Decimal | null;
+    billingDiscountEndsAt: Date | null;
+    billingDiscountNote: string | null;
+};
+
+// The discount as configured (it may not apply to the month being viewed).
+const serializeOwner = (owner: OwnerRecord) => ({
+    id: owner.id,
+    email: owner.email,
+    fullName: owner.fullName,
+    discount:
+        owner.billingDiscountType && owner.billingDiscountValue !== null
+            ? {
+                  type: owner.billingDiscountType,
+                  value: Number(owner.billingDiscountValue),
+                  endsAt: owner.billingDiscountEndsAt,
+                  note: owner.billingDiscountNote,
+              }
+            : null,
+});
+
 const periodLabelOf = (month: number, year: number) => `${MONTH_NAMES[month - 1]} ${year}`;
+
+// "Through November 2026" is stored as the start of the following billing month.
+const endsAfterMonth = (year?: number | null, month?: number | null) =>
+    year && month ? billingMonthRange(year, month).end : null;
 
 export const listBilling = asyncHandler(async (req: AuthRequest, res: Response) => {
     const { month, year } = parseBillingPeriod(req.query);
     const rows = await adminRepository.findBillingOwners(year, month);
     const owners = rows
         .map((row) => ({
-            owner: row.owner,
-            lines: row.lines,
-            amount: row.amount,
+            owner: serializeOwner(row.owner),
+            ...row.priced,
+            stores: row.stores,
             statement: serializeStatement(row.statement),
         }))
         .sort((a, b) => b.lines.length - a.lines.length || a.owner.email.localeCompare(b.owner.email));
@@ -136,40 +182,53 @@ export const listBillingHistory = asyncHandler(async (req: AuthRequest, res: Res
 });
 
 // Paid statements are frozen: what the owner paid for stays what we show.
-// Anything else is re-priced from the owner's current stores.
-const resolveStatementLines = async (ownerId: string, year: number, month: number) => {
-    const existing = await adminRepository.findBillingStatement(ownerId, year, month);
-    if (existing?.paidAt) {
-        return { lines: existing.lines as unknown as BillingLine[], frozen: true };
+// Anything else is re-priced from the owner's current stores and discount.
+const resolveStatement = async (ownerId: string, year: number, month: number) => {
+    const [existing, live] = await Promise.all([
+        adminRepository.findBillingStatement(ownerId, year, month),
+        adminRepository.priceOwnerForMonth(ownerId, year, month),
+    ]);
+    if (!live) {
+        throw new AppError('NOT_FOUND', 'Owner not found.', 404);
     }
-    const stores = await adminRepository.findOwnerBillableStores(ownerId, year, month);
-    return { lines: buildBillingLines(stores), frozen: false };
+    if (existing?.paidAt) {
+        const priced: PricedStatement = {
+            lines: existing.lines as unknown as BillingLine[],
+            subtotal: Number(existing.subtotal),
+            discountAmount: Number(existing.discountAmount),
+            discountNote: existing.discountNote,
+            amount: Number(existing.amount),
+        };
+        return { owner: live.owner, priced, frozen: true };
+    }
+    return { owner: live.owner, priced: live.priced, frozen: false };
+};
+
+const assertBillable = (priced: PricedStatement) => {
+    if (priced.lines.length === 0) {
+        throw new AppError('NOTHING_TO_BILL', 'This owner had no stores in that month.', 400);
+    }
+    if (priced.amount <= 0) {
+        throw new AppError('NOTHING_TO_BILL', 'Nothing is due: every store is free or fully discounted.', 400);
+    }
 };
 
 export const sendBillingNotice = asyncHandler(async (req: AuthRequest, res: Response) => {
     const ownerId = req.params.ownerId;
     const payload = sendBillingSchema.parse(req.body);
 
-    const owner = await prisma.user.findUnique({
-        where: { id: ownerId },
-        select: { id: true, email: true, fullName: true },
-    });
-    if (!owner) {
-        throw new AppError('NOT_FOUND', 'Owner not found.', 404);
-    }
-
-    const { lines } = await resolveStatementLines(ownerId, payload.year, payload.month);
-    if (lines.length === 0) {
-        throw new AppError('NOTHING_TO_BILL', 'This owner had no stores in that month.', 400);
-    }
-    const amount = lines.reduce((total, line) => total + line.fee, 0);
+    const { owner, priced } = await resolveStatement(ownerId, payload.year, payload.month);
+    assertBillable(priced);
 
     const result = await sendBillingEmail({
         to: owner.email,
         ownerName: owner.fullName,
         periodLabel: periodLabelOf(payload.month, payload.year),
-        lines,
-        amount,
+        lines: priced.lines,
+        subtotal: priced.subtotal,
+        discountAmount: priced.discountAmount,
+        discountNote: priced.discountNote,
+        amount: priced.amount,
         appLink: env.appBaseUrl,
     });
 
@@ -179,7 +238,7 @@ export const sendBillingNotice = asyncHandler(async (req: AuthRequest, res: Resp
     }
 
     const statement = await adminRepository.upsertBillingStatement(ownerId, payload.year, payload.month, {
-        lines,
+        priced,
         sent: { sentToEmail: owner.email, sentById: req.user!.sub },
     });
 
@@ -190,18 +249,11 @@ export const setBillingPayment = asyncHandler(async (req: AuthRequest, res: Resp
     const ownerId = req.params.ownerId;
     const payload = billingPaymentSchema.parse(req.body);
 
-    const owner = await prisma.user.findUnique({ where: { id: ownerId }, select: { id: true } });
-    if (!owner) {
-        throw new AppError('NOT_FOUND', 'Owner not found.', 404);
-    }
-
     if (payload.paid) {
-        const { lines, frozen } = await resolveStatementLines(ownerId, payload.year, payload.month);
-        if (lines.length === 0) {
-            throw new AppError('NOTHING_TO_BILL', 'This owner had no stores in that month.', 400);
-        }
+        const { priced, frozen } = await resolveStatement(ownerId, payload.year, payload.month);
+        assertBillable(priced);
         const statement = await adminRepository.upsertBillingStatement(ownerId, payload.year, payload.month, {
-            ...(frozen ? {} : { lines }),
+            ...(frozen ? {} : { priced }),
             paid: { paidAt: new Date(), paymentNote: payload.note ?? null },
         });
         res.status(200).json({ statement: serializeStatement(statement) });
@@ -219,6 +271,56 @@ export const setBillingPayment = asyncHandler(async (req: AuthRequest, res: Resp
     res.status(200).json({ statement: serializeStatement(statement) });
 });
 
+export const setOwnerDiscount = asyncHandler(async (req: AuthRequest, res: Response) => {
+    const ownerId = req.params.ownerId;
+    const { discount } = ownerDiscountSchema.parse(req.body);
+
+    const existing = await prisma.user.findUnique({ where: { id: ownerId }, select: { id: true } });
+    if (!existing) {
+        throw new AppError('NOT_FOUND', 'Owner not found.', 404);
+    }
+
+    const owner = await adminRepository.updateOwnerDiscount(
+        ownerId,
+        discount
+            ? {
+                  type: discount.type,
+                  value: discount.value,
+                  endsAt: endsAfterMonth(discount.throughYear, discount.throughMonth),
+                  note: discount.note || null,
+              }
+            : null
+    );
+    res.status(200).json({ owner: serializeOwner(owner) });
+});
+
+export const setStoreExemption = asyncHandler(async (req: AuthRequest, res: Response) => {
+    const storeId = req.params.storeId;
+    const payload = storeExemptionSchema.parse(req.body);
+
+    const existing = await prisma.store.findUnique({ where: { id: storeId }, select: { id: true } });
+    if (!existing) {
+        throw new AppError('NOT_FOUND', 'Store not found.', 404);
+    }
+
+    const store = await adminRepository.updateStoreExemption(
+        storeId,
+        payload.exempt
+            ? { endsAt: endsAfterMonth(payload.throughYear, payload.throughMonth), note: payload.note || null }
+            : null
+    );
+    res.status(200).json({
+        store: {
+            id: store.id,
+            name: store.name,
+            storeType: store.storeType,
+            billingExempt: store.billingExempt,
+            billingExemptEndsAt: store.billingExemptEndsAt,
+            billingExemptNote: store.billingExemptNote,
+        },
+    });
+});
+
 export const getStats = asyncHandler(async (req: AuthRequest, res: Response) => {
     const { year, month } = currentBillingMonth();
     const [base, billing] = await Promise.all([
@@ -228,8 +330,8 @@ export const getStats = asyncHandler(async (req: AuthRequest, res: Response) => 
 
     // A paid statement's snapshot is what was collected; otherwise use live pricing.
     const amountFor = (row: (typeof billing)[number]) =>
-        row.statement?.paidAt ? Number(row.statement.amount) : row.amount;
-    const billable = billing.filter((row) => row.lines.length > 0 || row.statement?.paidAt);
+        row.statement?.paidAt ? Number(row.statement.amount) : row.priced.amount;
+    const billable = billing.filter((row) => amountFor(row) > 0);
 
     res.status(200).json({
         stats: {
@@ -238,7 +340,14 @@ export const getStats = asyncHandler(async (req: AuthRequest, res: Response) => 
                 month,
                 year,
                 billableOwners: billable.length,
-                billableStores: billing.reduce((total, row) => total + row.lines.length, 0),
+                billableStores: billing.reduce(
+                    (total, row) => total + row.priced.lines.filter((line) => !line.exempt).length,
+                    0
+                ),
+                freeStores: billing.reduce(
+                    (total, row) => total + row.priced.lines.filter((line) => line.exempt).length,
+                    0
+                ),
                 expectedRevenue: billable.reduce((total, row) => total + amountFor(row), 0),
                 collectedRevenue: billable
                     .filter((row) => row.statement?.paidAt)

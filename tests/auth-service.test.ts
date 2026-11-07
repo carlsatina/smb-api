@@ -42,6 +42,10 @@ describe('authService.login', () => {
             fullName: 'Owner',
             emailVerifiedAt: null,
             isSuperAdmin: false,
+            billingDiscountType: null,
+            billingDiscountValue: null,
+            billingDiscountEndsAt: null,
+            billingDiscountNote: null,
             createdAt: new Date(),
             updatedAt: new Date(),
         });

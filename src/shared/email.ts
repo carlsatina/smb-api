@@ -202,14 +202,23 @@ const buildVerifyEmailMessage = (payload: { verifyLink: string; expiresAt?: Date
 const formatPeso = (amount: number) =>
     `₱${amount.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-const buildBillingMessage = (payload: {
+type BillingEmailPayload = {
     ownerName?: string | null;
     periodLabel: string;
-    lines: { storeName: string; position: number; fee: number }[];
+    lines: { storeName: string; position: number | null; fee: number; exempt?: boolean }[];
+    subtotal: number;
+    discountAmount: number;
+    discountNote: string | null;
     amount: number;
     appLink: string;
-}) => {
+};
+
+const buildBillingMessage = (payload: BillingEmailPayload) => {
     const storeWord = payload.lines.length === 1 ? 'store' : 'stores';
+    const lineText = (line: BillingEmailPayload['lines'][number]) =>
+        line.exempt
+            ? `${line.storeName}: free (complimentary)`
+            : `${line.position}. ${line.storeName}: ${formatPeso(line.fee)}`;
     return buildStyledEmail({
         subject: `SmB-PoS billing — ${payload.periodLabel}`,
         preheader: `Your ${payload.periodLabel} bill for ${payload.lines.length} ${storeWord}: ${formatPeso(payload.amount)}.`,
@@ -217,7 +226,13 @@ const buildBillingMessage = (payload: {
         title: `${payload.periodLabel} billing statement`,
         body: [
             `${payload.ownerName ? `Hi ${payload.ownerName}, here` : 'Here'} is your monthly bill for ${payload.periodLabel}.`,
-            ...payload.lines.map((line) => `${line.position}. ${line.storeName}: ${formatPeso(line.fee)}`),
+            ...payload.lines.map(lineText),
+            ...(payload.discountAmount > 0
+                ? [
+                      `Subtotal: ${formatPeso(payload.subtotal)}`,
+                      `Discount${payload.discountNote ? ` — ${payload.discountNote}` : ''}: −${formatPeso(payload.discountAmount)}`,
+                  ]
+                : []),
             `Total amount due: ${formatPeso(payload.amount)}`,
         ],
         ctaLabel: 'Open SmB-PoS',
@@ -310,14 +325,7 @@ export const sendPasswordResetEmail = async (payload: {
     return { sent: true };
 };
 
-export const sendBillingEmail = async (payload: {
-    to: string;
-    ownerName?: string | null;
-    periodLabel: string;
-    lines: { storeName: string; position: number; fee: number }[];
-    amount: number;
-    appLink: string;
-}) => {
+export const sendBillingEmail = async (payload: BillingEmailPayload & { to: string }) => {
     const message = buildBillingMessage(payload);
     const resendResult = await sendViaResend(payload.to, message);
     if (resendResult.sent) {
