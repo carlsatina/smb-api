@@ -954,6 +954,8 @@ model McpToken {
   tokenPrefix String
   access      McpTokenAccess @default(READ_ONLY)
   lastUsedAt  DateTime?
+  // null = never expires (the owner chose "No expiry").
+  expiresAt   DateTime?
   revokedAt   DateTime?
   createdAt   DateTime       @default(now())
 

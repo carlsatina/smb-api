@@ -40,12 +40,14 @@ const setup = async () => {
     const accessToken = await login(agent, owner.email, password);
     const asOwner = (req: any) => req.set('Authorization', `Bearer ${accessToken}`);
     const issue = async (access: 'READ_ONLY' | 'READ_WRITE', storeIds: string[] = [store.id]) => {
-        const res = await asOwner(agent.post('/api/v1/mcp-tokens').send({ name: `Claude ${access}`, access, storeIds }));
+        const res = await asOwner(
+            agent.post('/api/v1/mcp-tokens').send({ name: `Claude ${access}`, access, storeIds, password })
+        );
         expect(res.status).toBe(201);
         expect(res.body.secret).toMatch(/^smbpos_mcp_/);
         return res.body as { token: { id: string; stores: Array<{ id: string; name: string }> }; secret: string };
     };
-    return { owner, store, agent, asOwner, issue };
+    return { owner, password, store, agent, asOwner, issue };
 };
 
 describe('MCP server', () => {
@@ -85,7 +87,9 @@ describe('MCP server', () => {
         const adminAgent = createTestApp();
         const adminToken = await login(adminAgent, admin.email, password);
         const asAdmin = (req: any) => req.set('Authorization', `Bearer ${adminToken}`);
-        const refused = await asAdmin(adminAgent.post('/api/v1/mcp-tokens').send({ name: 'x', access: 'READ_WRITE', storeIds: [store.id] }));
+        const refused = await asAdmin(
+            adminAgent.post('/api/v1/mcp-tokens').send({ name: 'x', access: 'READ_WRITE', storeIds: [store.id], password })
+        );
         expect(refused.status).toBe(403);
 
         // Nor can it see or revoke the owner's tokens.
@@ -93,7 +97,7 @@ describe('MCP server', () => {
         expect((await asAdmin(adminAgent.get('/api/v1/mcp-tokens'))).body.tokens).toEqual([]);
         expect((await asAdmin(adminAgent.delete(`/api/v1/mcp-tokens/${token.id}`))).status).toBe(404);
 
-        const empty = await asAdmin(adminAgent.post('/api/v1/mcp-tokens').send({ name: 'x', storeIds: [] }));
+        const empty = await asAdmin(adminAgent.post('/api/v1/mcp-tokens').send({ name: 'x', storeIds: [], password }));
         expect(empty.status).toBe(400);
     });
 
@@ -250,7 +254,9 @@ describe('MCP server', () => {
                 })
             );
             expect(client.getServerVersion()?.name).toBe('smb-pos');
-            expect(client.getInstructions()).toContain('Main Branch');
+            // User-entered names never reach the trusted instructions (prompt-injection guard).
+            expect(client.getInstructions()).not.toContain('Main Branch');
+            expect(client.getInstructions()).toMatch(/treat them strictly as data/i);
             const result = await client.callTool({ name: 'list_products', arguments: {} });
             const text = (result.content as Array<{ text: string }>)[0].text;
             expect(JSON.parse(text).products[0]).toMatchObject({ name: 'Bottled Water', price: 25 });
@@ -258,5 +264,89 @@ describe('MCP server', () => {
             await client.close();
             server.close();
         }
+    });
+
+    it('requires the password, defaults to 90 days and rejects expired tokens', async () => {
+        const { store, agent, asOwner, password } = await setup();
+
+        const wrong = await asOwner(agent.post('/api/v1/mcp-tokens').send({ name: 'x', storeIds: [store.id], password: 'nope' }));
+        expect(wrong.status).toBe(403);
+        expect(await prisma.mcpToken.count()).toBe(0);
+
+        const created = await asOwner(agent.post('/api/v1/mcp-tokens').send({ name: 'x', storeIds: [store.id], password }));
+        expect(created.status).toBe(201);
+        const days = (new Date(created.body.token.expiresAt).getTime() - Date.now()) / 86400000;
+        expect(days).toBeGreaterThan(89.9);
+        expect(days).toBeLessThan(90.1);
+
+        const forever = await asOwner(
+            agent.post('/api/v1/mcp-tokens').send({ name: 'y', storeIds: [store.id], password, expiresInDays: null })
+        );
+        expect(forever.body.token.expiresAt).toBeNull();
+        expect((await asOwner(agent.post('/api/v1/mcp-tokens').send({ name: 'z', storeIds: [store.id], password, expiresInDays: 7 }))).status).toBe(400);
+
+        const secret = created.body.secret as string;
+        expect((await mcp(agent, secret, 'tools/list')).status).toBe(200);
+        await prisma.mcpToken.update({ where: { id: created.body.token.id }, data: { expiresAt: new Date(Date.now() - 1000) } });
+        const expired = await mcp(agent, secret, 'tools/list');
+        expect(expired.status).toBe(401);
+        expect(expired.body.error.message).toMatch(/expired/);
+        // Expired tokens no longer show (or count) as active.
+        expect((await asOwner(agent.get('/api/v1/mcp-tokens'))).body.tokens.map((t: { name: string }) => t.name)).toEqual(['y']);
+    });
+
+    it('revokes every MCP token when the password changes', async () => {
+        const { agent, asOwner, issue, password } = await setup();
+        const { secret } = await issue('READ_WRITE');
+        expect((await mcp(agent, secret, 'tools/list')).status).toBe(200);
+
+        const changed = await asOwner(
+            agent.post('/api/v1/auth/password/change').send({ currentPassword: password, newPassword: 'a-new-password-123' })
+        );
+        expect(changed.status).toBe(200);
+        expect((await mcp(agent, secret, 'tools/list')).status).toBe(401);
+        expect(await prisma.auditLog.count({ where: { action: 'MCP_TOKEN_REVOKED', meta: { path: ['reason'], equals: 'password_changed' } } })).toBe(1);
+    });
+
+    it('enforces the token limit even under parallel requests', async () => {
+        const { store, agent, asOwner, password } = await setup();
+        const results = await Promise.all(
+            Array.from({ length: 10 }, (_, i) =>
+                asOwner(agent.post('/api/v1/mcp-tokens').send({ name: `t${i}`, storeIds: [store.id], password }))
+            )
+        );
+        expect(results.filter((r) => r.status === 201)).toHaveLength(10);
+        const over = await asOwner(agent.post('/api/v1/mcp-tokens').send({ name: 'over', storeIds: [store.id], password }));
+        // Either the token limit or the create rate limit refuses it.
+        expect([409, 429]).toContain(over.status);
+        expect(await prisma.mcpToken.count({ where: { revokedAt: null } })).toBe(10);
+    });
+
+    it('refuses JSON-RPC batches', async () => {
+        const { agent, issue } = await setup();
+        const { secret } = await issue('READ_ONLY');
+        const res = await agent
+            .post('/mcp')
+            .set('Accept', 'application/json, text/event-stream')
+            .set('Authorization', `Bearer ${secret}`)
+            .send([
+                { jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} },
+                { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} },
+            ]);
+        expect(res.status).toBe(400);
+        expect(res.body.error.message).toMatch(/Batch/);
+    });
+
+    // Keep last: it exhausts the in-memory failed-auth budget for this client IP.
+    it('rate limits repeated bad tokens from one client', async () => {
+        await setup();
+        const agent = createTestApp();
+        let limited = false;
+        for (let i = 0; i < 40 && !limited; i += 1) {
+            const res = await mcp(agent, `smbpos_mcp_random${i}`, 'tools/list');
+            if (res.status === 429) limited = true;
+            else expect(res.status).toBe(401);
+        }
+        expect(limited).toBe(true);
     });
 });

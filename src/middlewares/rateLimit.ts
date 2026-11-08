@@ -14,7 +14,7 @@ type RateLimitEntry = {
     resetAt: number;
 };
 
-const getClientIp = (req: Request) => {
+export const getClientIp = (req: Request) => {
     const forwarded = req.headers['x-forwarded-for'];
     if (typeof forwarded === 'string' && forwarded.length > 0) {
         return forwarded.split(',')[0].trim();
@@ -24,6 +24,17 @@ const getClientIp = (req: Request) => {
 
 export const createRateLimiter = (options: RateLimitOptions) => {
     const store = new Map<string, RateLimitEntry>();
+
+    // Drop expired entries at most once per window so the map can't grow
+    // without bound when callers vary their key (e.g. random fake tokens).
+    let nextSweepAt = 0;
+    const sweepExpired = (now: number) => {
+        if (now < nextSweepAt) return;
+        nextSweepAt = now + options.windowMs;
+        for (const [key, entry] of store) {
+            if (now >= entry.resetAt) store.delete(key);
+        }
+    };
 
     const incrementCount = (key: string, now: number) => {
         const entry = store.get(key);
@@ -43,6 +54,7 @@ export const createRateLimiter = (options: RateLimitOptions) => {
         const keyBase = options.keyGenerator ? options.keyGenerator(req) : getClientIp(req);
         const key = keyBase || 'unknown';
         const now = Date.now();
+        sweepExpired(now);
 
         // Check current count before potentially incrementing
         const currentEntry = store.get(key);

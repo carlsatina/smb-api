@@ -1,11 +1,20 @@
 import { McpTokenAccess, Role, StoreType } from '@prisma/client';
-import prisma from '../../../lib/prisma';
 import { AppError } from '../../shared/errors';
-import { AuthRequest } from '../../middlewares/auth';
-import { loadStoreMembership } from '../../middlewares/requireStoreRole';
+import { BILLING_SUSPENDED_MESSAGE } from '../../shared/billingStatus';
+import { PermissionKey } from '../../shared/permissions';
+import { evaluateMembership } from '../../middlewares/requireStoreRole';
+import { mcpTokenRepository } from '../mcpTokens/mcpToken.repository';
 import { hashMcpToken, MCP_TOKEN_PREFIX } from '../mcpTokens/mcpToken.service';
 
-export type McpStore = { id: string; name: string; storeType: StoreType; currency: string };
+export type McpStore = {
+    id: string;
+    name: string;
+    storeType: StoreType;
+    currency: string;
+    /** Store is read-only for non-payment: reads work, writes are refused. */
+    billingSuspended: boolean;
+    permissions: PermissionKey[];
+};
 
 export type McpContext = {
     tokenId: string;
@@ -19,25 +28,6 @@ export type McpContext = {
 // lastUsedAt is informational, so skip the write when it was touched recently.
 const LAST_USED_REFRESH_MS = 60 * 1000;
 
-/**
- * Runs the same membership check every app route uses (member suspension,
- * billing read-only lock, effective permissions) as the token's owner.
- * `method` decides whether the billing lock applies: GET for reads, POST for writes.
- */
-const checkMembership = async (userId: string, storeId: string, method: 'GET' | 'POST') => {
-    const req = {
-        params: { storeId },
-        user: { sub: userId, email: '' },
-        method,
-    } as unknown as AuthRequest;
-    const role = await loadStoreMembership(req);
-    // Tokens are issued by owners; a store they no longer own drops off the token.
-    if (role !== Role.OWNER) {
-        throw new AppError('FORBIDDEN', 'You no longer own this store.', 403);
-    }
-    return req.permissions ?? [];
-};
-
 export const resolveMcpToken = async (authorization: string | undefined): Promise<McpContext> => {
     const match = authorization?.match(/^Bearer\s+(\S+)$/i);
     const raw = match?.[1];
@@ -45,51 +35,37 @@ export const resolveMcpToken = async (authorization: string | undefined): Promis
         throw new AppError('MCP_TOKEN_REQUIRED', 'Send an SMB-PoS MCP token as "Authorization: Bearer <token>".', 401);
     }
 
-    const token = await prisma.mcpToken.findUnique({
-        where: { tokenHash: hashMcpToken(raw) },
-        select: {
-            id: true,
-            name: true,
-            access: true,
-            userId: true,
-            revokedAt: true,
-            lastUsedAt: true,
-            stores: {
-                where: { store: { deletedAt: null } },
-                select: { store: { select: { id: true, name: true, storeType: true, currency: true } } },
-                orderBy: { store: { createdAt: 'asc' } },
-            },
-        },
-    });
+    const token = await mcpTokenRepository.findByHash(hashMcpToken(raw));
     if (!token || token.revokedAt) {
         throw new AppError('MCP_TOKEN_INVALID', 'This MCP token is invalid or has been revoked.', 401);
     }
+    if (token.expiresAt && token.expiresAt <= new Date()) {
+        throw new AppError('MCP_TOKEN_EXPIRED', 'This MCP token has expired. Create a new one in Settings → MCP server.', 401);
+    }
 
-    // Keep only the stores the owner can still access; the token works as long as one remains.
-    const checks = await Promise.all(
-        token.stores.map(({ store }) =>
-            checkMembership(token.userId, store.id, 'GET').then(
-                () => store,
-                () => null
-            )
-        )
+    // One query for all the token's stores, evaluated with the same rules as
+    // every app route. Stores the user no longer owns (or is suspended from)
+    // drop off; the token works as long as one remains.
+    const memberships = await mcpTokenRepository.membershipsFor(
+        token.userId,
+        token.stores.map(({ store }) => store.id)
     );
-    const stores = checks.filter((store): store is McpStore => store !== null);
+    const accessByStore = new Map(memberships.map((m) => [m.storeId, evaluateMembership(m)]));
+    const stores: McpStore[] = [];
+    for (const { store } of token.stores) {
+        const access = accessByStore.get(store.id);
+        if (!access || access.memberSuspended || access.role !== Role.OWNER) continue;
+        stores.push({ ...store, billingSuspended: access.billingSuspended, permissions: access.permissions });
+    }
     if (stores.length === 0) {
         throw new AppError('MCP_TOKEN_INVALID', 'This MCP token no longer has access to any store.', 401);
     }
 
     if (!token.lastUsedAt || Date.now() - token.lastUsedAt.getTime() > LAST_USED_REFRESH_MS) {
-        await prisma.mcpToken.update({ where: { id: token.id }, data: { lastUsedAt: new Date() } });
+        await mcpTokenRepository.touchLastUsed(token.id);
     }
 
-    return {
-        tokenId: token.id,
-        tokenName: token.name,
-        access: token.access,
-        userId: token.userId,
-        stores,
-    };
+    return { tokenId: token.id, tokenName: token.name, access: token.access, userId: token.userId, stores };
 };
 
 /**
@@ -108,13 +84,18 @@ export const resolveStore = (context: McpContext, storeId: string | undefined): 
     return store;
 };
 
-/** Called by every write tool right before it changes anything. */
-export const assertCanWrite = async (context: McpContext, storeId: string) => {
+/**
+ * Called by every write tool right before it changes anything. Membership was
+ * checked when this request was authenticated (each request is independent).
+ */
+export const assertCanWrite = (context: McpContext, store: McpStore) => {
     if (context.access !== McpTokenAccess.READ_WRITE) {
         throw new AppError('MCP_READ_ONLY', 'This token is read-only.', 403);
     }
-    const permissions = await checkMembership(context.userId, storeId, 'POST');
-    if (!permissions.includes('inventory.manage')) {
+    if (store.billingSuspended) {
+        throw new AppError('BILLING_SUSPENDED', BILLING_SUSPENDED_MESSAGE, 402);
+    }
+    if (!store.permissions.includes('inventory.manage')) {
         throw new AppError('FORBIDDEN', "Your role doesn't have permission to do this.", 403);
     }
 };

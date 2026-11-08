@@ -1,5 +1,5 @@
 import { NextFunction, Response } from 'express';
-import { Role } from '@prisma/client';
+import { Prisma, Role } from '@prisma/client';
 import prisma from '../../lib/prisma';
 import { AppError } from '../shared/errors';
 import { BILLING_SUSPENDED_MESSAGE, READ_ONLY_METHODS } from '../shared/billingStatus';
@@ -9,6 +9,43 @@ import {
     parseRolePermissionOverrides,
 } from '../shared/permissions';
 import { AuthRequest } from './auth';
+
+// Shared by loadStoreMembership and the MCP server (which checks several
+// stores in one query), so both apply exactly the same rules.
+export const membershipSelect = {
+    storeId: true,
+    role: true,
+    suspendedAt: true,
+    permissionOverrides: true,
+    store: {
+        select: {
+            rolePermissions: true,
+            // The billed owner (earliest active owner) decides whether
+            // the store is locked for non-payment.
+            members: {
+                where: { role: Role.OWNER, deletedAt: null },
+                orderBy: { createdAt: 'asc' },
+                take: 1,
+                select: { user: { select: { billingSuspendedAt: true } } },
+            },
+        },
+    },
+} satisfies Prisma.StoreMemberSelect;
+
+export type MembershipRow = Prisma.StoreMemberGetPayload<{ select: typeof membershipSelect }>;
+
+export const evaluateMembership = (membership: MembershipRow) => ({
+    role: membership.role,
+    memberSuspended: Boolean(membership.suspendedAt),
+    // Non-payment makes the whole store read-only for every member: reads and
+    // exports still work so nobody loses access to their records.
+    billingSuspended: Boolean(membership.store?.members?.[0]?.user?.billingSuspendedAt),
+    permissions: effectivePermissions(
+        membership.role,
+        parseRolePermissionOverrides(membership.store?.rolePermissions),
+        parseMemberPermissionOverrides(membership.permissionOverrides)
+    ),
+});
 
 /**
  * Verifies the user is an active member of the route's :storeId and attaches
@@ -32,50 +69,28 @@ export const loadStoreMembership = async (req: AuthRequest) => {
             userId,
             deletedAt: null,
         },
-        select: {
-            role: true,
-            suspendedAt: true,
-            permissionOverrides: true,
-            store: {
-                select: {
-                    rolePermissions: true,
-                    // The billed owner (earliest active owner) decides whether
-                    // the store is locked for non-payment.
-                    members: {
-                        where: { role: Role.OWNER, deletedAt: null },
-                        orderBy: { createdAt: 'asc' },
-                        take: 1,
-                        select: { user: { select: { billingSuspendedAt: true } } },
-                    },
-                },
-            },
-        },
+        select: membershipSelect,
     });
 
     if (!membership) {
         throw new AppError('FORBIDDEN', 'Not a member of this store', 403);
     }
 
+    const access = evaluateMembership(membership);
+
     // Suspension is enforced here rather than in each module. Given its own code
     // so the client can say why access stopped instead of a blank "forbidden".
-    if (membership.suspendedAt) {
+    if (access.memberSuspended) {
         throw new AppError('MEMBER_SUSPENDED', 'Your access to this store has been suspended.', 403);
     }
 
-    // Non-payment makes the whole store read-only for every member: reads and
-    // exports still work so nobody loses access to their records.
-    const billingSuspended = Boolean(membership.store?.members?.[0]?.user?.billingSuspendedAt);
-    if (billingSuspended && !READ_ONLY_METHODS.has(req.method)) {
+    if (access.billingSuspended && !READ_ONLY_METHODS.has(req.method)) {
         throw new AppError('BILLING_SUSPENDED', BILLING_SUSPENDED_MESSAGE, 402);
     }
 
-    req.storeRole = membership.role;
-    req.permissions = effectivePermissions(
-        membership.role,
-        parseRolePermissionOverrides(membership.store?.rolePermissions),
-        parseMemberPermissionOverrides(membership.permissionOverrides)
-    );
-    return membership.role;
+    req.storeRole = access.role;
+    req.permissions = access.permissions;
+    return access.role;
 };
 
 /** Role gate, kept for the few owner-only actions that are never delegable. */

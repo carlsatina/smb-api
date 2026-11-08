@@ -5,6 +5,7 @@ import prisma from '../../../lib/prisma';
 import { env } from '../../config/env';
 import { AppError } from '../../shared/errors';
 import { sendPasswordResetEmail, sendVerificationEmail } from '../../shared/email';
+import { mcpTokenRepository } from '../mcpTokens/mcpToken.repository';
 
 const hashToken = (token: string) => {
     return crypto.createHash('sha256').update(token).digest('hex');
@@ -418,6 +419,8 @@ export const authService = {
                 where: { userId: record.userId, revokedAt: null },
                 data: { revokedAt: new Date() },
             });
+            // MCP tokens minted from a compromised session must not outlive the reset.
+            await mcpTokenRepository.revokeAllForUser(tx, record.userId, 'password_reset');
         });
 
         return { ok: true };
@@ -498,6 +501,8 @@ export const authService = {
                 },
                 data: { revokedAt: new Date() },
             });
+            // MCP tokens minted from a compromised session must not outlive the reset.
+            await mcpTokenRepository.revokeAllForUser(tx, userId, 'password_changed');
         });
 
         return { ok: true };

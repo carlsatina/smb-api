@@ -1,8 +1,8 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { McpTokenAccess, Prisma } from '@prisma/client';
 import { z, ZodError } from 'zod';
-import prisma from '../../../lib/prisma';
 import { AppError } from '../../shared/errors';
+import { logger } from '../../shared/logger';
 import { parseSalesChannels } from '../../shared/salesChannels';
 import { parseSubcategoryOptions } from '../../shared/subcategories';
 import { ingredientService } from '../ingredients/ingredient.service';
@@ -12,6 +12,7 @@ import { productCreateSchema, productUpdateSchema } from '../products/product.sc
 import { recipeService } from '../recipes/recipe.service';
 import { recipeLinesUpdateSchema } from '../recipes/recipe.schemas';
 import { assertCanWrite, McpContext, resolveStore } from './mcp.auth';
+import { mcpRepository } from './mcp.repository';
 
 // Sales, payments, team members and secrets (AI key, billing) are deliberately
 // not reachable from here: the server only covers store settings (read-only),
@@ -23,24 +24,32 @@ const num = (value: Prisma.Decimal | number | null | undefined) => (value == nul
 
 const json = (data: unknown) => ({ content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] });
 
-const toolError = (error: unknown) => {
-    let message = 'Something went wrong.';
-    if (error instanceof AppError) {
-        message = error.message;
-    } else if (error instanceof ZodError) {
-        message = `Invalid input: ${error.issues.map((issue) => `${issue.path.join('.') || 'value'}: ${issue.message}`).join('; ')}`;
-    }
-    return { isError: true, content: [{ type: 'text' as const, text: message }] };
-};
+const toolError = (message: string) => ({ isError: true, content: [{ type: 'text' as const, text: message }] });
 
-// Every tool returns a readable error instead of failing the whole MCP request.
-const safe =
-    <A>(handler: (args: A) => Promise<ReturnType<typeof json>>) =>
+/**
+ * Wraps a tool so failures come back as a readable tool error instead of
+ * failing the whole MCP request. Expected errors (validation, not found,
+ * permission) are shown as-is; anything else is logged and hidden.
+ */
+const makeSafe =
+    (context: McpContext) =>
+    <A>(tool: string, handler: (args: A) => Promise<ReturnType<typeof json>>) =>
     async (args: A) => {
         try {
             return await handler(args);
         } catch (error) {
-            return toolError(error);
+            if (error instanceof AppError) return toolError(error.message);
+            if (error instanceof ZodError) {
+                return toolError(
+                    `Invalid input: ${error.issues.map((issue) => `${issue.path.join('.') || 'value'}: ${issue.message}`).join('; ')}`
+                );
+            }
+            logger.error('mcp_tool_failed', {
+                tool,
+                tokenId: context.tokenId,
+                error: error instanceof Error ? error.message : String(error),
+            });
+            return toolError('Something went wrong. Please try again.');
         }
     };
 
@@ -113,15 +122,13 @@ const audit = async (
     entityId: string,
     meta: Record<string, unknown>
 ) => {
-    await prisma.auditLog.create({
-        data: {
-            storeId,
-            actorId: context.userId,
-            action,
-            entityType,
-            entityId,
-            meta: { via: 'MCP', tokenId: context.tokenId, tokenName: context.tokenName, ...meta } as Prisma.InputJsonValue,
-        },
+    await mcpRepository.createAuditLog({
+        storeId,
+        actorId: context.userId,
+        action,
+        entityType,
+        entityId,
+        meta: { via: 'MCP', tokenId: context.tokenId, tokenName: context.tokenName, ...meta } as Prisma.InputJsonValue,
     });
 };
 
@@ -166,6 +173,7 @@ const productFields = {
 };
 
 export const registerMcpTools = (server: McpServer, context: McpContext) => {
+    const safe = makeSafe(context);
     // ── Read tools ──
 
     server.registerTool(
@@ -175,7 +183,7 @@ export const registerMcpTools = (server: McpServer, context: McpContext) => {
             description: 'The stores this connection can access. Pass a store id as storeId to the other tools.',
             annotations: { readOnlyHint: true },
         },
-        safe(async () =>
+        safe('list_stores', async () =>
             json({
                 stores: context.stores.map((store) => ({
                     id: store.id,
@@ -195,28 +203,10 @@ export const registerMcpTools = (server: McpServer, context: McpContext) => {
             inputSchema: { storeId: storeIdInput },
             annotations: { readOnlyHint: true },
         },
-        safe(async (args) => {
+        safe('get_store_settings', async (args) => {
             const { id: storeId } = resolveStore(context, args.storeId);
-            const store = await prisma.store.findFirstOrThrow({
-                where: { id: storeId, deletedAt: null },
-                select: {
-                    name: true,
-                    storeType: true,
-                    timezone: true,
-                    currency: true,
-                    lowStockThreshold: true,
-                    defaultTaxRate: true,
-                    defaultDiscount: true,
-                    allowNegativeStock: true,
-                    cashierSalesHistoryLimit: true,
-                    paymentMethods: true,
-                    unitOptions: true,
-                    categoryOptions: true,
-                    subcategoryOptions: true,
-                    expenseCategoryOptions: true,
-                    salesChannels: true,
-                },
-            });
+            const store = await mcpRepository.getStoreSettings(storeId);
+            if (!store) throw new AppError('NOT_FOUND', 'Store not found', 404);
             return json({
                 ...store,
                 lowStockThreshold: num(store.lowStockThreshold),
@@ -243,7 +233,7 @@ export const registerMcpTools = (server: McpServer, context: McpContext) => {
             },
             annotations: { readOnlyHint: true },
         },
-        safe(async ({ storeId: requested, search, category, includeInactive = true }) => {
+        safe('list_ingredients', async ({ storeId: requested, search, category, includeInactive = true }) => {
             const { id: storeId } = resolveStore(context, requested);
             const rows = (await ingredientService.list(storeId))
                 .filter((i) => (includeInactive || i.active) && (!category || i.category === category))
@@ -260,7 +250,7 @@ export const registerMcpTools = (server: McpServer, context: McpContext) => {
             inputSchema: { storeId: storeIdInput, ingredientId: z.string().min(1) },
             annotations: { readOnlyHint: true },
         },
-        safe(async ({ storeId: requested, ingredientId }) => {
+        safe('get_ingredient', async ({ storeId: requested, ingredientId }) => {
             const { id: storeId } = resolveStore(context, requested);
             return json(ingredientOut(await ingredientService.get(storeId, ingredientId)));
         })
@@ -280,7 +270,7 @@ export const registerMcpTools = (server: McpServer, context: McpContext) => {
             },
             annotations: { readOnlyHint: true },
         },
-        safe(async ({ storeId: requested, search, type, category, includeInactive = true }) => {
+        safe('list_products', async ({ storeId: requested, search, type, category, includeInactive = true }) => {
             const { id: storeId } = resolveStore(context, requested);
             const rows = (await productService.list(storeId))
                 .filter((p) => (includeInactive || p.active) && (!type || p.type === type))
@@ -298,7 +288,7 @@ export const registerMcpTools = (server: McpServer, context: McpContext) => {
             inputSchema: { storeId: storeIdInput, productId: z.string().min(1) },
             annotations: { readOnlyHint: true },
         },
-        safe(async ({ storeId: requested, productId }) => {
+        safe('get_product', async ({ storeId: requested, productId }) => {
             const { id: storeId } = resolveStore(context, requested);
             const product = await productService.get(storeId, productId);
             const recipe = product.type === 'RECIPE' ? recipeOut(await recipeService.listLines(storeId, productId)) : null;
@@ -327,9 +317,10 @@ export const registerMcpTools = (server: McpServer, context: McpContext) => {
                 active: ingredientFields.active.optional(),
             },
         },
-        safe(async ({ storeId: requested, ...args }) => {
-            const { id: storeId } = resolveStore(context, requested);
-            await assertCanWrite(context, storeId);
+        safe('create_ingredient', async ({ storeId: requested, ...args }) => {
+            const store = resolveStore(context, requested);
+            const storeId = store.id;
+            assertCanWrite(context, store);
             const data = ingredientCreateSchema.parse(defined(args));
             const created = await ingredientService.create(storeId, data);
             await audit(context, storeId, 'MCP_INGREDIENT_CREATED', 'Ingredient', created.id, { name: created.name, changes: data });
@@ -348,9 +339,10 @@ export const registerMcpTools = (server: McpServer, context: McpContext) => {
                 ...Object.fromEntries(Object.entries(ingredientFields).map(([key, schema]) => [key, schema.optional()])),
             } as { storeId: typeof storeIdInput; ingredientId: z.ZodString } & { [K in keyof typeof ingredientFields]: z.ZodOptional<(typeof ingredientFields)[K]> },
         },
-        safe(async ({ storeId: requested, ingredientId, ...fields }) => {
-            const { id: storeId } = resolveStore(context, requested);
-            await assertCanWrite(context, storeId);
+        safe('update_ingredient', async ({ storeId: requested, ingredientId, ...fields }) => {
+            const store = resolveStore(context, requested);
+            const storeId = store.id;
+            assertCanWrite(context, store);
             const data = ingredientUpdateSchema.parse(defined(fields));
             const before = ingredientOut(await ingredientService.get(storeId, ingredientId));
             const updated = await ingredientService.update(storeId, ingredientId, data);
@@ -383,12 +375,16 @@ export const registerMcpTools = (server: McpServer, context: McpContext) => {
                 recipeLines: z.array(recipeLineInput).optional().describe('RECIPE products only.'),
             },
         },
-        safe(async ({ storeId: requested, ...args }) => {
-            const { id: storeId } = resolveStore(context, requested);
-            await assertCanWrite(context, storeId);
+        safe('create_product', async ({ storeId: requested, ...args }) => {
+            const store = resolveStore(context, requested);
+            const storeId = store.id;
+            assertCanWrite(context, store);
             const { recipeLines, ...data } = productCreateSchema.parse(defined(args));
             const created = await productService.create(storeId, data, recipeLines);
-            await audit(context, storeId, 'MCP_PRODUCT_CREATED', 'Product', created.id, { name: created.name, changes: args });
+            await audit(context, storeId, 'MCP_PRODUCT_CREATED', 'Product', created.id, {
+                name: created.name,
+                changes: { ...data, ...(recipeLines ? { recipeLines } : {}) },
+            });
             return json(productOut(created));
         })
     );
@@ -404,9 +400,10 @@ export const registerMcpTools = (server: McpServer, context: McpContext) => {
                 ...Object.fromEntries(Object.entries(productFields).map(([key, schema]) => [key, schema.optional()])),
             } as { storeId: typeof storeIdInput; productId: z.ZodString } & { [K in keyof typeof productFields]: z.ZodOptional<(typeof productFields)[K]> },
         },
-        safe(async ({ storeId: requested, productId, ...fields }) => {
-            const { id: storeId } = resolveStore(context, requested);
-            await assertCanWrite(context, storeId);
+        safe('update_product', async ({ storeId: requested, productId, ...fields }) => {
+            const store = resolveStore(context, requested);
+            const storeId = store.id;
+            assertCanWrite(context, store);
             const { recipeLines, ...data } = productUpdateSchema.parse(defined(fields));
             const before = productOut(await productService.get(storeId, productId));
             const updated = await productService.update(storeId, productId, data, recipeLines);
@@ -427,9 +424,10 @@ export const registerMcpTools = (server: McpServer, context: McpContext) => {
                 lines: z.array(recipeLineInput),
             },
         },
-        safe(async ({ storeId: requested, productId, lines }) => {
-            const { id: storeId } = resolveStore(context, requested);
-            await assertCanWrite(context, storeId);
+        safe('set_recipe', async ({ storeId: requested, productId, lines }) => {
+            const store = resolveStore(context, requested);
+            const storeId = store.id;
+            assertCanWrite(context, store);
             const parsed = recipeLinesUpdateSchema.parse({ lines });
             const product = await productService.get(storeId, productId);
             const previous = recipeOut(await recipeService.listLines(storeId, productId));
