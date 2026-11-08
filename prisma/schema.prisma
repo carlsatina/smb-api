@@ -137,6 +137,7 @@ model User {
   cashAdvances            CashAdvance[]            @relation("CashAdvanceCreatedBy")
   timeEntriesEdited       TimeEntry[]              @relation("TimeEntryEditedBy")
   dailyInventoryReports   DailyInventoryReport[]   @relation("DailyInventoryCreatedBy")
+  mcpTokens               McpToken[]               @relation("McpTokenOwner")
 }
 
 // Monthly per-store billing, one statement per store owner per month.
@@ -263,6 +264,7 @@ model Store {
   cashAdvances       CashAdvance[]
   timeEntries        TimeEntry[]
   dailyInventoryReports DailyInventoryReport[]
+  mcpTokenStores     McpTokenStore[]
 }
 
 model StoreMember {
@@ -933,4 +935,41 @@ model DailyInventoryReportItem {
   updatedAt        DateTime             @updatedAt
 
   @@index([reportId])
+}
+
+enum McpTokenAccess {
+  READ_ONLY
+  READ_WRITE
+}
+
+// Access token an owner creates for AI apps connecting to the MCP server
+// (/mcp). It covers the stores picked at creation (McpTokenStore). Only a
+// SHA-256 hash is stored; the token is shown once. Each store is re-checked on
+// every request, so losing ownership of a store removes it from the token.
+model McpToken {
+  id          String         @id @default(cuid())
+  userId      String
+  name        String
+  tokenHash   String         @unique
+  tokenPrefix String
+  access      McpTokenAccess @default(READ_ONLY)
+  lastUsedAt  DateTime?
+  revokedAt   DateTime?
+  createdAt   DateTime       @default(now())
+
+  user   User            @relation("McpTokenOwner", fields: [userId], references: [id], onDelete: Cascade)
+  stores McpTokenStore[]
+
+  @@index([userId, revokedAt])
+}
+
+model McpTokenStore {
+  tokenId String
+  storeId String
+
+  token McpToken @relation(fields: [tokenId], references: [id], onDelete: Cascade)
+  store Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@id([tokenId, storeId])
+  @@index([storeId])
 }

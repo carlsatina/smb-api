@@ -26,6 +26,8 @@ import { saleRouter } from './modules/sales/sale.routes';
 import { storeInviteRouter, storeMemberRouter } from './modules/storeMembers/storeMember.routes';
 import { storeRouter } from './modules/stores/store.routes';
 import { supplierRouter } from './modules/suppliers/supplier.routes';
+import { mcpRouter } from './modules/mcp/mcp.routes';
+import { mcpTokenRouter } from './modules/mcpTokens/mcpToken.routes';
 import { errorHandler } from './middlewares/errorHandler';
 
 export const createApp = () => {
@@ -96,6 +98,7 @@ export const createApp = () => {
 
     app.use('/api/v1/auth', authRouter);
     app.use('/api/v1/admin', adminRouter);
+    app.use('/api/v1/mcp-tokens', mcpTokenRouter);
     app.use('/api/v1/stores', storeRouter);
     app.use('/api/v1/stores/:storeId/products', productRouter);
     app.use('/api/v1/stores/:storeId/ingredients', ingredientRouter);
@@ -114,6 +117,9 @@ export const createApp = () => {
     app.use('/api/v1/stores/:storeId/schedule', scheduleRouter);
     app.use('/api/v1/stores/:storeId/expenses', expenseRouter);
     app.use('/api/v1/stores/:storeId/ai', aiRouter);
+
+    // MCP server for AI apps (Claude, ChatGPT, Cursor), authenticated by store MCP tokens.
+    app.use('/mcp', mcpRouter);
 
     app.use(errorHandler);
 

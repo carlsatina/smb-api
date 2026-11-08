@@ -48,6 +48,7 @@
   "homepage": "https://github.com/carlsatina/sales_and_inventory#readme",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.104.2",
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "@prisma/adapter-pg": "^7.2.0",
     "@prisma/client": "^7.2.0",
     "@sentry/node": "^8.43.0",
