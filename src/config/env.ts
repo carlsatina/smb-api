@@ -38,6 +38,11 @@ const appBaseUrl = getEnv('APP_BASE_URL', 'http://localhost:5173') as string;
 export const env = {
     nodeEnv: getEnv('NODE_ENV', 'development') as 'development' | 'production' | 'test',
     port: Number(getEnv('PORT', '3500')),
+    // Reverse proxies in front of the app (Dokploy's Traefik = 1; add one per
+    // extra layer such as Cloudflare). Express then takes the client IP from the
+    // entry the nearest trusted proxy appended to X-Forwarded-For, which a client
+    // can't forge. 0 = no proxy: use the socket address.
+    trustProxyHops: Math.max(0, Math.floor(Number(getEnv('TRUST_PROXY_HOPS', '1')) || 0)),
     accessTokenSecret: getEnv('ACCESS_TOKEN_SECRET', 'dev_access_secret') as string,
     refreshTokenSecret: getEnv('REFRESH_TOKEN_SECRET', 'dev_refresh_secret') as string,
     aiEncryptionKey: getEnv('AI_ENCRYPTION_KEY'),

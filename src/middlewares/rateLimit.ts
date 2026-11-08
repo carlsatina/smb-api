@@ -14,13 +14,9 @@ type RateLimitEntry = {
     resetAt: number;
 };
 
-export const getClientIp = (req: Request) => {
-    const forwarded = req.headers['x-forwarded-for'];
-    if (typeof forwarded === 'string' && forwarded.length > 0) {
-        return forwarded.split(',')[0].trim();
-    }
-    return req.ip || 'unknown';
-};
+// Never read X-Forwarded-For directly: its first entry is whatever the client
+// sent. req.ip honours the app's 'trust proxy' setting (TRUST_PROXY_HOPS).
+export const getClientIp = (req: Request) => req.ip || req.socket?.remoteAddress || 'unknown';
 
 export const createRateLimiter = (options: RateLimitOptions) => {
     const store = new Map<string, RateLimitEntry>();

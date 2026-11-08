@@ -33,6 +33,11 @@ import { errorHandler } from './middlewares/errorHandler';
 export const createApp = () => {
     const app = express();
 
+    // Makes req.ip the real client address behind Dokploy's Traefik instead of
+    // the proxy's (or a client-supplied X-Forwarded-For value). Every per-IP
+    // rate limit depends on this.
+    app.set('trust proxy', env.trustProxyHops);
+
     app.use(securityHeaders);
     app.use(
         cors({
