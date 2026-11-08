@@ -1,6 +1,8 @@
 import { ItemType, MovementType, Prisma, ProductType, StoreType } from '@prisma/client';
 import prisma from '../../../lib/prisma';
 import { AppError } from '../../shared/errors';
+import { AuthRequest } from '../../middlewares/auth';
+import { loadStoreMembership } from '../../middlewares/requireStoreRole';
 import { parseImportDate } from '../../shared/datetime';
 import { inventoryRepository, MovementFilters } from './inventory.repository';
 
@@ -290,6 +292,30 @@ const findOrCreateDestinationProductId = async (
     return created.id;
 };
 
+/**
+ * A transfer writes stock (and may create items) in the destination store, so
+ * the user needs the same access there as for any stock change: an active
+ * membership with "Manage products & stock", subject to the destination's
+ * billing lock. Runs before the destination is looked up so the response
+ * doesn't reveal whether a store id the user can't access exists.
+ */
+const assertCanReceiveTransfer = async (userId: string, destinationStoreId: string) => {
+    const req = {
+        params: { storeId: destinationStoreId },
+        user: { sub: userId, email: '' },
+        method: 'POST',
+    } as unknown as AuthRequest;
+    try {
+        await loadStoreMembership(req);
+    } catch (error) {
+        if (error instanceof AppError && error.code === 'BILLING_SUSPENDED') throw error;
+        throw new AppError('FORBIDDEN', 'You can only transfer stock to stores where you manage stock.', 403);
+    }
+    if (!req.permissions?.includes('inventory.manage')) {
+        throw new AppError('FORBIDDEN', 'You can only transfer stock to stores where you manage stock.', 403);
+    }
+};
+
 export const inventoryService = {
     getStock: async (storeId: string, itemType?: ItemType, itemId?: string) => {
         return buildStockItems(storeId, itemType, itemId);
@@ -470,6 +496,7 @@ export const inventoryService = {
         if (data.destinationStoreId === sourceStoreId) {
             throw new AppError('INVALID_TRANSFER', 'Source and destination must be different stores.', 400);
         }
+        await assertCanReceiveTransfer(userId, data.destinationStoreId);
 
         const [sourceStore, destStore] = await Promise.all([
             prisma.store.findFirst({
@@ -613,6 +640,7 @@ export const inventoryService = {
         if (data.destinationStoreId === sourceStoreId) {
             throw new AppError('INVALID_TRANSFER', 'Source and destination must be different stores.', 400);
         }
+        await assertCanReceiveTransfer(userId, data.destinationStoreId);
 
         const [sourceStore, destStore] = await Promise.all([
             prisma.store.findFirst({
