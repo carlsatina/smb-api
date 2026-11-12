@@ -86,9 +86,13 @@ export const saleDeleteSchema = z.object({
 
 // The owner types this phrase in the UI; the API requires it too so a stray
 // DELETE /sales can never wipe the history.
-export const DELETE_ALL_SALES_PHRASE = 'DELETE ALL';
+export const DELETE_SALES_PHRASE = 'DELETE';
 
-export const saleDeleteAllSchema = z.object({
-    confirm: z.literal(DELETE_ALL_SALES_PHRASE, { error: `Type "${DELETE_ALL_SALES_PHRASE}" to confirm.` }),
+// Bulk delete takes the same filters as the sales list, plus the count the
+// owner saw, so it removes exactly what was on screen or nothing.
+export const saleBulkDeleteSchema = saleExportQuerySchema.extend({
+    confirm: z.literal(DELETE_SALES_PHRASE, { error: `Type "${DELETE_SALES_PHRASE}" to confirm.` }),
+    expectedCount: z.number().int().min(1),
+    filterSummary: z.string().trim().max(300).nullable().optional(),
     reason: z.string().trim().max(300).nullable().optional(),
 });

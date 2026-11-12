@@ -11,7 +11,7 @@ import {
 import prisma from '../../../lib/prisma';
 import { AppError } from '../../shared/errors';
 import { parseImportDate } from '../../shared/datetime';
-import { saleRepository } from './sale.repository';
+import { saleRepository, type SaleFilters } from './sale.repository';
 import { computeChannelPrice, parseChannelPrices, parseSalesChannels } from '../../shared/salesChannels';
 
 type SaleItemInput = {
@@ -1136,20 +1136,27 @@ export const saleService = {
         return { id: saleId, receiptNumber: sale.receiptNumber, stockReturned: reversal.length > 0 };
     },
     /**
-     * Owner-only "delete all": soft-deletes every sale in the store with the
+     * Owner-only bulk delete of the sales matching the list filters, with the
      * same stock rules as deleteSale (finalized sales give back what they
-     * consumed, dated with each sale; voided ones already did). One audit
-     * entry summarises the wipe instead of a snapshot per sale.
+     * consumed, dated with each sale; voided ones already did). The caller
+     * passes the count it showed the owner; if the match differs (new sales,
+     * someone else's edits) nothing is deleted. One audit entry summarises it.
      */
-    deleteAllSales: async (storeId: string, userId: string, reason?: string | null) => {
-        const sales = await prisma.sale.findMany({
-            where: { storeId, deletedAt: null },
-            select: { id: true, status: true, voidedAt: true, createdAt: true, total: true },
-            orderBy: { createdAt: 'asc' },
-        });
-        if (sales.length === 0) {
-            return { deletedCount: 0, stockReturned: false };
+    deleteFilteredSales: async (
+        storeId: string,
+        userId: string,
+        filters: Omit<SaleFilters, 'storeId'>,
+        options: { expectedCount: number; filterSummary?: string | null; reason?: string | null }
+    ) => {
+        const sales = await saleRepository.listForBulkDelete({ ...filters, storeId });
+        if (sales.length !== options.expectedCount) {
+            throw new AppError(
+                'SALES_CHANGED',
+                `These filters now match ${sales.length} sale${sales.length === 1 ? '' : 's'}, not ${options.expectedCount}. Refresh the list and try again.`,
+                409
+            );
         }
+        const reason = options.reason;
 
         const returning = sales.filter((sale) => sale.status === SaleStatus.FINALIZED && !sale.voidedAt);
         const saleDate = new Map(returning.map((sale) => [sale.id, sale.createdAt]));
@@ -1231,12 +1238,23 @@ export const saleService = {
                     data: {
                         store: { connect: { id: storeId } },
                         actor: { connect: { id: userId } },
-                        action: 'SALES_DELETED_ALL',
+                        action: 'SALES_BULK_DELETED',
                         entityType: 'Store',
                         entityId: storeId,
                         meta: {
-                            itemName: `All sales (${sales.length})`,
+                            itemName: `${sales.length} sale${sales.length === 1 ? '' : 's'}${
+                                options.filterSummary?.trim() ? ` · ${options.filterSummary.trim()}` : ''
+                            }`,
                             reason: reason?.trim() || null,
+                            filters: {
+                                status: filters.status ?? null,
+                                from: filters.from?.toISOString() ?? null,
+                                to: filters.to?.toISOString() ?? null,
+                                cashierId: filters.cashierId ?? null,
+                                paymentMethod: filters.paymentMethod ?? null,
+                                productId: filters.productId ?? null,
+                                channel: filters.channel ?? null,
+                            },
                             deletedCount: sales.length,
                             finalizedCount: returning.length,
                             voidedCount,

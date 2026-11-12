@@ -57,6 +57,13 @@ const buildWhere = (filters: SaleFilters): Prisma.SaleWhereInput => {
 };
 
 export const saleRepository = {
+    // Every sale matching the filters, oldest first, for bulk delete.
+    listForBulkDelete: async (filters: SaleFilters) =>
+        prisma.sale.findMany({
+            where: buildWhere(filters),
+            select: { id: true, status: true, voidedAt: true, createdAt: true, total: true },
+            orderBy: { createdAt: 'asc' },
+        }),
     listSales: async (filters: SaleFilters, skip: number, take: number) => {
         const where = buildWhere(filters);
         return prisma.sale.findMany({

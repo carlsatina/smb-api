@@ -234,8 +234,9 @@ describe('deleting a sale', () => {
     });
 });
 
-describe('deleting all sales', () => {
+describe('bulk deleting filtered sales', () => {
     const day = (d: number) => new Date(`2026-11-0${d}T03:00:00Z`);
+    const filters = { from: day(1), to: day(9), paymentMethod: PaymentMethod.CASH };
 
     beforeEach(() => {
         vi.clearAllMocks();
@@ -243,7 +244,7 @@ describe('deleting all sales', () => {
         prismaMock.ingredient.findMany.mockResolvedValue([]);
     });
 
-    it('soft-deletes every sale, returns stock only for finalized ones, and audits once', async () => {
+    it('deletes only sales matching the filters, returns stock for finalized ones, and audits once', async () => {
         prismaMock.sale.findMany.mockResolvedValue([
             { id: 'sale-1', status: SaleStatus.FINALIZED, voidedAt: null, createdAt: day(1), total: dec(100) },
             { id: 'sale-2', status: SaleStatus.VOIDED, voidedAt: day(2), createdAt: day(2), total: dec(50) },
@@ -253,9 +254,20 @@ describe('deleting all sales', () => {
             { referenceId: 'sale-1', itemType: ItemType.PRODUCT, itemId: 'prod-a', _sum: { qtyDelta: dec(-2) } },
         ] as never);
 
-        const result = await saleService.deleteAllSales('store-1', 'owner-1', 'Clearing test data');
+        const result = await saleService.deleteFilteredSales('store-1', 'owner-1', filters, {
+            expectedCount: 2,
+            filterSummary: 'Nov 1 – Nov 9 · Cash',
+            reason: 'Clearing test data',
+        });
 
         expect(result).toEqual({ deletedCount: 2, stockReturned: true });
+        const findWhere = prismaMock.sale.findMany.mock.calls[0]?.[0]?.where as Record<string, any>;
+        expect(findWhere).toMatchObject({
+            storeId: 'store-1',
+            deletedAt: null,
+            paymentMethod: PaymentMethod.CASH,
+            createdAt: { gte: day(1), lte: day(9) },
+        });
         const groupWhere = prismaMock.inventoryMovement.groupBy.mock.calls[0]?.[0]?.where as Record<string, any>;
         expect(groupWhere.referenceId).toEqual({ in: ['sale-1'] });
         const movements = prismaMock.inventoryMovement.createMany.mock.calls[0]?.[0]?.data as Array<Record<string, unknown>>;
@@ -264,9 +276,28 @@ describe('deleting all sales', () => {
         expect(movements[0]).toMatchObject({ referenceType: 'SALE_DELETE', referenceId: 'sale-1', createdAt: day(1) });
         expect(prismaMock.auditLog.create).toHaveBeenCalledTimes(1);
         expect(prismaMock.auditLog.create.mock.calls[0]?.[0]?.data).toMatchObject({
-            action: 'SALES_DELETED_ALL',
-            meta: { deletedCount: 2, finalizedCount: 1, voidedCount: 1, finalizedTotal: 100, reason: 'Clearing test data' },
+            action: 'SALES_BULK_DELETED',
+            meta: {
+                itemName: '2 sales · Nov 1 – Nov 9 · Cash',
+                deletedCount: 2,
+                finalizedCount: 1,
+                voidedCount: 1,
+                finalizedTotal: 100,
+                reason: 'Clearing test data',
+                filters: { paymentMethod: PaymentMethod.CASH, from: day(1).toISOString() },
+            },
         });
+    });
+
+    it('refuses when the filters no longer match what the owner saw', async () => {
+        prismaMock.sale.findMany.mockResolvedValue([
+            { id: 'sale-1', status: SaleStatus.VOIDED, voidedAt: day(1), createdAt: day(1), total: dec(100) },
+        ] as never);
+
+        await expect(
+            saleService.deleteFilteredSales('store-1', 'owner-1', filters, { expectedCount: 2 })
+        ).rejects.toMatchObject({ statusCode: 409, code: 'SALES_CHANGED' });
+        expect(prismaMock.sale.updateMany).not.toHaveBeenCalled();
     });
 
     it('rolls back if some sales were removed meanwhile', async () => {
@@ -276,14 +307,9 @@ describe('deleting all sales', () => {
         ] as never);
         prismaMock.sale.updateMany.mockResolvedValue({ count: 1 });
 
-        await expect(saleService.deleteAllSales('store-1', 'owner-1')).rejects.toMatchObject({ statusCode: 409 });
+        await expect(
+            saleService.deleteFilteredSales('store-1', 'owner-1', filters, { expectedCount: 2 })
+        ).rejects.toMatchObject({ statusCode: 409 });
         expect(prismaMock.auditLog.create).not.toHaveBeenCalled();
-    });
-
-    it('does nothing when there are no sales', async () => {
-        prismaMock.sale.findMany.mockResolvedValue([]);
-        const result = await saleService.deleteAllSales('store-1', 'owner-1');
-        expect(result).toEqual({ deletedCount: 0, stockReturned: false });
-        expect(prismaMock.sale.updateMany).not.toHaveBeenCalled();
     });
 });
