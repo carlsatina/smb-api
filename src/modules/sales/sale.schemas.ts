@@ -83,3 +83,12 @@ export const saleExportQuerySchema = z.object({
 export const saleDeleteSchema = z.object({
     reason: z.string().trim().max(300).nullable().optional(),
 });
+
+// The owner types this phrase in the UI; the API requires it too so a stray
+// DELETE /sales can never wipe the history.
+export const DELETE_ALL_SALES_PHRASE = 'DELETE ALL';
+
+export const saleDeleteAllSchema = z.object({
+    confirm: z.literal(DELETE_ALL_SALES_PHRASE, { error: `Type "${DELETE_ALL_SALES_PHRASE}" to confirm.` }),
+    reason: z.string().trim().max(300).nullable().optional(),
+});

@@ -4,7 +4,7 @@ import prisma from '../lib/prisma';
 import { computeEditDeltas, saleService } from '../src/modules/sales/sale.service';
 
 vi.mock('../lib/prisma', () => {
-    const sale = { findFirst: vi.fn(), updateMany: vi.fn() };
+    const sale = { findFirst: vi.fn(), findMany: vi.fn(), updateMany: vi.fn() };
     const saleItem = { deleteMany: vi.fn(), createMany: vi.fn() };
     const inventoryMovement = { groupBy: vi.fn(), createMany: vi.fn() };
     const auditLog = { create: vi.fn() };
@@ -231,5 +231,59 @@ describe('deleting a sale', () => {
             action: 'SALE_DELETED',
             meta: { stockReturned: false, reason: null },
         });
+    });
+});
+
+describe('deleting all sales', () => {
+    const day = (d: number) => new Date(`2026-11-0${d}T03:00:00Z`);
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        prismaMock.product.findMany.mockResolvedValue([{ id: 'prod-a', cost: dec(20) }] as never);
+        prismaMock.ingredient.findMany.mockResolvedValue([]);
+    });
+
+    it('soft-deletes every sale, returns stock only for finalized ones, and audits once', async () => {
+        prismaMock.sale.findMany.mockResolvedValue([
+            { id: 'sale-1', status: SaleStatus.FINALIZED, voidedAt: null, createdAt: day(1), total: dec(100) },
+            { id: 'sale-2', status: SaleStatus.VOIDED, voidedAt: day(2), createdAt: day(2), total: dec(50) },
+        ] as never);
+        prismaMock.sale.updateMany.mockResolvedValue({ count: 2 });
+        prismaMock.inventoryMovement.groupBy.mockResolvedValue([
+            { referenceId: 'sale-1', itemType: ItemType.PRODUCT, itemId: 'prod-a', _sum: { qtyDelta: dec(-2) } },
+        ] as never);
+
+        const result = await saleService.deleteAllSales('store-1', 'owner-1', 'Clearing test data');
+
+        expect(result).toEqual({ deletedCount: 2, stockReturned: true });
+        const groupWhere = prismaMock.inventoryMovement.groupBy.mock.calls[0]?.[0]?.where as Record<string, any>;
+        expect(groupWhere.referenceId).toEqual({ in: ['sale-1'] });
+        const movements = prismaMock.inventoryMovement.createMany.mock.calls[0]?.[0]?.data as Array<Record<string, unknown>>;
+        expect(movements).toHaveLength(1);
+        expect(Number(movements[0].qtyDelta)).toBe(2);
+        expect(movements[0]).toMatchObject({ referenceType: 'SALE_DELETE', referenceId: 'sale-1', createdAt: day(1) });
+        expect(prismaMock.auditLog.create).toHaveBeenCalledTimes(1);
+        expect(prismaMock.auditLog.create.mock.calls[0]?.[0]?.data).toMatchObject({
+            action: 'SALES_DELETED_ALL',
+            meta: { deletedCount: 2, finalizedCount: 1, voidedCount: 1, finalizedTotal: 100, reason: 'Clearing test data' },
+        });
+    });
+
+    it('rolls back if some sales were removed meanwhile', async () => {
+        prismaMock.sale.findMany.mockResolvedValue([
+            { id: 'sale-1', status: SaleStatus.VOIDED, voidedAt: day(1), createdAt: day(1), total: dec(100) },
+            { id: 'sale-2', status: SaleStatus.VOIDED, voidedAt: day(2), createdAt: day(2), total: dec(50) },
+        ] as never);
+        prismaMock.sale.updateMany.mockResolvedValue({ count: 1 });
+
+        await expect(saleService.deleteAllSales('store-1', 'owner-1')).rejects.toMatchObject({ statusCode: 409 });
+        expect(prismaMock.auditLog.create).not.toHaveBeenCalled();
+    });
+
+    it('does nothing when there are no sales', async () => {
+        prismaMock.sale.findMany.mockResolvedValue([]);
+        const result = await saleService.deleteAllSales('store-1', 'owner-1');
+        expect(result).toEqual({ deletedCount: 0, stockReturned: false });
+        expect(prismaMock.sale.updateMany).not.toHaveBeenCalled();
     });
 });

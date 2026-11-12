@@ -1135,7 +1135,125 @@ export const saleService = {
 
         return { id: saleId, receiptNumber: sale.receiptNumber, stockReturned: reversal.length > 0 };
     },
-    voidSale: async (storeId: string, userId: string, saleId: string) => {
+    /**
+     * Owner-only "delete all": soft-deletes every sale in the store with the
+     * same stock rules as deleteSale (finalized sales give back what they
+     * consumed, dated with each sale; voided ones already did). One audit
+     * entry summarises the wipe instead of a snapshot per sale.
+     */
+    deleteAllSales: async (storeId: string, userId: string, reason?: string | null) => {
+        const sales = await prisma.sale.findMany({
+            where: { storeId, deletedAt: null },
+            select: { id: true, status: true, voidedAt: true, createdAt: true, total: true },
+            orderBy: { createdAt: 'asc' },
+        });
+        if (sales.length === 0) {
+            return { deletedCount: 0, stockReturned: false };
+        }
+
+        const returning = sales.filter((sale) => sale.status === SaleStatus.FINALIZED && !sale.voidedAt);
+        const saleDate = new Map(returning.map((sale) => [sale.id, sale.createdAt]));
+
+        type Reversal = MovementDelta & { saleId: string };
+        const reversal: Reversal[] = [];
+        const CHUNK = 5000;
+        for (let i = 0; i < returning.length; i += CHUNK) {
+            const ids = returning.slice(i, i + CHUNK).map((sale) => sale.id);
+            const consumed = await prisma.inventoryMovement.groupBy({
+                by: ['referenceId', 'itemType', 'itemId'],
+                where: { storeId, referenceId: { in: ids }, type: MovementType.SALE },
+                _sum: { qtyDelta: true },
+            });
+            for (const row of consumed) {
+                const qtyDelta = Number((-normalizeDecimal(row._sum.qtyDelta)).toFixed(4));
+                if (!row.referenceId || Math.abs(qtyDelta) < QTY_EPSILON) continue;
+                reversal.push({ saleId: row.referenceId, itemType: row.itemType, itemId: row.itemId, qtyDelta });
+            }
+        }
+
+        const productIds = [...new Set(reversal.filter((d) => d.itemType === ItemType.PRODUCT).map((d) => d.itemId))];
+        const ingredientIds = [
+            ...new Set(reversal.filter((d) => d.itemType === ItemType.INGREDIENT).map((d) => d.itemId)),
+        ];
+        const [products, ingredients] = await Promise.all([
+            productIds.length
+                ? prisma.product.findMany({ where: { id: { in: productIds }, storeId }, select: { id: true, cost: true } })
+                : Promise.resolve([]),
+            ingredientIds.length
+                ? prisma.ingredient.findMany({
+                      where: { id: { in: ingredientIds }, storeId },
+                      select: { id: true, costPerUnit: true },
+                  })
+                : Promise.resolve([]),
+        ]);
+        const productCost = new Map(products.map((p) => [p.id, p.cost !== null ? normalizeDecimal(p.cost) : null]));
+        const ingredientCost = new Map(ingredients.map((i) => [i.id, normalizeDecimal(i.costPerUnit)]));
+
+        const saleIds = sales.map((sale) => sale.id);
+        const voidedCount = sales.filter((sale) => sale.voidedAt || sale.status === SaleStatus.VOIDED).length;
+        const finalizedTotal = returning.reduce((sum, sale) => sum + normalizeDecimal(sale.total), 0);
+
+        await prisma.$transaction(
+            async (tx) => {
+                const result = await tx.sale.updateMany({
+                    where: { id: { in: saleIds }, storeId, deletedAt: null },
+                    data: { deletedAt: new Date() },
+                });
+                // Someone deleted or changed a sale meanwhile; roll back rather than
+                // return stock for a sale that's already been handled.
+                if (result.count !== saleIds.length) {
+                    throw new AppError('CONFLICT', 'Sales changed while deleting. Please try again.', 409);
+                }
+
+                if (reversal.length) {
+                    await tx.inventoryMovement.createMany({
+                        data: reversal.map((delta) => ({
+                            storeId,
+                            itemType: delta.itemType,
+                            itemId: delta.itemId,
+                            qtyDelta: new Prisma.Decimal(delta.qtyDelta),
+                            unitCost:
+                                delta.itemType === ItemType.PRODUCT
+                                    ? productCost.get(delta.itemId) != null
+                                        ? new Prisma.Decimal(productCost.get(delta.itemId) ?? 0)
+                                        : null
+                                    : new Prisma.Decimal(ingredientCost.get(delta.itemId) ?? 0),
+                            type: MovementType.SALE,
+                            referenceType: 'SALE_DELETE',
+                            referenceId: delta.saleId,
+                            createdById: userId,
+                            createdAt: saleDate.get(delta.saleId) ?? new Date(),
+                        })),
+                    });
+                }
+
+                await tx.auditLog.create({
+                    data: {
+                        store: { connect: { id: storeId } },
+                        actor: { connect: { id: userId } },
+                        action: 'SALES_DELETED_ALL',
+                        entityType: 'Store',
+                        entityId: storeId,
+                        meta: {
+                            itemName: `All sales (${sales.length})`,
+                            reason: reason?.trim() || null,
+                            deletedCount: sales.length,
+                            finalizedCount: returning.length,
+                            voidedCount,
+                            finalizedTotal: Number(finalizedTotal.toFixed(2)),
+                            firstSaleDate: sales[0].createdAt.toISOString(),
+                            lastSaleDate: sales[sales.length - 1].createdAt.toISOString(),
+                            stockReturned: reversal.length > 0,
+                        } as Prisma.InputJsonValue,
+                    },
+                });
+            },
+            { timeout: 60_000 }
+        );
+
+        return { deletedCount: sales.length, stockReturned: reversal.length > 0 };
+    },
+    voidSale:async (storeId: string, userId: string, saleId: string) => {
         const sale = await saleRepository.getById(storeId, saleId);
         if (!sale) {
             throw new AppError('NOT_FOUND', 'Sale not found', 404);

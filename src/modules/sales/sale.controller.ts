@@ -3,7 +3,7 @@ import { Role } from '@prisma/client';
 import { AuthRequest } from '../../middlewares/auth';
 import { asyncHandler } from '../../shared/asyncHandler';
 import { AppError } from '../../shared/errors';
-import { saleDeleteSchema, saleExportQuerySchema, saleFinalizeSchema, saleListQuerySchema, saleUpdateSchema } from './sale.schemas';
+import { saleDeleteAllSchema, saleDeleteSchema, saleExportQuerySchema, saleFinalizeSchema, saleListQuerySchema, saleUpdateSchema } from './sale.schemas';
 import { saleService } from './sale.service';
 import { escapeCsvValue, parseCSV } from '../../shared/csv';
 
@@ -179,5 +179,16 @@ export const deleteSale = asyncHandler(async (req: AuthRequest, res: Response) =
     }
     const { reason } = saleDeleteSchema.parse(req.body ?? {});
     const result = await saleService.deleteSale(storeId, userId, saleId, reason);
+    res.status(200).json(result);
+});
+
+export const deleteAllSales = asyncHandler(async (req: AuthRequest, res: Response) => {
+    const storeId = req.params.storeId;
+    const userId = req.user?.sub;
+    if (!storeId || !userId) {
+        throw new AppError('BAD_REQUEST', 'Store and user are required', 400);
+    }
+    const { reason } = saleDeleteAllSchema.parse(req.body ?? {});
+    const result = await saleService.deleteAllSales(storeId, userId, reason);
     res.status(200).json(result);
 });
