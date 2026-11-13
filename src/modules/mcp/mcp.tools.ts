@@ -158,7 +158,9 @@ const storeIdInput = z
 const ingredientFields = {
     name: z.string().min(1).describe('Ingredient name, e.g. "Fresh milk".'),
     unit: z.string().min(1).describe('Unit used in recipes, e.g. g, ml, pc. Should be one of the store unitOptions.'),
-    category: z.enum(['RAW_MATERIAL', 'PACKAGING']).describe('RAW_MATERIAL, or PACKAGING for cups/lids/straws.'),
+    category: z
+        .enum(['RAW_MATERIAL', 'PACKAGING', 'SUPPLY'])
+        .describe('RAW_MATERIAL, PACKAGING for cups/lids/straws, or SUPPLY for in-store consumables (gloves, alcohol, trash bags) that are never used in recipes.'),
     costPerUnit: z.number().nonnegative().describe('Cost of one unit in the store currency.'),
     purchaseUnit: z.string().min(1).nullable().describe('Bulk unit it is bought in, e.g. "Gallon". null to clear.'),
     purchaseUnitSize: z.number().positive().nullable().describe('How many recipe units are in one purchase unit.'),
@@ -239,11 +241,11 @@ export const registerMcpTools = (server: McpServer, context: McpContext) => {
         'list_ingredients',
         {
             title: 'List ingredients',
-            description: 'Ingredients (raw materials and packaging) with unit, cost per unit and purchase unit.',
+            description: 'Ingredients and supplies (raw materials, packaging, and in-store supplies) with unit, cost per unit and purchase unit.',
             inputSchema: {
                 storeId: storeIdInput,
                 search: z.string().optional().describe('Case-insensitive match on name or unit.'),
-                category: z.enum(['RAW_MATERIAL', 'PACKAGING']).optional(),
+                category: z.enum(['RAW_MATERIAL', 'PACKAGING', 'SUPPLY']).optional(),
                 includeInactive: z.boolean().optional().describe('Defaults to true.'),
             },
             annotations: { readOnlyHint: true },

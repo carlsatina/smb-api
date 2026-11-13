@@ -1,0 +1,1 @@
+ALTER TYPE "IngredientCategory" ADD VALUE IF NOT EXISTS 'SUPPLY';

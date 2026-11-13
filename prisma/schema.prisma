@@ -93,6 +93,7 @@ enum ItemType {
 enum IngredientCategory {
   RAW_MATERIAL
   PACKAGING
+  SUPPLY
 }
 
 model User {

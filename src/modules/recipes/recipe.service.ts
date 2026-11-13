@@ -1,4 +1,4 @@
-import { Prisma } from '@prisma/client';
+import { IngredientCategory, Prisma } from '@prisma/client';
 import prisma from '../../../lib/prisma';
 import { AppError } from '../../shared/errors';
 import { ingredientRepository } from '../ingredients/ingredient.repository';
@@ -66,9 +66,14 @@ const validateIngredients = async (storeId: string, lines: RecipeLineInput[]) =>
         return;
     }
 
-    const count = await ingredientRepository.countByIds(storeId, uniqueIngredientIds);
-    if (count !== uniqueIngredientIds.length) {
+    const ingredients = await ingredientRepository.listCategoriesByIds(storeId, uniqueIngredientIds);
+    if (ingredients.length !== uniqueIngredientIds.length) {
         throw new AppError('INGREDIENT_NOT_FOUND', 'One or more ingredients are missing', 404);
+    }
+
+    // Supplies (gloves, alcohol, trash bags) are used in-store, not per product sold.
+    if (ingredients.some((ingredient) => ingredient.category === IngredientCategory.SUPPLY)) {
+        throw new AppError('INVALID_RECIPE_INGREDIENT', 'Supplies cannot be used in a recipe', 400);
     }
 };
 

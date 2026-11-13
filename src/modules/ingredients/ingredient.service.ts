@@ -1,4 +1,4 @@
-import { Prisma } from '@prisma/client';
+import { IngredientCategory, Prisma } from '@prisma/client';
 import { AppError } from '../../shared/errors';
 import { ingredientRepository } from './ingredient.repository';
 
@@ -26,6 +26,16 @@ export const ingredientService = {
         }
     },
     update: async (storeId: string, ingredientId: string, data: Prisma.IngredientUpdateInput) => {
+        if (data.category === IngredientCategory.SUPPLY) {
+            const usage = await ingredientRepository.countProductUsage(storeId, ingredientId);
+            if (usage > 0) {
+                throw new AppError(
+                    'INGREDIENT_IN_USE',
+                    'This item is used in a product recipe or packaging. Remove it from those products before marking it as a supply.',
+                    409
+                );
+            }
+        }
         try {
             const updated = await ingredientRepository.update(storeId, ingredientId, data);
             if (!updated) {

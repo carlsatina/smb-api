@@ -81,11 +81,26 @@ export const ingredientRepository = {
             },
         });
     },
-    countByIds: async (storeId: string, ingredientIds: string[]) => {
+    /** Recipe and packaging lines (on live products) that would deduct this ingredient per sale. */
+    countProductUsage: async (storeId: string, ingredientId: string) => {
+        const [recipeLines, packagingLines] = await Promise.all([
+            prisma.recipeLine.count({
+                where: {
+                    ingredientId,
+                    recipe: { storeId, deletedAt: null, product: { deletedAt: null } },
+                },
+            }),
+            prisma.productPackaging.count({
+                where: { ingredientId, product: { storeId, deletedAt: null } },
+            }),
+        ]);
+        return recipeLines + packagingLines;
+    },
+    listCategoriesByIds: async (storeId: string, ingredientIds: string[]) => {
         if (ingredientIds.length === 0) {
-            return 0;
+            return [];
         }
-        return prisma.ingredient.count({
+        return prisma.ingredient.findMany({
             where: {
                 storeId,
                 deletedAt: null,
@@ -93,6 +108,7 @@ export const ingredientRepository = {
                     in: ingredientIds,
                 },
             },
+            select: { id: true, category: true },
         });
     },
 };

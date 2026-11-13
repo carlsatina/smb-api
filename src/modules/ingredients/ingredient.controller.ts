@@ -1,3 +1,4 @@
+import { IngredientCategory } from '@prisma/client';
 import { Response } from 'express';
 import { asyncHandler } from '../../shared/asyncHandler';
 import { AppError } from '../../shared/errors';
@@ -128,7 +129,7 @@ export const importIngredients = asyncHandler(async (req: AuthRequest & { file?:
             const raw = {
                 name: r[col('name')]?.trim(),
                 unit: r[col('unit')]?.trim() || 'pcs',
-                category: categoryRaw ? (categoryRaw as 'RAW_MATERIAL' | 'PACKAGING') : undefined,
+                category: categoryRaw ? (categoryRaw as IngredientCategory) : undefined,
                 costPerUnit: Number(r[colCost()]?.trim()),
                 purchaseUnit: r[col('purchaseunit')]?.trim() || null,
                 purchaseUnitSize: r[col('purchaseunitsize')]?.trim() ? Number(r[col('purchaseunitsize')]?.trim()) : null,

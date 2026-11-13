@@ -1,4 +1,4 @@
-import { Prisma } from '@prisma/client';
+import { IngredientCategory, Prisma } from '@prisma/client';
 import prisma from '../../../lib/prisma';
 import { AppError } from '../../shared/errors';
 import { normalizeSubcategoryOptions, parseSubcategoryOptions, resolveSubcategory } from '../../shared/subcategories';
@@ -94,9 +94,13 @@ const validateRecipeLines = async (storeId: string, recipeLines: RecipeLineInput
         throw new AppError('DUPLICATE_INGREDIENT', 'Each ingredient can only appear once in a recipe.', 400);
     }
 
-    const count = await ingredientRepository.countByIds(storeId, uniqueIngredientIds);
-    if (count !== uniqueIngredientIds.length) {
+    const ingredients = await ingredientRepository.listCategoriesByIds(storeId, uniqueIngredientIds);
+    if (ingredients.length !== uniqueIngredientIds.length) {
         throw new AppError('INGREDIENT_NOT_FOUND', 'One or more ingredients are missing.', 404);
+    }
+
+    if (ingredients.some((ingredient) => ingredient.category === IngredientCategory.SUPPLY)) {
+        throw new AppError('INVALID_RECIPE_INGREDIENT', 'Supplies cannot be used in a recipe.', 400);
     }
 };
 
