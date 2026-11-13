@@ -88,14 +88,14 @@ export const resolveStore = (context: McpContext, storeId: string | undefined): 
  * Called by every write tool right before it changes anything. Membership was
  * checked when this request was authenticated (each request is independent).
  */
-export const assertCanWrite = (context: McpContext, store: McpStore) => {
+export const assertCanWrite = (context: McpContext, store: McpStore, permission: PermissionKey = 'inventory.manage') => {
     if (context.access !== McpTokenAccess.READ_WRITE) {
         throw new AppError('MCP_READ_ONLY', 'This token is read-only.', 403);
     }
     if (store.billingSuspended) {
         throw new AppError('BILLING_SUSPENDED', BILLING_SUSPENDED_MESSAGE, 402);
     }
-    if (!store.permissions.includes('inventory.manage')) {
+    if (!store.permissions.includes(permission)) {
         throw new AppError('FORBIDDEN', "Your role doesn't have permission to do this.", 403);
     }
 };

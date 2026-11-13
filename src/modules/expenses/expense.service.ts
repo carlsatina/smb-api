@@ -63,7 +63,14 @@ export const expenseService = {
             createdById: userId,
         });
     },
-    update: async (storeId: string, expenseId: string, data: Partial<ExpenseInput>, userId?: string) => {
+    /** `skipAudit` is for callers (the MCP server) that write their own audit entry. */
+    update: async (
+        storeId: string,
+        expenseId: string,
+        data: Partial<ExpenseInput>,
+        userId?: string,
+        options: { skipAudit?: boolean } = {}
+    ) => {
         const existing = await expenseRepository.getById(storeId, expenseId);
         if (!existing) {
             throw new AppError('NOT_FOUND', 'Expense not found', 404);
@@ -96,7 +103,7 @@ export const expenseService = {
                 { date: existing.date, amount: existing.amount, category: existing.category, note: existing.note },
                 { date: result.date, amount: result.amount, category: result.category, note: result.note }
             );
-            if (Object.keys(changes).length > 0) {
+            if (!options.skipAudit && Object.keys(changes).length > 0) {
                 const auditData: Prisma.AuditLogCreateInput = {
                     store: { connect: { id: storeId } },
                     action: 'EXPENSE_UPDATED',

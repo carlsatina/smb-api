@@ -11,12 +11,14 @@ import { productService } from '../products/product.service';
 import { productCreateSchema, productUpdateSchema } from '../products/product.schemas';
 import { recipeService } from '../recipes/recipe.service';
 import { recipeLinesUpdateSchema } from '../recipes/recipe.schemas';
+import { expenseService } from '../expenses/expense.service';
+import { expenseCreateSchema, expenseUpdateSchema, listExpensesQuerySchema } from '../expenses/expense.schemas';
 import { assertCanWrite, McpContext, resolveStore } from './mcp.auth';
 import { mcpRepository } from './mcp.repository';
 
 // Sales, payments, team members and secrets (AI key, billing) are deliberately
 // not reachable from here: the server only covers store settings (read-only),
-// ingredients, products and recipes.
+// ingredients, products, recipes and expenses.
 
 const MAX_LIST = 500;
 
@@ -109,6 +111,19 @@ const recipeOut = (lines: RecipeLines) => {
         estimatedCostPerUnit: Number(out.reduce((sum, line) => sum + line.lineCost, 0).toFixed(2)),
     };
 };
+
+type ExpenseRow = Awaited<ReturnType<typeof expenseService.get>>;
+const expenseOut = (expense: ExpenseRow) => ({
+    id: expense.id,
+    date: expense.date.toISOString().slice(0, 10),
+    amount: Number(expense.amount),
+    category: expense.category,
+    note: expense.note,
+    source: expense.source,
+    recordedBy: expense.createdBy?.fullName ?? null,
+});
+
+const dateInput = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
 /** Keeps only the fields the caller actually sent so updates stay partial. */
 const defined = <T extends Record<string, unknown>>(value: T) =>
@@ -296,6 +311,50 @@ export const registerMcpTools = (server: McpServer, context: McpContext) => {
         })
     );
 
+    server.registerTool(
+        'list_expenses',
+        {
+            title: 'List expenses',
+            description: 'Recorded expenses (rent, utilities, supplies…), newest first, with the total. Dates are store-local calendar days.',
+            inputSchema: {
+                storeId: storeIdInput,
+                from: dateInput.optional().describe('First day to include, YYYY-MM-DD.'),
+                to: dateInput.optional().describe('Last day to include, YYYY-MM-DD.'),
+                category: z.string().min(1).optional().describe('Exact expense category.'),
+                source: z.enum(['MANUAL', 'DAILY_SALES']).optional().describe('DAILY_SALES expenses were entered from the daily sales sheet.'),
+                search: z.string().optional().describe('Case-insensitive match on category or note.'),
+            },
+            annotations: { readOnlyHint: true },
+        },
+        safe('list_expenses', async ({ storeId: requested, search, ...query }) => {
+            const store = resolveStore(context, requested);
+            const filters = listExpensesQuerySchema.parse(defined(query));
+            const rows = (await expenseService.list(store.id, store.permissions, filters)).filter((e) =>
+                matches(search, e.category, e.note)
+            );
+            const total = rows.reduce((sum, e) => sum + Number(e.amount), 0);
+            return json({
+                count: rows.length,
+                totalAmount: Number(total.toFixed(2)),
+                expenses: rows.slice(0, MAX_LIST).map(expenseOut),
+            });
+        })
+    );
+
+    server.registerTool(
+        'get_expense',
+        {
+            title: 'Get expense',
+            description: 'One expense by id.',
+            inputSchema: { storeId: storeIdInput, expenseId: z.string().min(1) },
+            annotations: { readOnlyHint: true },
+        },
+        safe('get_expense', async ({ storeId: requested, expenseId }) => {
+            const store = resolveStore(context, requested);
+            return json(expenseOut(await expenseService.get(store.id, store.permissions, expenseId)));
+        })
+    );
+
     // Write tools are only offered to read & write tokens, so read-only
     // clients never see them.
     if (context.access !== McpTokenAccess.READ_WRITE) return;
@@ -438,6 +497,63 @@ export const registerMcpTools = (server: McpServer, context: McpContext) => {
                 previous: { lines: previous.lines.map((l) => ({ ingredient: l.ingredientName, qty: l.qtyPerProductUnit })) },
             });
             return json({ productId, name: product.name, ...updated });
+        })
+    );
+
+    server.registerTool(
+        'create_expense',
+        {
+            title: 'Record expense',
+            description: 'Records an expense. It is subtracted from profit in reports (Net after expenses).',
+            inputSchema: {
+                storeId: storeIdInput,
+                date: dateInput.describe('Day the expense was paid, YYYY-MM-DD (store-local).'),
+                amount: z.number().positive().describe('Amount in the store currency.'),
+                category: z.string().min(1).max(100).describe('Should be one of the store expenseCategoryOptions.'),
+                note: z.string().max(500).nullable().optional(),
+            },
+        },
+        safe('create_expense', async ({ storeId: requested, ...args }) => {
+            const store = resolveStore(context, requested);
+            assertCanWrite(context, store, 'expenses.manage');
+            // Expenses from the AI are always MANUAL; DAILY_SALES is reserved for the daily sales sheet.
+            const data = expenseCreateSchema.parse({ ...defined(args), source: 'MANUAL' });
+            const created = await expenseService.create(store.id, context.userId, data);
+            await audit(context, store.id, 'MCP_EXPENSE_CREATED', 'Expense', created.id, {
+                name: created.category,
+                changes: { date: data.date, amount: data.amount, category: data.category, note: data.note ?? null },
+            });
+            return json(expenseOut(created));
+        })
+    );
+
+    server.registerTool(
+        'update_expense',
+        {
+            title: 'Update expense',
+            description: 'Changes the given fields of an expense; omitted fields are left as they are.',
+            inputSchema: {
+                storeId: storeIdInput,
+                expenseId: z.string().min(1),
+                date: dateInput.optional().describe('YYYY-MM-DD (store-local).'),
+                amount: z.number().positive().optional(),
+                category: z.string().min(1).max(100).optional(),
+                note: z.string().max(500).nullable().optional().describe('null to clear.'),
+            },
+        },
+        safe('update_expense', async ({ storeId: requested, expenseId, ...fields }) => {
+            const store = resolveStore(context, requested);
+            assertCanWrite(context, store, 'expenses.manage');
+            const data = expenseUpdateSchema.parse(defined(fields));
+            const before = expenseOut(await expenseService.get(store.id, store.permissions, expenseId));
+            const updated = await expenseService.update(store.id, expenseId, data, context.userId, { skipAudit: true });
+            const previous = Object.fromEntries(Object.keys(data).map((key) => [key, before[key as keyof typeof before]]));
+            await audit(context, store.id, 'MCP_EXPENSE_UPDATED', 'Expense', expenseId, {
+                name: updated.category,
+                changes: data,
+                previous,
+            });
+            return json(expenseOut(updated));
         })
     );
 };
