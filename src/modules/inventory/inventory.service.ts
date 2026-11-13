@@ -1,4 +1,5 @@
-import { ItemType, MovementType, Prisma, ProductType, StoreType } from '@prisma/client';
+import { randomUUID } from 'crypto';
+import { IngredientCategory, ItemType, MovementType, Prisma, ProductType, StoreType } from '@prisma/client';
 import prisma from '../../../lib/prisma';
 import { AppError } from '../../shared/errors';
 import { AuthRequest } from '../../middlewares/auth';
@@ -134,6 +135,40 @@ const buildStockItems = async (
 
     return stockItems;
 };
+
+/**
+ * Loads the store's supplies (Supply-category ingredients) for the given ids and refuses
+ * anything missing or not a supply, so usage/count entries never touch recipe stock.
+ */
+const loadSupplies = async (storeId: string, itemIds: string[]) => {
+    const uniqueIds = Array.from(new Set(itemIds));
+    if (uniqueIds.length !== itemIds.length) {
+        throw new AppError('DUPLICATE_ITEM', 'Each supply can only appear once.', 400);
+    }
+    const supplies = await prisma.ingredient.findMany({
+        where: { storeId, deletedAt: null, id: { in: uniqueIds } },
+        select: { id: true, name: true, unit: true, category: true, costPerUnit: true },
+    });
+    if (supplies.length !== uniqueIds.length) {
+        throw new AppError('NOT_FOUND', 'One or more supplies were not found.', 404);
+    }
+    const notSupply = supplies.find((item) => item.category !== IngredientCategory.SUPPLY);
+    if (notSupply) {
+        throw new AppError('NOT_A_SUPPLY', `"${notSupply.name}" is not in the Supply category.`, 400);
+    }
+    return new Map(supplies.map((item) => [item.id, item]));
+};
+
+const sumSupplyStock = async (tx: Prisma.TransactionClient, storeId: string, itemIds: string[]) => {
+    const rows = await tx.inventoryMovement.groupBy({
+        by: ['itemId'],
+        where: { storeId, itemType: ItemType.INGREDIENT, itemId: { in: itemIds } },
+        _sum: { qtyDelta: true },
+    });
+    return new Map(rows.map((row) => [row.itemId, normalizeDecimal(row._sum.qtyDelta)]));
+};
+
+const roundQty = (value: number) => Math.round(value * 10000) / 10000;
 
 const buildMovementResponse = async (
     storeId: string,
@@ -789,6 +824,167 @@ export const inventoryService = {
             transferred: formatted.length,
             destinationStoreName: destStore.name,
             movements: formatted,
+        };
+    },
+    /** "Used 2 boxes of gloves": deducts supplies as USAGE movements. */
+    recordSupplyUsage: async (
+        storeId: string,
+        userId: string | undefined,
+        data: { items: Array<{ itemId: string; qty: number }>; note?: string | null }
+    ) => {
+        if (!userId) {
+            throw new AppError('UNAUTHORIZED', 'User is required to record usage.', 401);
+        }
+        const store = await ensureStore(storeId);
+        const supplies = await loadSupplies(storeId, data.items.map((item) => item.itemId));
+        const batchId = randomUUID();
+
+        const movements = await prisma.$transaction(async (tx) => {
+            const stock = await sumSupplyStock(tx, storeId, Array.from(supplies.keys()));
+            const lines = data.items.map((item) => {
+                const supply = supplies.get(item.itemId)!;
+                const currentQty = stock.get(item.itemId) ?? 0;
+                const nextQty = roundQty(currentQty - item.qty);
+                if (!store.allowNegativeStock && nextQty < 0) {
+                    throw new AppError(
+                        'NEGATIVE_STOCK',
+                        `Not enough "${supply.name}" in stock. Available: ${currentQty} ${supply.unit}, used: ${item.qty}.`,
+                        400
+                    );
+                }
+                return { supply, qty: item.qty, currentQty, nextQty };
+            });
+
+            const created = [];
+            for (const line of lines) {
+                created.push(
+                    await tx.inventoryMovement.create({
+                        data: {
+                            storeId,
+                            itemType: ItemType.INGREDIENT,
+                            itemId: line.supply.id,
+                            qtyDelta: new Prisma.Decimal(-line.qty),
+                            unitCost: line.supply.costPerUnit,
+                            type: MovementType.USAGE,
+                            referenceType: 'SUPPLY_USAGE',
+                            referenceId: batchId,
+                            note: data.note ?? null,
+                            createdById: userId,
+                        },
+                        include: { createdBy: { select: { id: true, fullName: true, email: true } } },
+                    })
+                );
+            }
+
+            await tx.auditLog.create({
+                data: {
+                    storeId,
+                    actorId: userId,
+                    action: 'SUPPLY_USAGE',
+                    entityType: 'InventoryMovement',
+                    entityId: created[0].id,
+                    meta: {
+                        batchId,
+                        note: data.note ?? null,
+                        items: lines.map((line) => ({
+                            itemId: line.supply.id,
+                            itemName: line.supply.name,
+                            unit: line.supply.unit,
+                            qty: line.qty,
+                            currentQty: line.currentQty,
+                            nextQty: line.nextQty,
+                        })),
+                    },
+                },
+            });
+
+            return created;
+        });
+
+        return { movements: await buildMovementResponse(storeId, movements) };
+    },
+    /**
+     * Shelf count: sets each supply to the counted quantity. A shortfall is recorded as
+     * USAGE (what was used since the last count); a surplus is a STOCK_ADJUSTMENT correction.
+     */
+    recordSupplyCount: async (
+        storeId: string,
+        userId: string | undefined,
+        data: { counts: Array<{ itemId: string; countedQty: number }>; note?: string | null }
+    ) => {
+        if (!userId) {
+            throw new AppError('UNAUTHORIZED', 'User is required to record a count.', 401);
+        }
+        await ensureStore(storeId);
+        const supplies = await loadSupplies(storeId, data.counts.map((count) => count.itemId));
+        const batchId = randomUUID();
+
+        const result = await prisma.$transaction(async (tx) => {
+            const stock = await sumSupplyStock(tx, storeId, Array.from(supplies.keys()));
+            const lines = data.counts.map((count) => {
+                const supply = supplies.get(count.itemId)!;
+                const expectedQty = stock.get(count.itemId) ?? 0;
+                return { supply, expectedQty, countedQty: count.countedQty, diff: roundQty(count.countedQty - expectedQty) };
+            });
+
+            const created = [];
+            for (const line of lines) {
+                if (line.diff === 0) continue;
+                created.push(
+                    await tx.inventoryMovement.create({
+                        data: {
+                            storeId,
+                            itemType: ItemType.INGREDIENT,
+                            itemId: line.supply.id,
+                            qtyDelta: new Prisma.Decimal(line.diff),
+                            unitCost: line.supply.costPerUnit,
+                            type: line.diff < 0 ? MovementType.USAGE : MovementType.STOCK_ADJUSTMENT,
+                            referenceType: 'SUPPLY_COUNT',
+                            referenceId: batchId,
+                            note: data.note ?? null,
+                            createdById: userId,
+                        },
+                        include: { createdBy: { select: { id: true, fullName: true, email: true } } },
+                    })
+                );
+            }
+
+            await tx.auditLog.create({
+                data: {
+                    storeId,
+                    actorId: userId,
+                    action: 'SUPPLY_COUNT',
+                    entityType: 'SupplyCount',
+                    entityId: batchId,
+                    meta: {
+                        batchId,
+                        note: data.note ?? null,
+                        items: lines.map((line) => ({
+                            itemId: line.supply.id,
+                            itemName: line.supply.name,
+                            unit: line.supply.unit,
+                            expectedQty: line.expectedQty,
+                            countedQty: line.countedQty,
+                            diff: line.diff,
+                        })),
+                    },
+                },
+            });
+
+            return { created, lines };
+        });
+
+        const used = result.lines.filter((line) => line.diff < 0);
+        const surplus = result.lines.filter((line) => line.diff > 0);
+        return {
+            counted: result.lines.length,
+            usedItems: used.length,
+            surplusItems: surplus.length,
+            unchangedItems: result.lines.length - used.length - surplus.length,
+            usageCost: roundQty(
+                used.reduce((total, line) => total + -line.diff * Number(line.supply.costPerUnit), 0)
+            ),
+            movements: await buildMovementResponse(storeId, result.created),
         };
     },
 };

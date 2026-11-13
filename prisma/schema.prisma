@@ -29,6 +29,7 @@ enum MovementType {
   VOID
   TRANSFER_OUT
   TRANSFER_IN
+  USAGE
 }
 
 enum BillingDiscountType {

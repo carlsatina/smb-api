@@ -8,6 +8,8 @@ import {
     inventoryStockQuerySchema,
     stockAdjustmentSchema,
     transferStockSchema,
+    supplyCountSchema,
+    supplyUsageSchema,
 } from './inventory.schemas';
 import { inventoryService } from './inventory.service';
 
@@ -76,5 +78,27 @@ export const batchTransferStock = asyncHandler(async (req: AuthRequest, res: Res
 
     const payload = batchTransferStockSchema.parse(req.body);
     const result = await inventoryService.batchTransferStock(storeId, req.user?.sub, payload);
+    res.status(201).json(result);
+});
+
+export const recordSupplyUsage = asyncHandler(async (req: AuthRequest, res: Response) => {
+    const storeId = req.params.storeId;
+    if (!storeId) {
+        throw new AppError('STORE_REQUIRED', 'Store is required', 400);
+    }
+
+    const payload = supplyUsageSchema.parse(req.body);
+    const result = await inventoryService.recordSupplyUsage(storeId, req.user?.sub, payload);
+    res.status(201).json(result);
+});
+
+export const recordSupplyCount = asyncHandler(async (req: AuthRequest, res: Response) => {
+    const storeId = req.params.storeId;
+    if (!storeId) {
+        throw new AppError('STORE_REQUIRED', 'Store is required', 400);
+    }
+
+    const payload = supplyCountSchema.parse(req.body);
+    const result = await inventoryService.recordSupplyCount(storeId, req.user?.sub, payload);
     res.status(201).json(result);
 });

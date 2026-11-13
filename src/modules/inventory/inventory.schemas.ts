@@ -177,3 +177,29 @@ export const batchTransferStockSchema = z.object({
     note: z.string().max(500).optional().nullable(),
     transferDate: transferDateSchema,
 });
+
+export const supplyUsageSchema = z.object({
+    items: z
+        .array(
+            z.object({
+                itemId: z.string().min(1),
+                qty: z.number().positive(),
+            })
+        )
+        .min(1, 'Add at least one supply.')
+        .max(200),
+    note: z.string().max(500).optional().nullable(),
+});
+
+export const supplyCountSchema = z.object({
+    counts: z
+        .array(
+            z.object({
+                itemId: z.string().min(1),
+                countedQty: z.number().nonnegative(),
+            })
+        )
+        .min(1, 'Count at least one supply.')
+        .max(500),
+    note: z.string().max(500).optional().nullable(),
+});
