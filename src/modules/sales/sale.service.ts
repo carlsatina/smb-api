@@ -173,9 +173,13 @@ const calculateSaleItems = (
             throw new AppError('INVALID_DISCOUNT', 'Discount exceeds line subtotal.', 400);
         }
 
-        const lineTotal = roundMoney(lineSubtotal - discount + tax);
+        // Prices are VAT-inclusive: tax is the VAT portion already inside the line, not an extra charge.
+        const lineTotal = roundMoney(lineSubtotal - discount);
         if (lineTotal < 0) {
             throw new AppError('INVALID_TOTAL', 'Line total must be non-negative.', 400);
+        }
+        if (roundMoney(tax) > lineTotal) {
+            throw new AppError('INVALID_TAX', 'Tax cannot exceed the line total.', 400);
         }
 
         subtotal += lineSubtotal;
@@ -201,7 +205,7 @@ const calculateSaleItems = (
     discountTotal = roundMoney(discountTotal);
     taxTotal = roundMoney(taxTotal);
 
-    const total = roundMoney(subtotal - discountTotal + taxTotal);
+    const total = roundMoney(subtotal - discountTotal);
 
     return {
         saleItems,
