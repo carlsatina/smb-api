@@ -41,7 +41,7 @@ export const updateStore = asyncHandler(async (req: AuthRequest, res: Response) 
     }
 
     const payload = updateStoreSchema.parse(req.body);
-    const store = await storeService.updateStore(storeId, payload);
+    const store = await storeService.updateStore(storeId, payload, userId);
     if (!store) {
         throw new AppError('NOT_FOUND', 'Store not found', 404);
     }

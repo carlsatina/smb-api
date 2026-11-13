@@ -66,6 +66,8 @@ export const reportIngredientUsageQuerySchema = reportRangeSchema.safeExtend({
     limit: limitValue(8),
 });
 
+export const reportSupplyUsageQuerySchema = reportRangeSchema;
+
 export const reportPurchaseSpendQuerySchema = reportRangeSchema.safeExtend({
     limit: limitValue(8),
 });

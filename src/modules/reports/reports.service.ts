@@ -1,10 +1,45 @@
-import { ItemType, MovementType, PaymentMethod, Prisma, ProductType, Role, SaleStatus } from '@prisma/client';
+import { IngredientCategory, ItemType, MovementType, PaymentMethod, Prisma, ProductType, Role, SaleStatus, SupplyCostBasis } from '@prisma/client';
 import prisma from '../../../lib/prisma';
 import { AppError } from '../../shared/errors';
 import { inventoryService } from '../inventory/inventory.service';
 import type { PermissionKey } from '../../shared/permissions';
 import { parseSalesChannels } from '../../shared/salesChannels';
 import { canViewRestrictedExpenses, RESTRICTED_EXPENSE_CATEGORIES } from '../expenses/expense.constants';
+
+type SupplyUsageRow = {
+    itemId: string;
+    qtyUsed: Prisma.Decimal | number | string | null;
+    cost: Prisma.Decimal | number | string | null;
+    qtyUncosted: Prisma.Decimal | number | string | null;
+};
+
+type SupplyStockRow = {
+    itemId: string;
+    currentQty: Prisma.Decimal | number | string | null;
+    trailingUsed: Prisma.Decimal | number | string | null;
+    firstMovementDay: string | null;
+};
+
+/** Expense category that holds supply purchases; excluded from net profit when supplies are costed on use. */
+const SUPPLY_EXPENSE_CATEGORY = 'supplies';
+
+/** Cost of supplies used (USAGE movements) in a store-local date range, at the cost snapshotted on each row. */
+const sumSupplyUsageCost = async (storeId: string, timeZone: string, startDate: string, endDate: string) => {
+    const rows = await prisma.$queryRaw<Array<{ cost: Prisma.Decimal | number | string | null }>>`
+        SELECT SUM(-im."qtyDelta" * COALESCE(im."unitCost", i."costPerUnit")) AS cost
+        FROM "InventoryMovement" im
+        JOIN "Ingredient" i ON i."id" = im."itemId"
+        WHERE im."storeId" = ${storeId}
+          AND im."itemType" = ${ItemType.INGREDIENT}
+          AND im."type" = ${MovementType.USAGE}
+          AND timezone(${timeZone}, (im."createdAt" AT TIME ZONE 'UTC')) >= ${startDate}::date
+          AND timezone(${timeZone}, (im."createdAt" AT TIME ZONE 'UTC')) < (${endDate}::date + interval '1 day')
+    `;
+    return roundMoney(normalizeNumber(rows[0]?.cost));
+};
+
+/** Days-left is based on this trailing window (ending today) regardless of the selected range. */
+const SUPPLY_RATE_WINDOW_DAYS = 28;
 
 type SalesByDayRow = {
     day: string;
@@ -148,7 +183,7 @@ const buildDateKeys = (startDate: string, endDate: string) => {
 const ensureStore = async (storeId: string) => {
     const store = await prisma.store.findFirst({
         where: { id: storeId, deletedAt: null },
-        select: { id: true, timezone: true, salesChannels: true },
+        select: { id: true, timezone: true, salesChannels: true, supplyCostBasis: true },
     });
 
     if (!store) {
@@ -612,6 +647,7 @@ export const reportsService = {
             .map((item) => ({
                 itemType: item.itemType,
                 itemId: item.itemId,
+                subType: item.subType,
                 name: item.name,
                 unit: item.unit,
                 currentQty: item.currentQty,
@@ -669,6 +705,131 @@ export const reportsService = {
                     qtyUsed: roundQty(qtyUsed),
                 };
             }),
+        };
+    },
+    getSupplyUsage: async (storeId: string, from: string | undefined, to: string | undefined) => {
+        const store = await ensureStore(storeId);
+        const timeZone = store.timezone || 'UTC';
+        const { startDate, endDate } = buildDateRange(from, to, timeZone);
+        const today = formatDateInTimeZone(new Date(), timeZone);
+        const rateStart = shiftDate(today, -(SUPPLY_RATE_WINDOW_DAYS - 1));
+
+        const supplies = await prisma.ingredient.findMany({
+            where: { storeId, deletedAt: null, category: IngredientCategory.SUPPLY },
+            select: { id: true, name: true, unit: true, costPerUnit: true, active: true, lowStockThreshold: true },
+            orderBy: { name: 'asc' },
+        });
+        const supplyIds = supplies.map((supply) => supply.id);
+
+        const emptySummary = {
+            range: { from: startDate, to: endDate },
+            rateWindowDays: SUPPLY_RATE_WINDOW_DAYS,
+            summary: { totalCost: 0, netSales: 0, costPerThousandSales: null as number | null, lastCountAt: null as string | null },
+            supplies: [] as Array<Record<string, unknown>>,
+        };
+        if (supplyIds.length === 0) {
+            return emptySummary;
+        }
+
+        const [usageRows, stockRows, salesRows, lastCount] = await Promise.all([
+            prisma.$queryRaw<SupplyUsageRow[]>`
+                SELECT im."itemId" AS "itemId",
+                       SUM(-im."qtyDelta") AS "qtyUsed",
+                       SUM(-im."qtyDelta" * im."unitCost") AS "cost",
+                       SUM(CASE WHEN im."unitCost" IS NULL THEN -im."qtyDelta" ELSE 0 END) AS "qtyUncosted"
+                FROM "InventoryMovement" im
+                WHERE im."storeId" = ${storeId}
+                  AND im."itemType" = ${ItemType.INGREDIENT}
+                  AND im."type" = ${MovementType.USAGE}
+                  AND im."itemId" IN (${Prisma.join(supplyIds)})
+                  AND timezone(${timeZone}, (im."createdAt" AT TIME ZONE 'UTC')) >= ${startDate}::date
+                  AND timezone(${timeZone}, (im."createdAt" AT TIME ZONE 'UTC')) < (${endDate}::date + interval '1 day')
+                GROUP BY im."itemId"
+            `,
+            prisma.$queryRaw<SupplyStockRow[]>`
+                SELECT im."itemId" AS "itemId",
+                       SUM(im."qtyDelta") AS "currentQty",
+                       SUM(CASE
+                               WHEN im."type" = ${MovementType.USAGE}
+                                AND timezone(${timeZone}, (im."createdAt" AT TIME ZONE 'UTC')) >= ${rateStart}::date
+                               THEN -im."qtyDelta" ELSE 0
+                           END) AS "trailingUsed",
+                       to_char(MIN(timezone(${timeZone}, (im."createdAt" AT TIME ZONE 'UTC'))), 'YYYY-MM-DD') AS "firstMovementDay"
+                FROM "InventoryMovement" im
+                WHERE im."storeId" = ${storeId}
+                  AND im."itemType" = ${ItemType.INGREDIENT}
+                  AND im."itemId" IN (${Prisma.join(supplyIds)})
+                GROUP BY im."itemId"
+            `,
+            prisma.$queryRaw<Array<{ net: Prisma.Decimal | number | string | null }>>`
+                SELECT SUM("total") AS net
+                FROM "Sale"
+                WHERE "storeId" = ${storeId}
+                  AND "status" = ${SaleStatus.FINALIZED}
+                  AND "deletedAt" IS NULL
+                  AND timezone(${timeZone}, (COALESCE("finalizedAt", "createdAt") AT TIME ZONE 'UTC')) >= ${startDate}::date
+                  AND timezone(${timeZone}, (COALESCE("finalizedAt", "createdAt") AT TIME ZONE 'UTC')) < (${endDate}::date + interval '1 day')
+            `,
+            prisma.auditLog.findFirst({
+                where: { storeId, action: 'SUPPLY_COUNT' },
+                orderBy: { createdAt: 'desc' },
+                select: { createdAt: true },
+            }),
+        ]);
+
+        const usageMap = new Map(usageRows.map((row) => [row.itemId, row]));
+        const stockMap = new Map(stockRows.map((row) => [row.itemId, row]));
+
+        const rows = supplies
+            .map((supply) => {
+                const usage = usageMap.get(supply.id);
+                const stock = stockMap.get(supply.id);
+                const qtyUsed = roundQty(normalizeNumber(usage?.qtyUsed));
+                // Older rows without a cost snapshot fall back to the current cost per unit.
+                const cost = roundMoney(
+                    normalizeNumber(usage?.cost) + normalizeNumber(usage?.qtyUncosted) * Number(supply.costPerUnit)
+                );
+                const currentQty = roundQty(normalizeNumber(stock?.currentQty));
+
+                // Rate window: the last 28 days, or fewer if the supply has a shorter history.
+                const firstDay = stock?.firstMovementDay ?? null;
+                const windowStart = firstDay && firstDay > rateStart ? firstDay : rateStart;
+                const windowDays = Math.max(1, buildDateKeys(windowStart, today).length);
+                const trailingUsed = normalizeNumber(stock?.trailingUsed);
+                const avgDailyUse = trailingUsed > 0 ? roundQty(trailingUsed / windowDays) : 0;
+                const daysLeft = avgDailyUse > 0 ? Math.max(0, Math.floor(currentQty / avgDailyUse)) : null;
+                const threshold = supply.lowStockThreshold === null ? null : Number(supply.lowStockThreshold);
+
+                return {
+                    ingredientId: supply.id,
+                    name: supply.name,
+                    unit: supply.unit,
+                    active: supply.active,
+                    qtyUsed,
+                    cost,
+                    currentQty,
+                    avgDailyUse,
+                    daysLeft,
+                    lowStockThreshold: threshold,
+                    isLow: threshold !== null && threshold > 0 && currentQty <= threshold,
+                };
+            })
+            .filter((row) => row.active || row.qtyUsed > 0 || row.currentQty !== 0)
+            .sort((a, b) => b.cost - a.cost || a.name.localeCompare(b.name));
+
+        const totalCost = roundMoney(rows.reduce((total, row) => total + row.cost, 0));
+        const netSales = roundMoney(normalizeNumber(salesRows[0]?.net));
+
+        return {
+            range: { from: startDate, to: endDate },
+            rateWindowDays: SUPPLY_RATE_WINDOW_DAYS,
+            summary: {
+                totalCost,
+                netSales,
+                costPerThousandSales: netSales > 0 ? roundMoney((totalCost / netSales) * 1000) : null,
+                lastCountAt: lastCount?.createdAt.toISOString() ?? null,
+            },
+            supplies: rows,
         };
     },
     getPurchaseSpend: async (storeId: string, from: string | undefined, to: string | undefined, limit: number) => {
@@ -907,10 +1068,23 @@ export const reportsService = {
 
         const total = roundMoney(byCategory.reduce((sum, row) => sum + row.total, 0));
 
+        // What net profit should subtract. On a USAGE basis, logged "Supplies" expenses are
+        // swapped for the cost of supplies actually used, so a bulk purchase isn't one month's cost.
+        const basis = store.supplyCostBasis;
+        const purchased = roundMoney(
+            byCategory
+                .filter((row) => row.category.trim().toLowerCase() === SUPPLY_EXPENSE_CATEGORY)
+                .reduce((sum, row) => sum + row.total, 0)
+        );
+        const used = basis === SupplyCostBasis.USAGE ? await sumSupplyUsageCost(storeId, timeZone, startDate, endDate) : 0;
+        const profitDeduction = basis === SupplyCostBasis.USAGE ? roundMoney(total - purchased + used) : total;
+
         return {
             range: { from: startDate, to: endDate },
             total,
             byCategory,
+            profitDeduction,
+            supplies: { basis, purchased, used },
         };
     },
 };

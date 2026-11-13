@@ -37,6 +37,13 @@ enum BillingDiscountType {
   FIXED
 }
 
+// When store supplies (Supply-category items) reduce net profit: as "Supplies" expenses
+// are logged (PURCHASE), or as supplies are used per counts/usage entries (USAGE).
+enum SupplyCostBasis {
+  PURCHASE
+  USAGE
+}
+
 enum StoreType {
   RETAIL
   WAREHOUSE
@@ -227,6 +234,7 @@ model Store {
   // Sales channels like Grab: [{ key, name, markupPercent, rounding, alwaysTakeout, active }]
   salesChannels            Json        @default("[]")
   expenseCategoryOptions   String[]    @default([])
+  supplyCostBasis          SupplyCostBasis @default(PURCHASE)
   allowNegativeStock       Boolean     @default(false)
   lowStockThreshold        Decimal     @default(0) @db.Decimal(12, 4)
   defaultTaxRate           Decimal     @default(0) @db.Decimal(5, 2)

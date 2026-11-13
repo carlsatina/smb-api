@@ -1,4 +1,4 @@
-import { AiProvider, Prisma, Role, Store, StoreType } from '@prisma/client';
+import { AiProvider, Prisma, Role, Store, StoreType, SupplyCostBasis } from '@prisma/client';
 import prisma from '../../../lib/prisma';
 import { AppError } from '../../shared/errors';
 import { BILLING_SUSPENDED_MESSAGE, findOverdueByOwner, OverdueMonth } from '../../shared/billingStatus';
@@ -67,6 +67,7 @@ type UpdateStoreInput = {
     cashierSalesHistoryLimit?: number | null;
     paymentMethods?: string[];
     salesChannels?: Array<Omit<SalesChannel, 'key'> & { key?: string | null }>;
+    supplyCostBasis?: SupplyCostBasis;
 };
 
 const normalizeOptions = (options: string[] | undefined, fallback: string[]) => {
@@ -136,6 +137,7 @@ export const storeService = {
                 subcategoryOptions: parseSubcategoryOptions(membership.store.subcategoryOptions),
                 salesChannels: parseSalesChannels(membership.store.salesChannels),
                 expenseCategoryOptions: membership.store.expenseCategoryOptions,
+                supplyCostBasis: membership.store.supplyCostBasis,
                 defaultTaxRate: Number(membership.store.defaultTaxRate ?? 0),
                 defaultDiscount: Number(membership.store.defaultDiscount ?? 0),
                 cashierSalesHistoryLimit: membership.store.cashierSalesHistoryLimit ?? null,
@@ -219,7 +221,7 @@ export const storeService = {
             return toStoreDto(store);
         });
     },
-    updateStore: async (storeId: string, input: UpdateStoreInput) => {
+    updateStore: async (storeId: string, input: UpdateStoreInput, actorId?: string) => {
         const existing = await prisma.store.findFirst({
             where: {
                 id: storeId,
@@ -246,6 +248,12 @@ export const storeService = {
         }
         if (input.allowNegativeStock !== undefined) {
             data.allowNegativeStock = input.allowNegativeStock;
+        }
+        // Changing how supplies hit net profit rewrites past report figures, so it is audited.
+        const supplyCostBasisChanged =
+            input.supplyCostBasis !== undefined && input.supplyCostBasis !== existing.supplyCostBasis;
+        if (supplyCostBasisChanged) {
+            data.supplyCostBasis = input.supplyCostBasis;
         }
         if (input.lowStockThreshold !== undefined) {
             data.lowStockThreshold = input.lowStockThreshold;
@@ -288,9 +296,24 @@ export const storeService = {
             ) as Prisma.InputJsonValue;
         }
 
-        const updated = await prisma.store.update({
-            where: { id: storeId },
-            data,
+        const updated = await prisma.$transaction(async (tx) => {
+            const store = await tx.store.update({
+                where: { id: storeId },
+                data,
+            });
+            if (supplyCostBasisChanged && actorId) {
+                await tx.auditLog.create({
+                    data: {
+                        store: { connect: { id: storeId } },
+                        actor: { connect: { id: actorId } },
+                        action: 'SUPPLY_COST_BASIS_UPDATED',
+                        entityType: 'Store',
+                        entityId: storeId,
+                        meta: { from: existing.supplyCostBasis, to: input.supplyCostBasis } as Prisma.InputJsonValue,
+                    },
+                });
+            }
+            return store;
         });
         return toStoreDto(updated);
     },

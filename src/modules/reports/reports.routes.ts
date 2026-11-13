@@ -12,6 +12,7 @@ import {
     getProductsSold,
     getProfitSummary,
     getPurchaseSpend,
+    getSupplyUsage,
     getSalesByDay,
     getSalesByHour,
     getSalesSummary,
@@ -30,6 +31,7 @@ reportsRouter.get('/top-products', requirePermission('reports.view'), getTopProd
 reportsRouter.get('/products-sold', requirePermission('reports.view'), getProductsSold);
 reportsRouter.get('/low-stock', requirePermission('reports.view'), getLowStock);
 reportsRouter.get('/ingredient-usage', requirePermission('reports.view'), getIngredientUsage);
+reportsRouter.get('/supply-usage', requirePermission('reports.view'), getSupplyUsage);
 reportsRouter.get('/purchase-spend', requirePermission('reports.view'), getPurchaseSpend);
 reportsRouter.get('/product-margins', requirePermission('reports.view'), getProductMargins);
 reportsRouter.get('/profit-summary', requirePermission('reports.view'), getProfitSummary);

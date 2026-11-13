@@ -9,6 +9,7 @@ import {
     reportRangeSchema,
     reportProductsSoldQuerySchema,
     reportPurchaseSpendQuerySchema,
+    reportSupplyUsageQuerySchema,
     reportSalesByHourQuerySchema,
     reportSalesSummaryQuerySchema,
     reportTopProductsQuerySchema,
@@ -79,6 +80,17 @@ export const getIngredientUsage = asyncHandler(async (req: AuthRequest, res: Res
 
     const query = reportIngredientUsageQuerySchema.parse(req.query);
     const data = await reportsService.getIngredientUsage(storeId, query.from, query.to, query.limit);
+    res.status(200).json(data);
+});
+
+export const getSupplyUsage = asyncHandler(async (req: AuthRequest, res: Response) => {
+    const storeId = req.params.storeId;
+    if (!storeId) {
+        throw new AppError('STORE_REQUIRED', 'Store is required', 400);
+    }
+
+    const query = reportSupplyUsageQuerySchema.parse(req.query);
+    const data = await reportsService.getSupplyUsage(storeId, query.from, query.to);
     res.status(200).json(data);
 });
 

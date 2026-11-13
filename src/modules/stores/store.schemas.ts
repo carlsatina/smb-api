@@ -1,4 +1,4 @@
-import { AiProvider, StoreType } from '@prisma/client';
+import { AiProvider, StoreType, SupplyCostBasis } from '@prisma/client';
 import { z } from 'zod';
 import { EDITABLE_ROLES, PERMISSION_KEYS } from '../../shared/permissions';
 import { CHANNEL_ROUNDING } from '../../shared/salesChannels';
@@ -70,6 +70,7 @@ export const updateStoreSchema = z
         expenseCategoryOptions: optionalStringArray,
         cashierSalesHistoryLimit: optionalPositiveInt,
         paymentMethods: optionalPaymentMethods,
+        supplyCostBasis: z.nativeEnum(SupplyCostBasis).optional(),
         salesChannels: z
             .array(
                 z.object({
@@ -100,7 +101,8 @@ export const updateStoreSchema = z
             data.expenseCategoryOptions !== undefined ||
             data.cashierSalesHistoryLimit !== undefined ||
             data.paymentMethods !== undefined ||
-            data.salesChannels !== undefined,
+            data.salesChannels !== undefined ||
+            data.supplyCostBasis !== undefined,
         {
             message: 'Provide at least one field to update.',
         }
