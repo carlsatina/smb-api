@@ -4,6 +4,8 @@ import { AppError } from '../../shared/errors';
 import { AuthRequest } from '../../middlewares/auth';
 import { expenseCreateSchema, expenseUpdateSchema, listExpensesQuerySchema } from './expense.schemas';
 import { expenseService } from './expense.service';
+import { escapeCsvValue } from '../../shared/csv';
+import { EXPENSE_CSV_HEADERS } from './expense.csv';
 
 export const listExpenses = asyncHandler(async (req: AuthRequest, res: Response) => {
     const storeId = req.params.storeId;
@@ -63,4 +65,41 @@ export const deleteExpense = asyncHandler(async (req: AuthRequest, res: Response
 
     await expenseService.remove(storeId, expenseId, req.user?.sub);
     res.status(204).send();
+});
+
+export const exportExpenses = asyncHandler(async (req: AuthRequest, res: Response) => {
+    const storeId = req.params.storeId;
+    if (!storeId) throw new AppError('STORE_REQUIRED', 'Store is required', 400);
+
+    const query = listExpensesQuerySchema.parse(req.query);
+    // Same visibility as the list: rent/salaries only for members who may see payroll.
+    const expenses = await expenseService.list(storeId, req.permissions, query);
+
+    const rows: Array<Array<string | number | null>> = [
+        EXPENSE_CSV_HEADERS,
+        ...expenses.map((e) => [
+            e.date.toISOString().slice(0, 10),
+            e.category,
+            Number(e.amount).toFixed(2),
+            e.note,
+            e.source,
+            e.createdBy?.fullName || e.createdBy?.email || null,
+        ]),
+    ];
+    const csv = rows.map((row) => row.map(escapeCsvValue).join(',')).join('\n');
+    const range = [query.from, query.to].filter(Boolean).join('_to_') || new Date().toISOString().slice(0, 10);
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="expenses-${range}.csv"`);
+    res.status(200).send(csv);
+});
+
+export const importExpenses = asyncHandler(async (req: AuthRequest & { file?: Express.Multer.File }, res: Response) => {
+    const storeId = req.params.storeId;
+    const userId = req.user?.sub;
+    if (!storeId) throw new AppError('STORE_REQUIRED', 'Store is required', 400);
+    if (!userId) throw new AppError('UNAUTHORIZED', 'User is required to record expenses.', 401);
+    if (!req.file) throw new AppError('FILE_REQUIRED', 'CSV file is required', 400);
+
+    const result = await expenseService.importCsv(storeId, userId, req.file.buffer.toString('utf-8'));
+    res.status(200).json(result);
 });
