@@ -5,6 +5,38 @@ import { inventoryService } from '../inventory/inventory.service';
 import type { PermissionKey } from '../../shared/permissions';
 import { parseSalesChannels } from '../../shared/salesChannels';
 import { canViewRestrictedExpenses, RESTRICTED_EXPENSE_CATEGORIES } from '../expenses/expense.constants';
+import { maskIdNumber } from '../../shared/maskId';
+
+type Money = Prisma.Decimal | number | string | null;
+
+type DiscountByTypeRow = {
+    code: string;
+    name: string;
+    amount: Money;
+    vatRemoved: Money;
+    count: bigint | number | string;
+};
+
+type DiscountBookRow = {
+    id: string;
+    code: string;
+    name: string;
+    scope: string;
+    holderName: string | null;
+    holderIdNumber: string | null;
+    dinerCount: number | null;
+    holderCount: number | null;
+    amount: Money;
+    vatRemoved: Money;
+    saleId: string;
+    receiptNumber: number | null;
+    soldAt: Date;
+    linesGross: Money;
+    vatExemptSales: Money;
+};
+
+/** Max rows the discount book returns at once (a month of a busy store fits easily). */
+const DISCOUNT_BOOK_LIMIT = 5000;
 
 type SupplyUsageRow = {
     itemId: string;
@@ -56,6 +88,7 @@ type SalesByHourRow = {
 type SalesSummaryRow = {
     gross: Prisma.Decimal | number | string | null;
     discounts: Prisma.Decimal | number | string | null;
+    vatRemoved: Prisma.Decimal | number | string | null;
     tax: Prisma.Decimal | number | string | null;
     net: Prisma.Decimal | number | string | null;
     orders: bigint | number | string;
@@ -257,6 +290,7 @@ export const reportsService = {
         const summaryRows = await prisma.$queryRaw<SalesSummaryRow[]>`
             SELECT SUM("subtotal") AS gross,
                    SUM("discount") AS discounts,
+                   SUM("vatRemoved") AS "vatRemoved",
                    SUM("tax") AS tax,
                    SUM("total") AS net,
                    COUNT(*) AS orders
@@ -280,8 +314,37 @@ export const reportsService = {
               AND timezone(${timeZone}, ("voidedAt" AT TIME ZONE 'UTC')) < (${endDate}::date + interval '1 day')
         `;
 
+        const byTypeRows = await prisma.$queryRaw<DiscountByTypeRow[]>`
+            SELECT sd."code" AS code,
+                   MAX(sd."name") AS name,
+                   SUM(sd."amount") AS amount,
+                   SUM(sd."vatRemoved") AS "vatRemoved",
+                   COUNT(*) AS count
+            FROM "SaleDiscount" sd
+            JOIN "Sale" s ON s."id" = sd."saleId"
+            WHERE s."storeId" = ${storeId}
+              AND s."status" = ${SaleStatus.FINALIZED}
+              AND s."deletedAt" IS NULL
+              AND timezone(${timeZone}, (COALESCE(s."finalizedAt", s."createdAt") AT TIME ZONE 'UTC')) >= ${startDate}::date
+              AND timezone(${timeZone}, (COALESCE(s."finalizedAt", s."createdAt") AT TIME ZONE 'UTC')) < (${endDate}::date + interval '1 day')
+            GROUP BY sd."code"
+            ORDER BY SUM(sd."amount") DESC
+        `;
+
         const summary = summaryRows[0];
         const voided = voidRows[0];
+        // `discounts` is the total reduction: configured discounts + VAT exemption + manual/earlier discounts.
+        const totalReduction = roundMoney(normalizeNumber(summary?.discounts));
+        const vatExemption = roundMoney(normalizeNumber(summary?.vatRemoved));
+        const discountsByType = byTypeRows.map((row) => ({
+            code: row.code,
+            name: row.name,
+            amount: roundMoney(normalizeNumber(row.amount)),
+            vatRemoved: roundMoney(normalizeNumber(row.vatRemoved)),
+            count: normalizeNumber(row.count),
+        }));
+        const typedTotal = discountsByType.reduce((sum, row) => sum + row.amount, 0);
+        const otherDiscounts = Math.max(0, roundMoney(totalReduction - vatExemption - typedTotal));
         const netSales = roundMoney(normalizeNumber(summary?.net));
         const orderCount = normalizeNumber(summary?.orders);
         const avgOrder = orderCount ? roundMoney(netSales / orderCount) : 0;
@@ -293,13 +356,100 @@ export const reportsService = {
             },
             totals: {
                 grossSales: roundMoney(normalizeNumber(summary?.gross)),
-                discounts: roundMoney(normalizeNumber(summary?.discounts)),
+                discounts: totalReduction,
+                // Breakdown of `discounts`: VAT removed for Senior/PWD, per-type discounts, and the rest.
+                vatExemption,
+                discountsByType,
+                otherDiscounts,
                 tax: roundMoney(normalizeNumber(summary?.tax)),
                 netSales,
                 orderCount,
                 avgOrder,
                 voidedSales: roundMoney(normalizeNumber(voided?.voidTotal)),
                 voidCount: normalizeNumber(voided?.voidCount),
+            },
+        };
+    },
+    /**
+     * Senior/PWD (and other discount) sales book: one row per discount given,
+     * with the holder, for BIR records. IDs are masked unless `revealIds`.
+     */
+    getDiscountBook: async (
+        storeId: string,
+        options: { from?: string; to?: string; codes: string[]; revealIds: boolean }
+    ) => {
+        const store = await ensureStore(storeId);
+        const timeZone = store.timezone || 'UTC';
+        const { startDate, endDate } = buildDateRange(options.from, options.to, timeZone);
+        const codeFilter = options.codes.length
+            ? Prisma.sql`AND sd."code" IN (${Prisma.join(options.codes)})`
+            : Prisma.empty;
+
+        const rows = await prisma.$queryRaw<DiscountBookRow[]>`
+            SELECT sd."id", sd."code", sd."name", sd."scope"::text AS scope,
+                   sd."holderName", sd."holderIdNumber", sd."dinerCount", sd."holderCount",
+                   sd."amount", sd."vatRemoved",
+                   s."id" AS "saleId", s."receiptNumber",
+                   COALESCE(s."finalizedAt", s."createdAt") AS "soldAt",
+                   COALESCE(SUM(si."qty" * si."unitPrice"), 0) AS "linesGross",
+                   COALESCE(SUM(si."vatExemptSales"), 0) AS "vatExemptSales"
+            FROM "SaleDiscount" sd
+            JOIN "Sale" s ON s."id" = sd."saleId"
+            LEFT JOIN "SaleItem" si ON si."saleDiscountId" = sd."id"
+            WHERE s."storeId" = ${storeId}
+              AND s."status" = ${SaleStatus.FINALIZED}
+              AND s."deletedAt" IS NULL
+              AND timezone(${timeZone}, (COALESCE(s."finalizedAt", s."createdAt") AT TIME ZONE 'UTC')) >= ${startDate}::date
+              AND timezone(${timeZone}, (COALESCE(s."finalizedAt", s."createdAt") AT TIME ZONE 'UTC')) < (${endDate}::date + interval '1 day')
+              ${codeFilter}
+            GROUP BY sd."id", s."id"
+            ORDER BY COALESCE(s."finalizedAt", s."createdAt") ASC, s."receiptNumber" ASC
+            LIMIT ${DISCOUNT_BOOK_LIMIT + 1}
+        `;
+
+        const truncated = rows.length > DISCOUNT_BOOK_LIMIT;
+        const entries = rows.slice(0, DISCOUNT_BOOK_LIMIT).map((row) => {
+            // Group meals: only the holders' share of the bill was discounted.
+            const share = row.dinerCount && row.holderCount ? row.holderCount / row.dinerCount : 1;
+            const grossSales = roundMoney(normalizeNumber(row.linesGross) * share);
+            const vatRemoved = roundMoney(normalizeNumber(row.vatRemoved));
+            const discount = roundMoney(normalizeNumber(row.amount));
+            return {
+                id: row.id,
+                saleId: row.saleId,
+                receiptNumber: row.receiptNumber,
+                soldAt: row.soldAt,
+                code: row.code,
+                name: row.name,
+                scope: row.scope,
+                holderName: row.holderName,
+                holderIdNumber: options.revealIds ? row.holderIdNumber : maskIdNumber(row.holderIdNumber),
+                dinerCount: row.dinerCount,
+                holderCount: row.holderCount,
+                grossSales,
+                vatExemptSales: roundMoney(normalizeNumber(row.vatExemptSales)),
+                vatRemoved,
+                discount,
+                netSales: roundMoney(grossSales - vatRemoved - discount),
+            };
+        });
+
+        const sum = (key: 'grossSales' | 'vatExemptSales' | 'vatRemoved' | 'discount' | 'netSales') =>
+            roundMoney(entries.reduce((total, entry) => total + entry[key], 0));
+
+        return {
+            range: { from: startDate, to: endDate },
+            timeZone,
+            idsRevealed: options.revealIds,
+            truncated,
+            entries,
+            totals: {
+                count: entries.length,
+                grossSales: sum('grossSales'),
+                vatExemptSales: sum('vatExemptSales'),
+                vatRemoved: sum('vatRemoved'),
+                discount: sum('discount'),
+                netSales: sum('netSales'),
             },
         };
     },

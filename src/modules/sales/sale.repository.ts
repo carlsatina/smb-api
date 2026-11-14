@@ -84,7 +84,23 @@ export const saleRepository = {
                         id: true,
                         nameSnapshot: true,
                         qty: true,
+                        saleDiscountId: true,
                     },
+                },
+                // No ID numbers in the list; they stay on the sale detail.
+                discounts: {
+                    select: {
+                        id: true,
+                        code: true,
+                        name: true,
+                        scope: true,
+                        holderName: true,
+                        dinerCount: true,
+                        holderCount: true,
+                        amount: true,
+                        vatRemoved: true,
+                    },
+                    orderBy: { createdAt: 'asc' },
                 },
                 _count: {
                     select: { items: true },

@@ -31,6 +31,13 @@ export const PERMISSIONS = [
         description: 'Change the items, prices or payment of past sales, and import sales from CSV.',
     },
     {
+        key: 'discounts.viewHolders',
+        group: 'Sales',
+        label: 'See discount holder IDs',
+        description:
+            'See full ID numbers of Senior/PWD and other discount holders on sales, receipts and the discount book. Others see only the last 4.',
+    },
+    {
         key: 'inventory.view',
         group: 'Inventory',
         label: 'View products & stock',
@@ -104,6 +111,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<EditableRole, PermissionKey[]> = {
         'pos.use',
         'sales.void',
         'sales.edit',
+        'discounts.viewHolders',
         'inventory.view',
         'inventory.manage',
         'reports.view',

@@ -158,6 +158,15 @@ describe('sales with discounts', () => {
 
         const asOwner = await owner.agent.get(`${base}/sales/${sale.id}`).set('Authorization', owner.auth);
         expect(asOwner.body.sale.discounts[0].holderIdNumber).toBe('OSCA-123456');
+
+        // The history list shows who got which discount, but never ID numbers.
+        const list = await owner.agent.get(`${base}/sales`).set('Authorization', owner.auth);
+        const listed = list.body.sales.find((row: { id: string }) => row.id === sale.id);
+        expect(listed.discounts).toEqual([
+            expect.objectContaining({ code: 'SC', holderName: 'Juan Dela Cruz', amount: 10, vatRemoved: 6 }),
+        ]);
+        expect(listed.items.find((item: { discountRef?: string }) => item.discountRef)).toMatchObject({ name: 'B' });
+        expect(JSON.stringify(list.body)).not.toContain('OSCA-123456');
     });
 
     it('requires the holder details the discount type asks for', async () => {
@@ -228,5 +237,165 @@ describe('sales with discounts', () => {
 
         const audit = await prisma.auditLog.findFirst({ where: { action: 'SALE_EDITED' } });
         expect(JSON.stringify(audit?.meta)).not.toContain('PWD-1');
+    });
+});
+
+describe('discount reports', () => {
+    beforeEach(async () => {
+        await resetDb();
+    });
+
+    const ringUp = async (
+        session: { agent: ReturnType<typeof createTestApp>; auth: string },
+        base: string,
+        body: Record<string, unknown>
+    ) => {
+        const res = await session.agent.post(`${base}/sales/finalize`).set('Authorization', session.auth).send(body);
+        expect(res.status).toBe(201);
+        return res.body.sale;
+    };
+
+    it('splits the sales summary discounts into VAT exemption, each type and the rest', async () => {
+        const { store, owner, base, sc } = await setup();
+        const product = await createProduct(store.id, { price: 112 });
+
+        // Senior line: 112 → 100 (12 VAT) → 20 off.
+        await ringUp(owner, base, {
+            paymentMethod: 'CASH',
+            items: [{ productId: product.id, qty: 1, unitPrice: 112, discountRef: 's' }],
+            discounts: [{ ref: 's', discountTypeId: sc.id, scope: 'LINE', holderName: 'Ana', holderIdNumber: 'OSCA-1' }],
+        });
+        // An older-style manual discount of 5.
+        await ringUp(owner, base, {
+            paymentMethod: 'CASH',
+            items: [{ productId: product.id, qty: 1, unitPrice: 112, discount: 5, tax: 11.46 }],
+        });
+
+        const res = await owner.agent.get(`${base}/reports/sales-summary`).set('Authorization', owner.auth);
+        expect(res.status).toBe(200);
+        expect(res.body.totals).toMatchObject({
+            grossSales: 224,
+            discounts: 37,
+            vatExemption: 12,
+            otherDiscounts: 5,
+            netSales: 187,
+        });
+        expect(res.body.totals.discountsByType).toEqual([
+            { code: 'SC', name: 'Senior Citizen', amount: 20, vatRemoved: 12, count: 1 },
+        ]);
+    });
+
+    it('lists holders in the discount book, masking IDs without the permission', async () => {
+        const { store, owner, cashier, base, sc } = await setup();
+        const product = await createProduct(store.id, { price: 400 });
+
+        const { user: viewer, password } = await createUser();
+        await prisma.storeMember.create({ data: { storeId: store.id, userId: viewer.id, role: Role.VIEWER } });
+        const viewerSession = await login(viewer.email, password);
+
+        // Group meal: 4 diners, 1 senior → a quarter of the 400 bill.
+        const sale = await ringUp(owner, base, {
+            paymentMethod: 'CASH',
+            items: [{ productId: product.id, qty: 1, unitPrice: 400 }],
+            discounts: [
+                {
+                    ref: 'g',
+                    discountTypeId: sc.id,
+                    scope: 'SALE',
+                    dinerCount: 4,
+                    holderCount: 1,
+                    holderName: 'Lola Nena',
+                    holderIdNumber: 'OSCA-998877',
+                },
+            ],
+        });
+
+        const asOwner = await owner.agent.get(`${base}/reports/discount-book?codes=SC,PWD`).set('Authorization', owner.auth);
+        expect(asOwner.status).toBe(200);
+        expect(asOwner.body.idsRevealed).toBe(true);
+        expect(asOwner.body.entries).toHaveLength(1);
+        // Share 100 → 89.29 VAT-exempt (10.71 VAT) → 17.86 off.
+        expect(asOwner.body.entries[0]).toMatchObject({
+            saleId: sale.id,
+            receiptNumber: sale.receiptNumber,
+            code: 'SC',
+            holderName: 'Lola Nena',
+            holderIdNumber: 'OSCA-998877',
+            dinerCount: 4,
+            holderCount: 1,
+            grossSales: 100,
+            vatExemptSales: 89.29,
+            vatRemoved: 10.71,
+        });
+        const entry = asOwner.body.entries[0];
+        expect(entry.netSales).toBeCloseTo(entry.grossSales - entry.vatRemoved - entry.discount, 2);
+
+        const pwdOnly = await owner.agent.get(`${base}/reports/discount-book?codes=PWD`).set('Authorization', owner.auth);
+        expect(pwdOnly.body.entries).toHaveLength(0);
+
+        const asViewer = await viewerSession.agent.get(`${base}/reports/discount-book`).set('Authorization', viewerSession.auth);
+        expect(asViewer.status).toBe(200);
+        expect(asViewer.body.idsRevealed).toBe(false);
+        expect(asViewer.body.entries[0].holderIdNumber).toBe('*******8877');
+
+        const asCashier = await cashier.agent.get(`${base}/reports/discount-book`).set('Authorization', cashier.auth);
+        expect(asCashier.status).toBe(403);
+
+        const csv = await viewerSession.agent
+            .get(`${base}/reports/discount-book/export?codes=SC`)
+            .set('Authorization', viewerSession.auth);
+        expect(csv.status).toBe(200);
+        expect(csv.headers['content-type']).toContain('text/csv');
+        const csvLines = csv.text.split('\n');
+        expect(csvLines[0]).toContain('ID number');
+        expect(csvLines[1]).toContain('Lola Nena');
+        expect(csvLines[1]).toContain('*******8877');
+        expect(csvLines[1]).not.toContain('OSCA-998877');
+        expect(csvLines[csvLines.length - 1]).toMatch(/^Total,/);
+
+        const audit = await prisma.auditLog.findFirst({ where: { action: 'DISCOUNT_BOOK_EXPORTED' } });
+        expect(audit?.meta).toMatchObject({ rows: 1, idsRevealed: false, codes: ['SC'] });
+    });
+
+    it('keeps the real ID when an editor who sees masked IDs saves the sale', async () => {
+        const { store, owner, cashier, base, sc } = await setup();
+        const product = await createProduct(store.id, { price: 112 });
+        // This cashier may edit sales but not see full IDs.
+        await prisma.storeMember.updateMany({
+            where: { storeId: store.id, role: Role.CASHIER },
+            data: { permissionOverrides: { 'sales.edit': true } },
+        });
+
+        const sale = await ringUp(owner, base, {
+            paymentMethod: 'CASH',
+            items: [{ productId: product.id, qty: 1, unitPrice: 112, discountRef: 's' }],
+            discounts: [{ ref: 's', discountTypeId: sc.id, scope: 'LINE', holderName: 'Ana', holderIdNumber: 'OSCA-555666' }],
+        });
+
+        const seen = await cashier.agent.get(`${base}/sales/${sale.id}`).set('Authorization', cashier.auth);
+        const masked = seen.body.sale.discounts[0];
+        expect(masked.holderIdNumber).toBe('*******5666');
+
+        const edited = await cashier.agent
+            .patch(`${base}/sales/${sale.id}`)
+            .set('Authorization', cashier.auth)
+            .send({
+                paymentMethod: 'GCASH',
+                orderType: 'DINE_IN',
+                items: [{ productId: product.id, qty: 1, unitPrice: 112, discountRef: masked.ref }],
+                discounts: [
+                    {
+                        ref: masked.ref,
+                        discountTypeId: masked.discountTypeId,
+                        scope: masked.scope,
+                        holderName: masked.holderName,
+                        holderIdNumber: masked.holderIdNumber,
+                    },
+                ],
+            });
+        expect(edited.status).toBe(200);
+
+        const stored = await prisma.saleDiscount.findFirst({ where: { saleId: sale.id } });
+        expect(stored?.holderIdNumber).toBe('OSCA-555666');
     });
 });

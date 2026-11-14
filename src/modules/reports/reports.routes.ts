@@ -2,6 +2,8 @@ import { Router } from 'express';
 import { authMiddleware } from '../../middlewares/auth';
 import { requirePermission } from '../../middlewares/requirePermission';
 import {
+    exportDiscountBook,
+    getDiscountBook,
     getEmployeeSales,
     getExpenseSummary,
     getIngredientUsage,
@@ -39,3 +41,6 @@ reportsRouter.get('/expense-summary', requirePermission('reports.view'), getExpe
 reportsRouter.get('/payment-methods', requirePermission('reports.view'), getPaymentMethodBreakdown);
 reportsRouter.get('/sales-by-channel', requirePermission('reports.view'), getSalesByChannel);
 reportsRouter.get('/employee-sales', requirePermission('reports.view'), getEmployeeSales);
+// Senior/PWD sales book: report viewers see masked IDs; "See discount holder IDs" shows them in full.
+reportsRouter.get('/discount-book', requirePermission('reports.view', 'discounts.viewHolders'), getDiscountBook);
+reportsRouter.get('/discount-book/export', requirePermission('reports.view', 'discounts.viewHolders'), exportDiscountBook);

@@ -14,6 +14,7 @@ import { parseImportDate } from '../../shared/datetime';
 import { saleRepository, type SaleFilters } from './sale.repository';
 import { computeChannelPrice, parseChannelPrices, parseSalesChannels } from '../../shared/salesChannels';
 import { discountTypeService } from '../discountTypes/discountType.service';
+import { maskIdNumber } from '../../shared/maskId';
 import {
     applySaleDiscounts,
     type DiscountApplicationInput,
@@ -283,6 +284,13 @@ const priceDiscounts = async (
     );
 
     const existingById = new Map(existing.map((row) => [row.id, row]));
+    // An editor who only sees masked IDs sends the mask back; keep the real ID.
+    discounts = discounts.map((entry) => {
+        const kept = existingById.get(entry.ref);
+        return kept?.holderIdNumber && entry.holderIdNumber === maskIdNumber(kept.holderIdNumber)
+            ? { ...entry, holderIdNumber: kept.holderIdNumber }
+            : entry;
+    });
     const keptRefs = new Set<string>();
     const types = new Map<string, DiscountTypeConfig>();
     const appsForPricing = discounts.map((entry) => {
@@ -370,11 +378,7 @@ const discountAuditSummary = (
         holderName: row.holderName,
     }));
 
-export const maskIdNumber = (value: string | null) => {
-    if (!value) return value;
-    const visible = value.slice(-4);
-    return `${'*'.repeat(Math.max(value.length - 4, 4))}${visible}`;
-};
+export { maskIdNumber };
 
 const buildMovementDeltas = (
     items: SaleItemInput[],
@@ -545,7 +549,20 @@ const mapSaleSummary = (
     sale: Prisma.SaleGetPayload<{
         include: {
             cashier: { select: { id: true; fullName: true; email: true } };
-            items: { select: { id: true; nameSnapshot: true; qty: true } };
+            items: { select: { id: true; nameSnapshot: true; qty: true; saleDiscountId: true } };
+            discounts: {
+                select: {
+                    id: true;
+                    code: true;
+                    name: true;
+                    scope: true;
+                    holderName: true;
+                    dinerCount: true;
+                    holderCount: true;
+                    amount: true;
+                    vatRemoved: true;
+                };
+            };
             _count: { select: { items: true } };
         };
     }>
@@ -566,10 +583,23 @@ const mapSaleSummary = (
     editedAt: sale.editedAt,
     itemCount: sale._count.items,
     cashier: sale.cashier,
+    vatRemoved: normalizeDecimal(sale.vatRemoved),
+    discounts: (sale.discounts ?? []).map((row) => ({
+        id: row.id,
+        code: row.code,
+        name: row.name,
+        scope: row.scope,
+        holderName: row.holderName,
+        dinerCount: row.dinerCount,
+        holderCount: row.holderCount,
+        amount: normalizeDecimal(row.amount),
+        vatRemoved: normalizeDecimal(row.vatRemoved),
+    })),
     items: sale.items.map((item) => ({
         id: item.id,
         name: item.nameSnapshot,
         qty: normalizeDecimal(item.qty),
+        discountRef: item.saleDiscountId ?? undefined,
     })),
 });
 

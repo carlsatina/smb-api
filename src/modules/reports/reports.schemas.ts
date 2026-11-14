@@ -79,3 +79,23 @@ export const reportMarginQuerySchema = reportRangeSchema.safeExtend({
 export const reportLowStockQuerySchema = z.object({
     limit: limitValue(8),
 });
+
+export const reportDiscountBookQuerySchema = z
+    .object({
+        from: dateValue.optional(),
+        to: dateValue.optional(),
+        // Comma-separated discount codes, e.g. "SC,PWD"; empty = every discount.
+        codes: z
+            .string()
+            .optional()
+            .transform((value) =>
+                (value ?? '')
+                    .split(',')
+                    .map((code) => code.trim().toUpperCase())
+                    .filter(Boolean)
+                    .slice(0, 20)
+            ),
+    })
+    .refine((data) => !data.from || !data.to || data.from <= data.to, {
+        message: 'From must be before to.',
+    });

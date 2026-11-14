@@ -7,8 +7,8 @@ import { saleBulkDeleteSchema, saleDeleteSchema, saleExportQuerySchema, saleFina
 import { saleService } from './sale.service';
 import { hasPermission } from '../../middlewares/requirePermission';
 
-// Full Senior/PWD ID numbers only for members who can edit sales; others see them masked.
-const detailOptions = (req: AuthRequest) => ({ revealHolderIds: hasPermission(req, 'sales.edit') });
+// Full Senior/PWD ID numbers only with "See discount holder IDs"; others see the last 4.
+const detailOptions = (req: AuthRequest) => ({ revealHolderIds: hasPermission(req, 'discounts.viewHolders') });
 import { escapeCsvValue, parseCSV } from '../../shared/csv';
 
 export const listSales = asyncHandler(async (req: AuthRequest, res: Response) => {
