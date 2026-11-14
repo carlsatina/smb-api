@@ -7,7 +7,7 @@ vi.mock('../../src/shared/email', async (importOriginal) => {
     return { ...actual, sendBillingEmail: vi.fn(async () => ({ sent: true })) };
 });
 
-const adminLogin = async (agent: ReturnType<typeof createTestApp>) => {
+const adminLogin = async (agent: Awaited<ReturnType<typeof createTestApp>>) => {
     const { user, password } = await createUser();
     await prisma.user.update({ where: { id: user.id }, data: { isSuperAdmin: true } });
     const res = await agent.post('/api/v1/auth/admin/login').send({ email: user.email, password });
@@ -31,7 +31,7 @@ describe('admin per-store billing', () => {
         await prisma.store.update({ where: { id: second.id }, data: { createdAt: new Date(base.getTime() - 2 * 86400000) } });
         await prisma.store.update({ where: { id: third.id }, data: { createdAt: new Date(base.getTime() - 1 * 86400000) } });
 
-        const agent = createTestApp();
+        const agent = await createTestApp();
         const token = await adminLogin(agent);
         const auth = (req: any) => req.set('Authorization', `Bearer ${token}`);
 
@@ -78,7 +78,7 @@ describe('admin per-store billing', () => {
 
     it('refuses to bill an owner with no stores', async () => {
         const { user: owner } = await createUser();
-        const agent = createTestApp();
+        const agent = await createTestApp();
         const token = await adminLogin(agent);
         const res = await agent
             .post(`/api/v1/admin/billing/${owner.id}/send`)
@@ -91,7 +91,7 @@ describe('admin per-store billing', () => {
     it('lets an owner create more stores without a plan limit', async () => {
         const { user, password } = await createUser();
         await prisma.user.update({ where: { id: user.id }, data: { emailVerifiedAt: new Date() } });
-        const agent = createTestApp();
+        const agent = await createTestApp();
         const login = await agent.post('/api/v1/auth/login').send({ email: user.email, password });
         const token = login.body.accessToken as string;
         for (const name of ['A', 'B', 'C']) {
@@ -109,7 +109,7 @@ describe('admin per-store billing', () => {
         const second = await createStoreWithOwner(owner.id, { name: 'Second' });
         await prisma.store.update({ where: { id: first.id }, data: { createdAt: new Date(Date.now() - 10 * 86400000) } });
 
-        const agent = createTestApp();
+        const agent = await createTestApp();
         const token = await adminLogin(agent);
         const auth = (req: any) => req.set('Authorization', `Bearer ${token}`);
         const rowFor = async () => {
@@ -183,7 +183,7 @@ describe('admin per-store billing', () => {
 
     it('rejects a percent discount above 100', async () => {
         const { user: owner } = await createUser();
-        const agent = createTestApp();
+        const agent = await createTestApp();
         const token = await adminLogin(agent);
         const res = await agent
             .patch(`/api/v1/admin/billing/owners/${owner.id}/discount`)

@@ -13,7 +13,7 @@ describe('store access scoping', () => {
         const storeA = await createStoreWithOwner(userA.id);
         const storeB = await createStoreWithOwner(userB.id);
 
-        const agent = createTestApp();
+        const agent = await createTestApp();
         const loginRes = await agent.post('/api/v1/auth/login').send({
             email: userA.email,
             password: passwordA,

@@ -3,7 +3,7 @@ import { Role } from '@prisma/client';
 import prisma from '../../lib/prisma';
 import { createStoreWithOwner, createTestApp, createUser, resetDb } from './helpers';
 
-const login = async (agent: ReturnType<typeof createTestApp>, email: string, password: string) => {
+const login = async (agent: Awaited<ReturnType<typeof createTestApp>>, email: string, password: string) => {
     const res = await agent.post('/api/v1/auth/login').send({ email, password });
     expect(res.status).toBe(200);
     return res.body.accessToken as string;
@@ -17,7 +17,7 @@ describe('expense CRUD', () => {
     it('lets an owner create, list, update and delete expenses', async () => {
         const { user, password } = await createUser();
         const store = await createStoreWithOwner(user.id);
-        const agent = createTestApp();
+        const agent = await createTestApp();
         const token = await login(agent, user.email, password);
         const auth = (req: any) => req.set('Authorization', `Bearer ${token}`);
 
@@ -54,7 +54,7 @@ describe('expense CRUD', () => {
     it('filters by date range and category', async () => {
         const { user, password } = await createUser();
         const store = await createStoreWithOwner(user.id);
-        const agent = createTestApp();
+        const agent = await createTestApp();
         const token = await login(agent, user.email, password);
         const auth = (req: any) => req.set('Authorization', `Bearer ${token}`);
 
@@ -73,7 +73,7 @@ describe('expense CRUD', () => {
     it('defaults source to MANUAL and filters by source', async () => {
         const { user, password } = await createUser();
         const store = await createStoreWithOwner(user.id);
-        const agent = createTestApp();
+        const agent = await createTestApp();
         const token = await login(agent, user.email, password);
         const auth = (req: any) => req.set('Authorization', `Bearer ${token}`);
 
@@ -101,7 +101,7 @@ describe('expense CRUD', () => {
     it('lets every owner use expenses (no plan gating)', async () => {
         const { user, password } = await createUser();
         const store = await createStoreWithOwner(user.id);
-        const agent = createTestApp();
+        const agent = await createTestApp();
         const token = await login(agent, user.email, password);
 
         const res = await agent
@@ -116,7 +116,7 @@ describe('expense CRUD', () => {
         const { user: viewer, password } = await createUser();
         await prisma.storeMember.create({ data: { storeId: store.id, userId: viewer.id, role: Role.VIEWER } });
 
-        const agent = createTestApp();
+        const agent = await createTestApp();
         const token = await login(agent, viewer.email, password);
         const auth = (req: any) => req.set('Authorization', `Bearer ${token}`);
 
@@ -135,7 +135,7 @@ describe('expense CRUD', () => {
         const { user: cashier, password: cashierPw } = await createUser();
         await prisma.storeMember.create({ data: { storeId: store.id, userId: cashier.id, role: Role.CASHIER } });
 
-        const ownerAgent = createTestApp();
+        const ownerAgent = await createTestApp();
         const ownerToken = await login(ownerAgent, owner.email, ownerPw);
         const asOwner = (req: any) => req.set('Authorization', `Bearer ${ownerToken}`);
 
@@ -146,7 +146,7 @@ describe('expense CRUD', () => {
         const ownerList = await asOwner(ownerAgent.get(`/api/v1/stores/${store.id}/expenses`));
         expect(ownerList.body.expenses).toHaveLength(3);
 
-        const cashierAgent = createTestApp();
+        const cashierAgent = await createTestApp();
         const cashierToken = await login(cashierAgent, cashier.email, cashierPw);
         const asCashier = (req: any) => req.set('Authorization', `Bearer ${cashierToken}`);
 

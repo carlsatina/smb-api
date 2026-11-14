@@ -11,7 +11,7 @@ describe('inventory adjustments', () => {
         const store = await createStoreWithOwner(user.id);
         const product = await createProduct(store.id);
 
-        const agent = createTestApp();
+        const agent = await createTestApp();
         const loginRes = await agent.post('/api/v1/auth/login').send({
             email: user.email,
             password,
@@ -46,7 +46,7 @@ describe('inventory adjustments', () => {
         const store = await createStoreWithOwner(user.id, { allowNegativeStock: false });
         const product = await createProduct(store.id);
 
-        const agent = createTestApp();
+        const agent = await createTestApp();
         const loginRes = await agent.post('/api/v1/auth/login').send({
             email: user.email,
             password,

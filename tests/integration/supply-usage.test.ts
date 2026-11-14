@@ -3,7 +3,7 @@ import { IngredientCategory, MovementType } from '@prisma/client';
 import prisma from '../../lib/prisma';
 import { createStoreWithOwner, createTestApp, createUser, resetDb } from './helpers';
 
-const login = async (agent: ReturnType<typeof createTestApp>, email: string, password: string) => {
+const login = async (agent: Awaited<ReturnType<typeof createTestApp>>, email: string, password: string) => {
     const res = await agent.post('/api/v1/auth/login').send({ email, password });
     expect(res.status).toBe(200);
     return res.body.accessToken as string;
@@ -30,7 +30,7 @@ const stockOf = async (storeId: string, itemId: string) => {
 const setup = async (storeInput: { allowNegativeStock?: boolean } = {}) => {
     const { user, password } = await createUser();
     const store = await createStoreWithOwner(user.id, storeInput);
-    const agent = createTestApp();
+    const agent = await createTestApp();
     const token = await login(agent, user.email, password);
     return { store, agent, token };
 };

@@ -3,13 +3,13 @@ import { Role } from '@prisma/client';
 import prisma from '../../lib/prisma';
 import { createStoreWithOwner, createTestApp, createUser, resetDb } from './helpers';
 
-const login = async (agent: ReturnType<typeof createTestApp>, email: string, password: string) => {
+const login = async (agent: Awaited<ReturnType<typeof createTestApp>>, email: string, password: string) => {
     const res = await agent.post('/api/v1/auth/login').send({ email, password });
     expect(res.status).toBe(200);
     return res.body.accessToken as string;
 };
 
-const adminLogin = async (agent: ReturnType<typeof createTestApp>) => {
+const adminLogin = async (agent: Awaited<ReturnType<typeof createTestApp>>) => {
     const { user, password } = await createUser();
     await prisma.user.update({ where: { id: user.id }, data: { isSuperAdmin: true } });
     const res = await agent.post('/api/v1/auth/admin/login').send({ email: user.email, password });
@@ -46,13 +46,13 @@ describe('billing suspension', () => {
             data: { ownerId: owner.id, year, month, storeCount: 1, lines: sentLines(store.id), subtotal: 500, amount: 500, sentAt: new Date(), sendCount: 1 },
         });
 
-        const ownerAgent = createTestApp();
+        const ownerAgent = await createTestApp();
         const ownerToken = await login(ownerAgent, owner.email, ownerPw);
         const asOwner = (req: any) => req.set('Authorization', `Bearer ${ownerToken}`);
-        const staffAgent = createTestApp();
+        const staffAgent = await createTestApp();
         const staffToken = await login(staffAgent, cashier.email, cashierPw);
         const asStaff = (req: any) => req.set('Authorization', `Bearer ${staffToken}`);
-        const adminAgent = createTestApp();
+        const adminAgent = await createTestApp();
         const adminToken = await adminLogin(adminAgent);
         const asAdmin = (req: any) => req.set('Authorization', `Bearer ${adminToken}`);
 
@@ -107,7 +107,7 @@ describe('billing suspension', () => {
             });
         }
 
-        const adminAgent = createTestApp();
+        const adminAgent = await createTestApp();
         const adminToken = await adminLogin(adminAgent);
         const asAdmin = (req: any) => req.set('Authorization', `Bearer ${adminToken}`);
         await asAdmin(adminAgent.patch(`/api/v1/admin/billing/owners/${owner.id}/suspension`).send({ suspended: true }));
@@ -120,7 +120,7 @@ describe('billing suspension', () => {
         );
         expect(lifted.body.owner.suspension).toBeNull();
 
-        const agent = createTestApp();
+        const agent = await createTestApp();
         const token = await login(agent, owner.email, ownerPw);
         const write = await agent
             .post(`/api/v1/stores/${store.id}/suppliers`)

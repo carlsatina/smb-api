@@ -3,7 +3,7 @@ import { Role } from '@prisma/client';
 import prisma from '../../lib/prisma';
 import { createStoreWithOwner, createTestApp, createUser, resetDb } from './helpers';
 
-type Agent = ReturnType<typeof createTestApp>;
+type Agent = Awaited<ReturnType<typeof createTestApp>>;
 
 const login = async (agent: Agent, email: string, password: string) => {
     const res = await agent.post('/api/v1/auth/login').send({ email, password });
@@ -18,7 +18,7 @@ const setup = async () => {
     const ingredient = await prisma.ingredient.create({
         data: { storeId: source.id, name: 'Fresh milk', unit: 'ml', costPerUnit: 0.11 },
     });
-    const agent = createTestApp();
+    const agent = await createTestApp();
     const token = await login(agent, owner.email, password);
     const as = (req: any) => req.set('Authorization', `Bearer ${token}`);
     const transfer = (destinationStoreId: string, qty = 500) =>

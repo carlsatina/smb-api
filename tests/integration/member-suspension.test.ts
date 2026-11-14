@@ -7,7 +7,7 @@ import { createStoreWithOwner, createTestApp, createUser, resetDb } from './help
 // everything pointing at it (sales, attendance, payroll) survives, and the
 // member is refused at the one gate every store route passes through.
 
-const login = async (agent: ReturnType<typeof createTestApp>, email: string, password: string) => {
+const login = async (agent: Awaited<ReturnType<typeof createTestApp>>, email: string, password: string) => {
     const res = await agent.post('/api/v1/auth/login').send({ email, password });
     expect(res.status).toBe(200);
     return res.body.accessToken as string;
@@ -27,7 +27,7 @@ describe('member suspension', () => {
         const { user: cashier, password: cashierPassword } = await createUser();
         const member = await addMember(store.id, cashier.id, Role.CASHIER);
 
-        const agent = createTestApp();
+        const agent = await createTestApp();
         const ownerToken = await login(agent, owner.email, ownerPassword);
         const cashierToken = await login(agent, cashier.email, cashierPassword);
 
@@ -70,7 +70,7 @@ describe('member suspension', () => {
         const { user: staff, password: staffPassword } = await createUser();
         const member = await addMember(store.id, staff.id, Role.VIEWER);
 
-        const agent = createTestApp();
+        const agent = await createTestApp();
         const ownerToken = await login(agent, owner.email, ownerPassword);
         const staffToken = await login(agent, staff.email, staffPassword);
 
@@ -92,7 +92,7 @@ describe('member suspension', () => {
         const { user: staff } = await createUser();
         const member = await addMember(store.id, staff.id, Role.CASHIER);
 
-        const agent = createTestApp();
+        const agent = await createTestApp();
         const ownerToken = await login(agent, owner.email, ownerPassword);
 
         await agent
@@ -128,7 +128,7 @@ describe('member suspension', () => {
         const { user: staff, password: staffPassword } = await createUser();
         const member = await addMember(store.id, staff.id, Role.CASHIER);
 
-        const agent = createTestApp();
+        const agent = await createTestApp();
         const ownerToken = await login(agent, owner.email, ownerPassword);
         const staffToken = await login(agent, staff.email, staffPassword);
 
@@ -162,7 +162,7 @@ describe('member suspension', () => {
             where: { storeId: store.id, userId: owner.id },
         });
 
-        const agent = createTestApp();
+        const agent = await createTestApp();
         const ownerToken = await login(agent, owner.email, ownerPassword);
 
         const res = await agent
@@ -183,7 +183,7 @@ describe('member suspension', () => {
         });
         await addMember(store.id, secondOwner.id, Role.OWNER);
 
-        const agent = createTestApp();
+        const agent = await createTestApp();
         const secondToken = await login(agent, secondOwner.email, secondOwnerPassword);
 
         // Two owners, so suspending one is allowed.
@@ -216,7 +216,7 @@ describe('member suspension', () => {
         const { user: staff } = await createUser();
         const member = await addMember(store.id, staff.id, Role.CASHIER);
 
-        const agent = createTestApp();
+        const agent = await createTestApp();
         const ownerToken = await login(agent, owner.email, ownerPassword);
         const suspend = () =>
             agent
@@ -238,7 +238,7 @@ describe('member suspension', () => {
         const { user: staff } = await createUser();
         const member = await addMember(store.id, staff.id, Role.CASHIER);
 
-        const agent = createTestApp();
+        const agent = await createTestApp();
         const ownerToken = await login(agent, owner.email, ownerPassword);
 
         await agent

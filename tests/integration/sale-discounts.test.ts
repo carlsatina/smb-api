@@ -4,7 +4,7 @@ import prisma from '../../lib/prisma';
 import { createProduct, createStoreWithOwner, createTestApp, createUser, resetDb } from './helpers';
 
 const login = async (email: string, password: string) => {
-    const agent = createTestApp();
+    const agent = await createTestApp();
     const res = await agent.post('/api/v1/auth/login').send({ email, password });
     expect(res.status).toBe(200);
     return { agent, auth: `Bearer ${res.body.accessToken}` };
@@ -280,7 +280,7 @@ describe('discount reports', () => {
     });
 
     const ringUp = async (
-        session: { agent: ReturnType<typeof createTestApp>; auth: string },
+        session: { agent: Awaited<ReturnType<typeof createTestApp>>; auth: string },
         base: string,
         body: Record<string, unknown>
     ) => {

@@ -8,7 +8,7 @@ describe('auth flow', () => {
 
     it('requires CSRF for refresh and logout', async () => {
         const { user, password } = await createUser();
-        const agent = createTestApp();
+        const agent = await createTestApp();
 
         const loginRes = await agent.post('/api/v1/auth/login').send({
             email: user.email,

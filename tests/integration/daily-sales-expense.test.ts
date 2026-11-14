@@ -3,7 +3,7 @@ import { Prisma, Role } from '@prisma/client';
 import prisma from '../../lib/prisma';
 import { createStoreWithOwner, createTestApp, createUser, resetDb } from './helpers';
 
-const login = async (agent: ReturnType<typeof createTestApp>, email: string, password: string) => {
+const login = async (agent: Awaited<ReturnType<typeof createTestApp>>, email: string, password: string) => {
     const res = await agent.post('/api/v1/auth/login').send({ email, password });
     expect(res.status).toBe(200);
     return res.body.accessToken as string;
@@ -50,7 +50,7 @@ describe('daily-sales expense (add-only, stored on the entry)', () => {
             data: { storeId: store.id, date: new Date(Date.UTC(2026, 5, 10)), expense: null, createdById: owner.id },
         });
 
-        const ownerAgent = createTestApp();
+        const ownerAgent = await createTestApp();
         const ownerToken = await login(ownerAgent, owner.email, ownerPw);
         const ownerRes = await ownerAgent
             .get(`/api/v1/stores/${store.id}/daily-sales?year=2026&month=6`)
@@ -62,7 +62,7 @@ describe('daily-sales expense (add-only, stored on the entry)', () => {
         expect(ownerRow.expenseOverride).toBeUndefined();
 
         // Cashier sees the same stored value (no role-filtered derivation anymore).
-        const cashierAgent = createTestApp();
+        const cashierAgent = await createTestApp();
         const cashierToken = await login(cashierAgent, cashier.email, cashierPw);
         const cashierRes = await cashierAgent
             .get(`/api/v1/stores/${store.id}/daily-sales?year=2026&month=6`)

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import prisma from '../../lib/prisma';
 import { createStoreWithOwner, createTestApp, createUser, resetDb } from './helpers';
 
-const login = async (agent: ReturnType<typeof createTestApp>, email: string, password: string) => {
+const login = async (agent: Awaited<ReturnType<typeof createTestApp>>, email: string, password: string) => {
     const res = await agent.post('/api/v1/auth/login').send({ email, password });
     expect(res.status).toBe(200);
     return res.body.accessToken as string;
@@ -22,7 +22,7 @@ describe('ingredient CSV import/export', () => {
             data: { storeId: store.id, name: 'Sugar', unit: 'g', costPerUnit: 1, category: 'RAW_MATERIAL' },
         });
 
-        const agent = createTestApp();
+        const agent = await createTestApp();
         const token = await login(agent, user.email, password);
 
         const csv = [
@@ -59,7 +59,7 @@ describe('ingredient CSV import/export', () => {
             data: { storeId: store.id, name: '=DANGER()', unit: 'g', costPerUnit: 1, category: 'RAW_MATERIAL' },
         });
 
-        const agent = createTestApp();
+        const agent = await createTestApp();
         const token = await login(agent, user.email, password);
 
         const res = await agent
@@ -77,7 +77,7 @@ describe('ingredient CSV import/export', () => {
         const { user, password } = await createUser();
         const store = await createStoreWithOwner(user.id);
 
-        const agent = createTestApp();
+        const agent = await createTestApp();
         const token = await login(agent, user.email, password);
 
         const res = await agent
@@ -93,7 +93,7 @@ describe('ingredient CSV import/export', () => {
         const { user, password } = await createUser();
         const store = await createStoreWithOwner(user.id);
 
-        const agent = createTestApp();
+        const agent = await createTestApp();
         const token = await login(agent, user.email, password);
 
         const res = await agent

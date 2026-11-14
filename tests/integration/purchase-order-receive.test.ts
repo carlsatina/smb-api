@@ -19,7 +19,7 @@ describe('purchase order receiving', () => {
         const supplier = await createSupplier(store.id);
         const product = await createProduct(store.id);
 
-        const agent = createTestApp();
+        const agent = await createTestApp();
         const loginRes = await agent.post('/api/v1/auth/login').send({
             email: user.email,
             password,

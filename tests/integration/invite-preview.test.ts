@@ -40,7 +40,7 @@ describe('store invite preview (public endpoint)', () => {
         const store = await createStoreWithOwner(owner.id);
         const token = await createInvite(store.id, owner.id, { email: 'cashier@example.com' });
 
-        const agent = createTestApp();
+        const agent = await createTestApp();
         const res = await agent.get(`/api/v1/stores/${store.id}/invites/preview?token=${token}`);
 
         expect(res.status).toBe(200);
@@ -52,7 +52,7 @@ describe('store invite preview (public endpoint)', () => {
         const { user: owner } = await createUser();
         const store = await createStoreWithOwner(owner.id);
 
-        const agent = createTestApp();
+        const agent = await createTestApp();
         const res = await agent.get(
             `/api/v1/stores/${store.id}/invites/preview?token=${crypto.randomBytes(24).toString('hex')}`
         );
@@ -67,7 +67,7 @@ describe('store invite preview (public endpoint)', () => {
             expiresAt: new Date(Date.now() - 60 * 1000),
         });
 
-        const agent = createTestApp();
+        const agent = await createTestApp();
         const res = await agent.get(`/api/v1/stores/${store.id}/invites/preview?token=${token}`);
 
         expect(res.status).toBe(410);

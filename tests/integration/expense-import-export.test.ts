@@ -3,13 +3,13 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import prisma from '../../lib/prisma';
 import { createStoreWithOwner, createTestApp, createUser, resetDb } from './helpers';
 
-const login = async (agent: ReturnType<typeof createTestApp>, email: string, password: string) => {
+const login = async (agent: Awaited<ReturnType<typeof createTestApp>>, email: string, password: string) => {
     const res = await agent.post('/api/v1/auth/login').send({ email, password });
     expect(res.status).toBe(200);
     return res.body.accessToken as string;
 };
 
-const upload = (agent: ReturnType<typeof createTestApp>, storeId: string, token: string, csv: string) =>
+const upload = (agent: Awaited<ReturnType<typeof createTestApp>>, storeId: string, token: string, csv: string) =>
     agent
         .post(`/api/v1/stores/${storeId}/expenses/import`)
         .set('Authorization', `Bearer ${token}`)
@@ -28,7 +28,7 @@ describe('expense CSV import/export', () => {
             data: { storeId: store.id, createdById: user.id, date: new Date('2026-11-01T00:00:00Z'), amount: 50, category: 'Supplies', note: 'Ice' },
         });
 
-        const agent = createTestApp();
+        const agent = await createTestApp();
         const token = await login(agent, user.email, password);
         const csv = [
             'Date,Category,Amount,Note',
@@ -66,7 +66,7 @@ describe('expense CSV import/export', () => {
             ],
         });
 
-        const agent = createTestApp();
+        const agent = await createTestApp();
         const token = await login(agent, user.email, password);
         const res = await agent
             .get(`/api/v1/stores/${store.id}/expenses/export?from=2026-11-01&to=2026-11-30`)
@@ -91,7 +91,7 @@ describe('expense CSV import/export', () => {
         const { user: cashier, password } = await createUser();
         await prisma.storeMember.create({ data: { storeId: store.id, userId: cashier.id, role: Role.CASHIER } });
 
-        const agent = createTestApp();
+        const agent = await createTestApp();
         const token = await login(agent, cashier.email, password);
         const exported = await agent.get(`/api/v1/stores/${store.id}/expenses/export`).set('Authorization', `Bearer ${token}`);
         expect(exported.status).toBe(200);
@@ -104,7 +104,7 @@ describe('expense CSV import/export', () => {
     it('rejects a file without the required columns', async () => {
         const { user, password } = await createUser();
         const store = await createStoreWithOwner(user.id);
-        const agent = createTestApp();
+        const agent = await createTestApp();
         const token = await login(agent, user.email, password);
 
         const res = await upload(agent, store.id, token, 'Date,Amount\n2026-11-01,5');

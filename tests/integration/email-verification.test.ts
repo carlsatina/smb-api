@@ -22,7 +22,7 @@ describe('email verification', () => {
             },
         });
 
-        const agent = createTestApp();
+        const agent = await createTestApp();
         const verifyRes = await agent.post('/api/v1/auth/verify').send({ token });
 
         expect(verifyRes.status).toBe(200);
@@ -44,7 +44,7 @@ describe('email verification', () => {
             },
         });
 
-        const agent = createTestApp();
+        const agent = await createTestApp();
         const verifyRes = await agent.post('/api/v1/auth/verify').send({ token });
 
         expect(verifyRes.status).toBe(400);

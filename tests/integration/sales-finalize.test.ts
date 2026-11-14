@@ -11,7 +11,7 @@ describe('sales finalize', () => {
         const store = await createStoreWithOwner(user.id, { allowNegativeStock: true });
         const product = await createProduct(store.id, { price: 25 });
 
-        const agent = createTestApp();
+        const agent = await createTestApp();
         const loginRes = await agent.post('/api/v1/auth/login').send({
             email: user.email,
             password,
@@ -43,7 +43,7 @@ describe('sales finalize', () => {
         const store = await createStoreWithOwner(user.id, { allowNegativeStock: true });
         const product = await createProduct(store.id, { price: 112 });
 
-        const agent = createTestApp();
+        const agent = await createTestApp();
         const loginRes = await agent.post('/api/v1/auth/login').send({ email: user.email, password });
         expect(loginRes.status).toBe(200);
 

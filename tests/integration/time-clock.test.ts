@@ -3,7 +3,7 @@ import { Role, ScheduleWeekStatus, TimeEntrySource } from '@prisma/client';
 import prisma from '../../lib/prisma';
 import { createStoreWithOwner, createTestApp, createUser, resetDb } from './helpers';
 
-const login = async (agent: ReturnType<typeof createTestApp>, email: string, password: string) => {
+const login = async (agent: Awaited<ReturnType<typeof createTestApp>>, email: string, password: string) => {
     const res = await agent.post('/api/v1/auth/login').send({ email, password });
     expect(res.status).toBe(200);
     return res.body.accessToken as string;
@@ -50,7 +50,7 @@ describe('time clock', () => {
             data: { storeId: store.id, userId: staff.id, role: Role.CASHIER },
         });
 
-        const agent = createTestApp();
+        const agent = await createTestApp();
         const token = await login(agent, staff.email, password);
         const auth = (req: any) => req.set('Authorization', `Bearer ${token}`);
 
@@ -114,7 +114,7 @@ describe('time clock', () => {
             },
         });
 
-        const agent = createTestApp();
+        const agent = await createTestApp();
         const token = await login(agent, owner.email, password);
         const auth = (req: any) => req.set('Authorization', `Bearer ${token}`);
 
@@ -168,7 +168,7 @@ describe('time clock', () => {
             },
         });
 
-        const agent = createTestApp();
+        const agent = await createTestApp();
         const token = await login(agent, owner.email, password);
         const res = await agent
             .get(`/api/v1/stores/${store.id}/schedule/attendance?from=${WEEK_START}&to=2026-06-13`)
@@ -196,7 +196,7 @@ describe('time clock', () => {
             data: { storeId: store.id, userId: other.id, role: Role.CASHIER },
         });
 
-        const agent = createTestApp();
+        const agent = await createTestApp();
         const token = await login(agent, staff.email, password);
         const auth = (req: any) => req.set('Authorization', `Bearer ${token}`);
 
@@ -234,7 +234,7 @@ describe('time clock', () => {
             data: { storeId: store.id, userId: staff.id, role: Role.CASHIER },
         });
 
-        const agent = createTestApp();
+        const agent = await createTestApp();
         const token = await login(agent, owner.email, password);
         const auth = (req: any) => req.set('Authorization', `Bearer ${token}`);
 

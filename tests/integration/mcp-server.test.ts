@@ -1,13 +1,14 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { Role } from '@prisma/client';
 import { AddressInfo } from 'net';
+import { once } from 'events';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import prisma from '../../lib/prisma';
 import { createApp } from '../../src/app';
 import { createStoreWithOwner, createTestApp, createUser, resetDb } from './helpers';
 
-type Agent = ReturnType<typeof createTestApp>;
+type Agent = Awaited<ReturnType<typeof createTestApp>>;
 
 const login = async (agent: Agent, email: string, password: string) => {
     const res = await agent.post('/api/v1/auth/login').send({ email, password });
@@ -36,7 +37,7 @@ const callTool = async (agent: Agent, token: string, name: string, args: Record<
 const setup = async () => {
     const { user: owner, password } = await createUser();
     const store = await createStoreWithOwner(owner.id, { name: 'Main Branch' });
-    const agent = createTestApp();
+    const agent = await createTestApp();
     const accessToken = await login(agent, owner.email, password);
     const asOwner = (req: any) => req.set('Authorization', `Bearer ${accessToken}`);
     const issue = async (access: 'READ_ONLY' | 'READ_WRITE', storeIds: string[] = [store.id]) => {
@@ -84,7 +85,7 @@ describe('MCP server', () => {
         // An admin of the store can't issue a token for it.
         const { user: admin, password } = await createUser();
         await prisma.storeMember.create({ data: { storeId: store.id, userId: admin.id, role: Role.ADMIN } });
-        const adminAgent = createTestApp();
+        const adminAgent = await createTestApp();
         const adminToken = await login(adminAgent, admin.email, password);
         const asAdmin = (req: any) => req.set('Authorization', `Bearer ${adminToken}`);
         const refused = await asAdmin(
@@ -109,7 +110,16 @@ describe('MCP server', () => {
 
         const list = await mcp(agent, secret, 'tools/list');
         const names = list.body.result.tools.map((t: { name: string }) => t.name).sort();
-        expect(names).toEqual(['get_ingredient', 'get_product', 'get_store_settings', 'list_ingredients', 'list_products', 'list_stores']);
+        expect(names).toEqual([
+            'get_expense',
+            'get_ingredient',
+            'get_product',
+            'get_store_settings',
+            'list_expenses',
+            'list_ingredients',
+            'list_products',
+            'list_stores',
+        ]);
         expect(names.some((n: string) => /sale/i.test(n))).toBe(false);
 
         // One store on the token: storeId can be left out.
@@ -224,6 +234,48 @@ describe('MCP server', () => {
         expect(priceLog.meta).toMatchObject({ via: 'MCP', changes: { price: 135 }, previous: { price: 120 } });
     });
 
+    it('reads expenses with any token and records them only with read & write', async () => {
+        const { owner, store, agent, issue } = await setup();
+        const { secret: readOnly } = await issue('READ_ONLY');
+        const { secret: readWrite } = await issue('READ_WRITE');
+
+        const created = await callTool(agent, readWrite, 'create_expense', {
+            date: '2026-11-10',
+            amount: 250,
+            category: 'Supplies',
+            note: 'Ice',
+        });
+        expect(created.isError).toBe(false);
+        // MCP never creates Daily Sales expenses.
+        expect(created.data).toMatchObject({ date: '2026-11-10', amount: 250, category: 'Supplies', note: 'Ice', source: 'MANUAL' });
+
+        const listed = await callTool(agent, readOnly, 'list_expenses', { from: '2026-11-01', to: '2026-11-30' });
+        expect(listed.data).toMatchObject({ count: 1, totalAmount: 250 });
+        expect(listed.data.expenses[0].id).toBe(created.data.id);
+
+        const outside = await callTool(agent, readOnly, 'list_expenses', { from: '2026-12-01', to: '2026-12-31' });
+        expect(outside.data.count).toBe(0);
+
+        const one = await callTool(agent, readOnly, 'get_expense', { expenseId: created.data.id });
+        expect(one.data).toMatchObject({ id: created.data.id, amount: 250 });
+
+        // Read-only tokens don't get write tools, and there is no delete tool at all.
+        expect((await callTool(agent, readOnly, 'create_expense', { date: '2026-11-11', amount: 1, category: 'Supplies' })).isError).toBe(true);
+        expect((await callTool(agent, readWrite, 'delete_expense', { expenseId: created.data.id })).isError).toBe(true);
+
+        const updated = await callTool(agent, readWrite, 'update_expense', { expenseId: created.data.id, amount: 300 });
+        expect(updated.data).toMatchObject({ amount: 300, category: 'Supplies', note: 'Ice' });
+        expect(await prisma.expense.count({ where: { storeId: store.id } })).toBe(1);
+
+        const logs = await prisma.auditLog.findMany({
+            where: { storeId: store.id, action: { startsWith: 'MCP_EXPENSE_' } },
+            orderBy: { createdAt: 'asc' },
+        });
+        expect(logs.map((l) => l.action)).toEqual(['MCP_EXPENSE_CREATED', 'MCP_EXPENSE_UPDATED']);
+        expect(logs.every((l) => l.actorId === owner.id)).toBe(true);
+        expect(logs[1].meta).toMatchObject({ changes: { amount: 300 }, previous: { amount: 250 } });
+    });
+
     it('follows billing suspension and ownership changes', async () => {
         const { owner, store, agent, issue } = await setup();
         const { secret } = await issue('READ_WRITE');
@@ -244,7 +296,9 @@ describe('MCP server', () => {
         await prisma.product.create({ data: { storeId: store.id, name: 'Bottled Water', type: 'READY_MADE', price: 25, unit: 'bottle' } });
         const { secret } = await issue('READ_ONLY');
 
-        const server = createApp().listen(0);
+        // 127.0.0.1, like createTestApp: a wildcard bind can share its port with another local app.
+        const server = createApp().listen(0, '127.0.0.1');
+        await once(server, 'listening');
         const { port } = server.address() as AddressInfo;
         const client = new Client({ name: 'test-client', version: '1.0.0' });
         try {
@@ -340,7 +394,7 @@ describe('MCP server', () => {
     // Keep last: it exhausts the in-memory failed-auth budget for this client IP.
     it('rate limits repeated bad tokens from one client', async () => {
         await setup();
-        const agent = createTestApp();
+        const agent = await createTestApp();
         let limited = false;
         for (let i = 0; i < 40 && !limited; i += 1) {
             const res = await mcp(agent, `smbpos_mcp_random${i}`, 'tools/list');

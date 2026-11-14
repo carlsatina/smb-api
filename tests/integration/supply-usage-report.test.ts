@@ -6,7 +6,7 @@ import { createStoreWithOwner, createTestApp, createUser, resetDb } from './help
 const DAY_MS = 24 * 60 * 60 * 1000;
 const daysAgo = (days: number) => new Date(Date.now() - days * DAY_MS);
 
-const login = async (agent: ReturnType<typeof createTestApp>, email: string, password: string) => {
+const login = async (agent: Awaited<ReturnType<typeof createTestApp>>, email: string, password: string) => {
     const res = await agent.post('/api/v1/auth/login').send({ email, password });
     expect(res.status).toBe(200);
     return res.body.accessToken as string;
@@ -61,7 +61,7 @@ describe('supply usage report', () => {
             },
         });
 
-        const agent = createTestApp();
+        const agent = await createTestApp();
         const token = await login(agent, user.email, password);
         const res = await agent
             .get(`/api/v1/stores/${store.id}/reports/supply-usage`)

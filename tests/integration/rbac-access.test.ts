@@ -28,7 +28,7 @@ describe('role access', () => {
             },
         });
 
-        const agent = createTestApp();
+        const agent = await createTestApp();
         const loginRes = await agent.post('/api/v1/auth/login').send({
             email: cashier.email,
             password: cashierPassword,

@@ -50,7 +50,7 @@ describe('reports', () => {
             },
         });
 
-        const agent = createTestApp();
+        const agent = await createTestApp();
         const loginRes = await agent.post('/api/v1/auth/login').send({
             email: user.email,
             password,
@@ -115,7 +115,7 @@ describe('reports', () => {
         ]);
         await makeSale([{ id: productA.id, name: 'Alpha', qty: 1, price: 10 }]);
 
-        const agent = createTestApp();
+        const agent = await createTestApp();
         const loginRes = await agent.post('/api/v1/auth/login').send({ email: user.email, password });
         expect(loginRes.status).toBe(200);
 
@@ -171,7 +171,7 @@ describe('reports', () => {
             },
         });
 
-        const agent = createTestApp();
+        const agent = await createTestApp();
         const loginRes = await agent.post('/api/v1/auth/login').send({ email: user.email, password });
         expect(loginRes.status).toBe(200);
 
@@ -217,7 +217,7 @@ describe('reports', () => {
             },
         });
 
-        const agent = createTestApp();
+        const agent = await createTestApp();
         const loginRes = await agent.post('/api/v1/auth/login').send({
             email: user.email,
             password,

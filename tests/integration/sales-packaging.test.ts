@@ -35,7 +35,7 @@ const stockOf = async (storeId: string, itemType: 'PRODUCT' | 'INGREDIENT', item
     return Number(result._sum.qtyDelta ?? 0);
 };
 
-const login = async (agent: ReturnType<typeof createTestApp>, email: string, password: string) => {
+const login = async (agent: Awaited<ReturnType<typeof createTestApp>>, email: string, password: string) => {
     const res = await agent.post('/api/v1/auth/login').send({ email, password });
     expect(res.status).toBe(200);
     return res.body.accessToken as string;
@@ -55,7 +55,7 @@ describe('sales finalize with takeout packaging', () => {
             data: { productId: product.id, ingredientId: packaging.id, qtyPerUnit: 1 },
         });
 
-        const agent = createTestApp();
+        const agent = await createTestApp();
         const token = await login(agent, user.email, password);
 
         const res = await agent
@@ -82,7 +82,7 @@ describe('sales finalize with takeout packaging', () => {
             data: { productId: product.id, ingredientId: packaging.id, qtyPerUnit: 1 },
         });
 
-        const agent = createTestApp();
+        const agent = await createTestApp();
         const token = await login(agent, user.email, password);
 
         const res = await agent
@@ -108,7 +108,7 @@ describe('sales finalize with takeout packaging', () => {
             data: { productId: product.id, ingredientId: packaging.id, qtyPerUnit: 2 },
         });
 
-        const agent = createTestApp();
+        const agent = await createTestApp();
         const token = await login(agent, user.email, password);
 
         const res = await agent
@@ -133,7 +133,7 @@ describe('sales finalize with takeout packaging', () => {
             data: { productId: product.id, ingredientId: packaging.id, qtyPerUnit: 2 },
         });
 
-        const agent = createTestApp();
+        const agent = await createTestApp();
         const token = await login(agent, user.email, password);
 
         const finalizeRes = await agent
@@ -167,7 +167,7 @@ describe('sales finalize with takeout packaging', () => {
         // Product has stock, packaging does not.
         await seedStock(store.id, 'PRODUCT', product.id, 10);
 
-        const agent = createTestApp();
+        const agent = await createTestApp();
         const token = await login(agent, user.email, password);
 
         const res = await agent

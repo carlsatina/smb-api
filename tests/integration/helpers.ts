@@ -3,6 +3,10 @@ import crypto from 'crypto';
 import prisma from '../../lib/prisma';
 import { createApp } from '../../src/app';
 import request from 'supertest';
+import type { Server } from 'http';
+import type { AddressInfo } from 'net';
+import { once } from 'events';
+import { afterAll } from 'vitest';
 import { ProductType, Role } from '@prisma/client';
 
 type CreateUserInput = {
@@ -28,7 +32,36 @@ type CreateProductInput = {
 const uniqueEmail = (prefix: string) =>
     `${prefix}-${crypto.randomUUID().slice(0, 8)}@example.com`;
 
-export const createTestApp = () => request.agent(createApp());
+const openServers = new Set<Server>();
+
+/**
+ * An agent for a fresh app instance, served on 127.0.0.1.
+ *
+ * Supertest's default listens on every interface and then connects to
+ * 127.0.0.1. On macOS that random port can also be held on 127.0.0.1 by another
+ * app (editors, chat apps…), and the request lands there instead: random 401s,
+ * 404s and "socket hang up". Binding to 127.0.0.1 ourselves rules that out.
+ */
+export const createTestApp = async () => {
+    const server = createApp().listen(0, '127.0.0.1');
+    openServers.add(server);
+    await once(server, 'listening');
+    const { port } = server.address() as AddressInfo;
+    return request.agent(`http://127.0.0.1:${port}`);
+};
+
+afterAll(async () => {
+    await Promise.all(
+        [...openServers].map(
+            (server) =>
+                new Promise<void>((resolve) => {
+                    server.closeAllConnections();
+                    server.close(() => resolve());
+                })
+        )
+    );
+    openServers.clear();
+});
 
 export const resetDb = async () => {
     await prisma.saleItem.deleteMany();
