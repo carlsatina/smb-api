@@ -532,8 +532,8 @@ enum FieldRequirement {
   REQUIRED
 }
 
-// Store-configurable discounts. Senior Citizen and PWD are statutory presets:
-// their code, rate and VAT rule are locked.
+// Store-configurable discounts. "Senior Citizen / PWD" is the statutory preset:
+// its code and holder types are fixed; owners may change the rate and VAT rule.
 model DiscountType {
   id              String           @id @default(cuid())
   storeId         String
@@ -549,6 +549,9 @@ model DiscountType {
   allowOnChannels Boolean          @default(false)
   // Round each application's net amount to the nearest whole currency unit.
   roundToWhole    Boolean          @default(false)
+  // ID types the cashier picks from, e.g. [{ code: "SC", name: "Senior Citizen" }, { code: "PWD", ... }].
+  // The sale records the picked code/name, so Senior and PWD stay separate in reports.
+  holderTypes     Json             @default("[]")
   isActive        Boolean          @default(true)
   sortOrder       Int              @default(0)
   createdAt       DateTime         @default(now())

@@ -1,15 +1,23 @@
 import { DiscountMethod, DiscountScope, DiscountType, FieldRequirement, Prisma } from '@prisma/client';
 import prisma from '../../../lib/prisma';
 import { AppError } from '../../shared/errors';
-import type { DiscountTypeConfig } from '../sales/saleDiscounts';
+import type { DiscountTypeConfig, HolderType } from '../sales/saleDiscounts';
 import type { DiscountTypeCreateInput, DiscountTypeUpdateInput } from './discountType.schemas';
 
 type Db = Prisma.TransactionClient | typeof prisma;
 
-/** Senior Citizen (RA 9994) and PWD (RA 10754): 20% off the VAT-exclusive price, VAT-exempt. */
+/**
+ * Senior Citizen (RA 9994) and PWD (RA 10754) share one discount: 20% off the
+ * VAT-exclusive price, VAT-exempt. The cashier picks SC or PWD and the sale
+ * records that code, so the two stay separate in the BIR sales book.
+ */
+export const SENIOR_PWD_HOLDER_TYPES = [
+    { code: 'SC', name: 'Senior Citizen' },
+    { code: 'PWD', name: 'Person with Disability' },
+];
+
 export const STATUTORY_PRESETS = [
-    { code: 'SC', name: 'Senior Citizen', sortOrder: 0 },
-    { code: 'PWD', name: 'Person with Disability', sortOrder: 1 },
+    { code: 'SCPWD', name: 'Senior Citizen / PWD', sortOrder: 0, holderTypes: SENIOR_PWD_HOLDER_TYPES },
 ].map((preset) => ({
     ...preset,
     statutory: true,
@@ -23,8 +31,21 @@ export const STATUTORY_PRESETS = [
     roundToWhole: true,
 }));
 
-/** Fields fixed by law on statutory presets. */
-const STATUTORY_LOCKED = ['code', 'method', 'value', 'removesVat'] as const;
+/** Fixed on the statutory preset. The rate and VAT rule are editable (owners get a warning). */
+const STATUTORY_LOCKED = ['code', 'method'] as const;
+
+/** The legal defaults, shown as a warning when the owner changes them. */
+export const STATUTORY_DEFAULTS = { value: 20, removesVat: true };
+
+const parseHolderTypes = (value: Prisma.JsonValue): HolderType[] =>
+    Array.isArray(value)
+        ? value.flatMap((entry) =>
+              entry && typeof entry === 'object' && !Array.isArray(entry) &&
+              typeof entry.code === 'string' && typeof entry.name === 'string'
+                  ? [{ code: entry.code, name: entry.name }]
+                  : []
+          )
+        : [];
 
 /** Creates any missing statutory presets; safe to call repeatedly. */
 export const ensureStatutoryDiscountTypes = async (storeId: string, db: Db = prisma) => {
@@ -49,12 +70,14 @@ export const toDiscountTypeConfig = (row: DiscountType): DiscountTypeConfig => (
     roundToWhole: row.roundToWhole,
     isActive: row.isActive,
     archived: row.archivedAt !== null,
+    holderTypes: parseHolderTypes(row.holderTypes),
 });
 
 const toDto = (row: DiscountType) => ({
     ...toDiscountTypeConfig(row),
     sortOrder: row.sortOrder,
     lockedFields: row.statutory ? [...STATUTORY_LOCKED] : [],
+    legalDefaults: row.statutory ? STATUTORY_DEFAULTS : null,
     archivedAt: row.archivedAt,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -135,7 +158,7 @@ export const discountTypeService = {
             if (changed.length) {
                 throw new AppError(
                     'STATUTORY_DISCOUNT_LOCKED',
-                    `${existing.name} is set by law; its ${changed.join(', ')} cannot be changed.`,
+                    `The ${changed.join(' and ')} of ${existing.name} cannot be changed.`,
                     400,
                     { fields: changed }
                 );

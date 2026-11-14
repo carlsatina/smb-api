@@ -28,7 +28,11 @@ export type DiscountTypeConfig = {
     roundToWhole: boolean;
     isActive: boolean;
     archived: boolean;
+    /** ID types to pick from (Senior/PWD); empty = the discount's own code. */
+    holderTypes?: HolderType[];
 };
+
+export type HolderType = { code: string; name: string };
 
 export type DiscountApplicationInput = {
     ref: string;
@@ -38,6 +42,8 @@ export type DiscountApplicationInput = {
     holderIdNumber?: string | null;
     dinerCount?: number;
     holderCount?: number;
+    /** Required when the type has holder types: which one (e.g. SC or PWD). */
+    holderType?: string | null;
 };
 
 export type DiscountLineInput = {
@@ -61,6 +67,9 @@ export type DiscountedLine = {
 export type ResolvedApplication = {
     ref: string;
     type: DiscountTypeConfig;
+    /** What the sale records: the picked holder type, or the type's own code/name. */
+    code: string;
+    name: string;
     scope: 'LINE' | 'SALE';
     holderName: string | null;
     holderIdNumber: string | null;
@@ -152,6 +161,20 @@ export const applySaleDiscounts = (input: {
             throw bad('DISCOUNT_NOT_ON_CHANNEL', `${type.name} can't be used on channel orders.`, { code: type.code });
         }
 
+        const holderTypes = type.holderTypes ?? [];
+        let recorded: HolderType = { code: type.code, name: type.name };
+        if (holderTypes.length) {
+            const picked = holderTypes.find((option) => option.code === app.holderType);
+            if (!picked) {
+                throw bad(
+                    'HOLDER_TYPE_REQUIRED',
+                    `Choose ${holderTypes.map((option) => option.name).join(' or ')} for ${type.name}.`,
+                    { code: type.code }
+                );
+            }
+            recorded = picked;
+        }
+
         let dinerCount: number | null = null;
         let holderCount: number | null = null;
         if (app.scope === 'SALE') {
@@ -176,6 +199,8 @@ export const applySaleDiscounts = (input: {
         return {
             ref: app.ref,
             type,
+            code: recorded.code,
+            name: recorded.name,
             scope: app.scope,
             holderName: resolveHolderField(type.holderName, app.holderName, 'name', type),
             holderIdNumber: resolveHolderField(type.holderIdNumber, app.holderIdNumber, 'ID number', type),

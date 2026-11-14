@@ -24,7 +24,7 @@ const setup = async () => {
 
     const types = await ownerSession.agent.get(`${base}/discount-types`).set('Authorization', ownerSession.auth);
     expect(types.status).toBe(200);
-    const sc = types.body.discountTypes.find((t: { code: string }) => t.code === 'SC');
+    const sc = types.body.discountTypes.find((t: { code: string }) => t.code === 'SCPWD');
 
     return { store, owner: ownerSession, cashier: cashierSession, base, sc };
 };
@@ -34,11 +34,11 @@ describe('discount types', () => {
         await resetDb();
     });
 
-    it('creates the Senior and PWD presets with their legal settings locked', async () => {
+    it('creates one Senior/PWD preset whose rate the owner can change', async () => {
         const { owner, base, sc } = await setup();
 
         const list = await owner.agent.get(`${base}/discount-types`).set('Authorization', owner.auth);
-        expect(list.body.discountTypes.map((t: { code: string }) => t.code)).toEqual(['SC', 'PWD']);
+        expect(list.body.discountTypes.map((t: { code: string }) => t.code)).toEqual(['SCPWD']);
         expect(sc).toMatchObject({
             statutory: true,
             method: 'PERCENT',
@@ -46,20 +46,35 @@ describe('discount types', () => {
             removesVat: true,
             holderName: 'REQUIRED',
             holderIdNumber: 'REQUIRED',
-            lockedFields: ['code', 'method', 'value', 'removesVat'],
+            holderTypes: [
+                { code: 'SC', name: 'Senior Citizen' },
+                { code: 'PWD', name: 'Person with Disability' },
+            ],
+            lockedFields: ['code', 'method'],
+            legalDefaults: { value: 20, removesVat: true },
         });
 
-        const lowerRate = await owner.agent
+        const fixedAmount = await owner.agent
             .patch(`${base}/discount-types/${sc.id}`)
             .set('Authorization', owner.auth)
-            .send({ value: 10 });
-        expect(lowerRate.status).toBe(400);
-        expect(lowerRate.body.error.code).toBe('STATUTORY_DISCOUNT_LOCKED');
+            .send({ method: 'FIXED' });
+        expect(fixedAmount.status).toBe(400);
+        expect(fixedAmount.body.error.code).toBe('STATUTORY_DISCOUNT_LOCKED');
+
+        // The owner may change the rate (e.g. 5% on basic necessities).
+        const grocery = await owner.agent
+            .patch(`${base}/discount-types/${sc.id}`)
+            .set('Authorization', owner.auth)
+            .send({ value: 5, removesVat: false });
+        expect(grocery.status).toBe(200);
+        expect(grocery.body.discountType).toMatchObject({ value: 5, removesVat: false });
+        const audit = await prisma.auditLog.findFirst({ where: { action: 'DISCOUNT_TYPE_UPDATED' } });
+        expect(audit?.meta).toMatchObject({ before: { value: 20 }, after: { value: 5, removesVat: false } });
 
         const relaxId = await owner.agent
             .patch(`${base}/discount-types/${sc.id}`)
             .set('Authorization', owner.auth)
-            .send({ holderIdNumber: 'OPTIONAL', scope: 'LINE', value: 20 });
+            .send({ holderIdNumber: 'OPTIONAL', scope: 'LINE', value: 20, removesVat: true });
         expect(relaxId.status).toBe(200);
         expect(relaxId.body.discountType).toMatchObject({ holderIdNumber: 'OPTIONAL', scope: 'LINE' });
 
@@ -93,7 +108,7 @@ describe('discount types', () => {
         expect(archived.status).toBe(204);
 
         const list = await cashier.agent.get(`${base}/discount-types`).set('Authorization', cashier.auth);
-        expect(list.body.discountTypes.map((t: { code: string }) => t.code)).toEqual(['SC', 'PWD']);
+        expect(list.body.discountTypes.map((t: { code: string }) => t.code)).toEqual(['SCPWD']);
 
         const audit = await prisma.auditLog.findMany({ where: { action: { startsWith: 'DISCOUNT_TYPE_' } } });
         expect(audit.map((row) => row.action).sort()).toEqual(['DISCOUNT_TYPE_ARCHIVED', 'DISCOUNT_TYPE_CREATED']);
@@ -126,6 +141,7 @@ describe('sales with discounts', () => {
                     {
                         ref: 'sc1',
                         discountTypeId: sc.id,
+                        holderType: 'SC',
                         scope: 'LINE',
                         holderName: 'Juan Dela Cruz',
                         holderIdNumber: 'OSCA-123456',
@@ -179,10 +195,21 @@ describe('sales with discounts', () => {
             .send({
                 paymentMethod: 'CASH',
                 items: [{ productId: product.id, qty: 1, unitPrice: 100, discountRef: 'x' }],
-                discounts: [{ ref: 'x', discountTypeId: sc.id, scope: 'LINE', holderName: 'Maria' }],
+                discounts: [{ ref: 'x', discountTypeId: sc.id, holderType: 'SC', scope: 'LINE', holderName: 'Maria' }],
             });
         expect(res.status).toBe(400);
         expect(res.body.error.code).toBe('DISCOUNT_HOLDER_REQUIRED');
+
+        const noIdType = await cashier.agent
+            .post(`${base}/sales/finalize`)
+            .set('Authorization', cashier.auth)
+            .send({
+                paymentMethod: 'CASH',
+                items: [{ productId: product.id, qty: 1, unitPrice: 100, discountRef: 'x' }],
+                discounts: [{ ref: 'x', discountTypeId: sc.id, scope: 'LINE', holderName: 'Maria', holderIdNumber: 'X1' }],
+            });
+        expect(noIdType.status).toBe(400);
+        expect(noIdType.body.error.code).toBe('HOLDER_TYPE_REQUIRED');
         expect(await prisma.sale.count()).toBe(0);
     });
 
@@ -197,7 +224,7 @@ describe('sales with discounts', () => {
                 paymentMethod: 'CASH',
                 items: [{ productId: product.id, qty: 1, unitPrice: 112, discountRef: 'p' }],
                 discounts: [
-                    { ref: 'p', discountTypeId: sc.id, scope: 'LINE', holderName: 'Ana', holderIdNumber: 'PWD-1' },
+                    { ref: 'p', discountTypeId: sc.id, holderType: 'PWD', scope: 'LINE', holderName: 'Ana', holderIdNumber: 'PWD-1' },
                 ],
             });
         expect(created.status).toBe(201);
@@ -233,7 +260,14 @@ describe('sales with discounts', () => {
         // 224 → 200 without VAT (24) → 40 off → 160.
         expect(edited.body.sale).toMatchObject({ subtotal: 224, discount: 64, total: 160, tax: 0, vatRemoved: 24 });
         expect(edited.body.sale.discounts).toHaveLength(1);
-        expect(edited.body.sale.discounts[0]).toMatchObject({ id: sale.discounts[0].id, amount: 40, holderName: 'Ana' });
+        // The edit didn't resend the ID type; it stays PWD.
+        expect(edited.body.sale.discounts[0]).toMatchObject({
+            id: sale.discounts[0].id,
+            code: 'PWD',
+            name: 'Person with Disability',
+            amount: 40,
+            holderName: 'Ana',
+        });
 
         const audit = await prisma.auditLog.findFirst({ where: { action: 'SALE_EDITED' } });
         expect(JSON.stringify(audit?.meta)).not.toContain('PWD-1');
@@ -263,7 +297,7 @@ describe('discount reports', () => {
         await ringUp(owner, base, {
             paymentMethod: 'CASH',
             items: [{ productId: product.id, qty: 1, unitPrice: 112, discountRef: 's' }],
-            discounts: [{ ref: 's', discountTypeId: sc.id, scope: 'LINE', holderName: 'Ana', holderIdNumber: 'OSCA-1' }],
+            discounts: [{ ref: 's', discountTypeId: sc.id, holderType: 'SC', scope: 'LINE', holderName: 'Ana', holderIdNumber: 'OSCA-1' }],
         });
         // An older-style manual discount of 5.
         await ringUp(owner, base, {
@@ -301,6 +335,7 @@ describe('discount reports', () => {
                 {
                     ref: 'g',
                     discountTypeId: sc.id,
+                    holderType: 'SC',
                     scope: 'SALE',
                     dinerCount: 4,
                     holderCount: 1,
@@ -369,7 +404,7 @@ describe('discount reports', () => {
         const sale = await ringUp(owner, base, {
             paymentMethod: 'CASH',
             items: [{ productId: product.id, qty: 1, unitPrice: 112, discountRef: 's' }],
-            discounts: [{ ref: 's', discountTypeId: sc.id, scope: 'LINE', holderName: 'Ana', holderIdNumber: 'OSCA-555666' }],
+            discounts: [{ ref: 's', discountTypeId: sc.id, holderType: 'SC', scope: 'LINE', holderName: 'Ana', holderIdNumber: 'OSCA-555666' }],
         });
 
         const seen = await cashier.agent.get(`${base}/sales/${sale.id}`).set('Authorization', cashier.auth);

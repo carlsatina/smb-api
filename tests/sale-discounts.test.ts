@@ -217,6 +217,38 @@ describe('applySaleDiscounts', () => {
         expect(run(employee(), holder).applications[0]).toMatchObject({ holderName: null, holderIdNumber: null });
     });
 
+    it('records the ID type the cashier picked for a Senior/PWD discount', () => {
+        const merged = senior({
+            id: 'scpwd',
+            code: 'SCPWD',
+            name: 'Senior Citizen / PWD',
+            holderTypes: [
+                { code: 'SC', name: 'Senior Citizen' },
+                { code: 'PWD', name: 'Person with Disability' },
+            ],
+        });
+        const run = (holderType?: string) =>
+            applySaleDiscounts({
+                lines: [{ qty: 1, unitPrice: 56, discountRef: 'a' }],
+                applications: [{ ref: 'a', discountTypeId: 'scpwd', scope: 'LINE', holderType, ...holder }],
+                types: typesOf(merged),
+                vatRate: 12,
+                isChannelSale: false,
+            });
+
+        expect(run('PWD').applications[0]).toMatchObject({ code: 'PWD', name: 'Person with Disability', amount: 10 });
+        expect(() => run()).toThrow(expect.objectContaining({ code: 'HOLDER_TYPE_REQUIRED' }));
+        expect(() => run('VIP')).toThrow(expect.objectContaining({ code: 'HOLDER_TYPE_REQUIRED' }));
+        // Without holder types the discount records its own code.
+        expect(applySaleDiscounts({
+            lines: [{ qty: 1, unitPrice: 56, discountRef: 'a' }],
+            applications: [{ ref: 'a', discountTypeId: 'sc', scope: 'LINE', ...holder }],
+            types: typesOf(senior()),
+            vatRate: 12,
+            isChannelSale: false,
+        }).applications[0]).toMatchObject({ code: 'SC', name: 'Senior Citizen' });
+    });
+
     it('rejects misuse', () => {
         const base = {
             lines: [{ qty: 1, unitPrice: 50, discountRef: 'a' }],

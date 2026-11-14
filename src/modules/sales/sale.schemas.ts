@@ -55,6 +55,8 @@ export const saleDiscountSchema = z.object({
     // Sale-wide Senior/PWD on a group meal: diners at the table, and how many get the discount.
     dinerCount: z.number().int().min(1).max(500).optional(),
     holderCount: z.number().int().min(1).max(500).optional(),
+    // For Senior/PWD: which ID the holder showed (SC or PWD).
+    holderType: z.string().trim().min(1).max(20).nullable().optional(),
 });
 
 export const saleFinalizeSchema = z.object({

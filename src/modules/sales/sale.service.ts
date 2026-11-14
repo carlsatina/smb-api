@@ -284,12 +284,19 @@ const priceDiscounts = async (
     );
 
     const existingById = new Map(existing.map((row) => [row.id, row]));
-    // An editor who only sees masked IDs sends the mask back; keep the real ID.
     discounts = discounts.map((entry) => {
         const kept = existingById.get(entry.ref);
-        return kept?.holderIdNumber && entry.holderIdNumber === maskIdNumber(kept.holderIdNumber)
-            ? { ...entry, holderIdNumber: kept.holderIdNumber }
-            : entry;
+        if (!kept) return entry;
+        return {
+            ...entry,
+            // An editor who only sees masked IDs sends the mask back; keep the real ID.
+            holderIdNumber:
+                kept.holderIdNumber && entry.holderIdNumber === maskIdNumber(kept.holderIdNumber)
+                    ? kept.holderIdNumber
+                    : entry.holderIdNumber,
+            // A kept Senior/PWD discount stays the ID type it was rung up as.
+            holderType: entry.holderType ?? kept.code,
+        };
     });
     const keptRefs = new Set<string>();
     const types = new Map<string, DiscountTypeConfig>();
@@ -350,8 +357,8 @@ const saleDiscountRows = (
             saleId,
             discountTypeId: app.type.id,
             scope: app.scope,
-            code: app.type.code,
-            name: app.type.name,
+            code: app.code,
+            name: app.name,
             method: app.type.method,
             value: new Prisma.Decimal(app.type.value),
             removesVat: app.type.removesVat,
