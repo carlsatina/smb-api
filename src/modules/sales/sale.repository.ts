@@ -111,6 +111,9 @@ export const saleRepository = {
                         email: true,
                     },
                 },
+                discounts: {
+                    orderBy: { createdAt: 'asc' },
+                },
                 items: {
                     include: {
                         product: {

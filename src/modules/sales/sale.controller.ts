@@ -5,6 +5,10 @@ import { asyncHandler } from '../../shared/asyncHandler';
 import { AppError } from '../../shared/errors';
 import { saleBulkDeleteSchema, saleDeleteSchema, saleExportQuerySchema, saleFinalizeSchema, saleListQuerySchema, saleUpdateSchema } from './sale.schemas';
 import { saleService } from './sale.service';
+import { hasPermission } from '../../middlewares/requirePermission';
+
+// Full Senior/PWD ID numbers only for members who can edit sales; others see them masked.
+const detailOptions = (req: AuthRequest) => ({ revealHolderIds: hasPermission(req, 'sales.edit') });
 import { escapeCsvValue, parseCSV } from '../../shared/csv';
 
 export const listSales = asyncHandler(async (req: AuthRequest, res: Response) => {
@@ -38,7 +42,7 @@ export const getSale = asyncHandler(async (req: AuthRequest, res: Response) => {
         throw new AppError('BAD_REQUEST', 'Store and sale are required', 400);
     }
 
-    const sale = await saleService.get(storeId, saleId);
+    const sale = await saleService.get(storeId, saleId, detailOptions(req));
     res.status(200).json({ sale });
 });
 
@@ -53,7 +57,7 @@ export const finalizeSale = asyncHandler(async (req: AuthRequest, res: Response)
     if (payload.customDate && req.storeRole !== Role.OWNER && !req.user?.isSuperAdmin) {
         throw new AppError('FORBIDDEN', 'Only store owners can customize the sale date.', 403);
     }
-    const sale = await saleService.finalize(storeId, userId, payload);
+    const sale = await saleService.finalize(storeId, userId, payload, detailOptions(req));
     res.status(201).json({ sale });
 });
 
@@ -153,7 +157,7 @@ export const updateSale = asyncHandler(async (req: AuthRequest, res: Response) =
     }
 
     const payload = saleUpdateSchema.parse(req.body);
-    const sale = await saleService.update(storeId, userId, saleId, payload);
+    const sale = await saleService.update(storeId, userId, saleId, payload, detailOptions(req));
     res.status(200).json({ sale });
 });
 
@@ -166,7 +170,7 @@ export const voidSale = asyncHandler(async (req: AuthRequest, res: Response) => 
         throw new AppError('BAD_REQUEST', 'Store, sale, and user are required', 400);
     }
 
-    const sale = await saleService.voidSale(storeId, userId, saleId);
+    const sale = await saleService.voidSale(storeId, userId, saleId, detailOptions(req));
     res.status(200).json({ sale });
 });
 

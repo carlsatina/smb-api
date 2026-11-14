@@ -38,6 +38,23 @@ export const saleItemSchema = z.object({
     unitPrice: nonNegativeNumber,
     discount: nonNegativeNumber.optional(),
     tax: nonNegativeNumber.optional(),
+    // Points at a LINE-scope entry in `discounts`; the server prices the line.
+    discountRef: z.string().min(1).max(64).optional(),
+});
+
+const holderField = z.string().trim().max(120).nullable().optional();
+
+export const saleDiscountSchema = z.object({
+    // Client-chosen key that items use in `discountRef`. When editing, the id of
+    // an existing sale discount keeps its original snapshot.
+    ref: z.string().min(1).max(64),
+    discountTypeId: z.string().min(1),
+    scope: z.enum(['LINE', 'SALE']),
+    holderName: holderField,
+    holderIdNumber: holderField,
+    // Sale-wide Senior/PWD on a group meal: diners at the table, and how many get the discount.
+    dinerCount: z.number().int().min(1).max(500).optional(),
+    holderCount: z.number().int().min(1).max(500).optional(),
 });
 
 export const saleFinalizeSchema = z.object({
@@ -46,12 +63,15 @@ export const saleFinalizeSchema = z.object({
     orderType: z.nativeEnum(OrderType).default(OrderType.DINE_IN),
     customDate: dateValue.optional(),
     channel: z.string().min(1).max(30).nullable().optional(),
+    discounts: z.array(saleDiscountSchema).max(50).optional(),
 });
 
 export const saleUpdateSchema = z.object({
     items: z.array(saleItemSchema).min(1),
     paymentMethod: z.nativeEnum(PaymentMethod),
     orderType: z.nativeEnum(OrderType),
+    // Omit to edit a sale without discounts the old way; required once a sale has any.
+    discounts: z.array(saleDiscountSchema).max(50).optional(),
 });
 
 export const saleListQuerySchema = z.object({

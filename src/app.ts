@@ -23,6 +23,7 @@ import { purchaseOrderRouter } from './modules/purchaseOrders/purchaseOrder.rout
 import { recipeRouter } from './modules/recipes/recipe.routes';
 import { reportsRouter } from './modules/reports/reports.routes';
 import { saleRouter } from './modules/sales/sale.routes';
+import { discountTypeRouter } from './modules/discountTypes/discountType.routes';
 import { storeInviteRouter, storeMemberRouter } from './modules/storeMembers/storeMember.routes';
 import { storeRouter } from './modules/stores/store.routes';
 import { supplierRouter } from './modules/suppliers/supplier.routes';
@@ -112,6 +113,7 @@ export const createApp = () => {
     app.use('/api/v1/stores/:storeId/inventory/daily-reports', dailyInventoryRouter);
     app.use('/api/v1/stores/:storeId/inventory', inventoryRouter);
     app.use('/api/v1/stores/:storeId/sales', saleRouter);
+    app.use('/api/v1/stores/:storeId/discount-types', discountTypeRouter);
     app.use('/api/v1/stores/:storeId/reports', reportsRouter);
     app.use('/api/v1/stores/:storeId/purchase-orders', purchaseOrderRouter);
     app.use('/api/v1/stores/:storeId/suppliers', supplierRouter);

@@ -105,24 +105,24 @@ enum IngredientCategory {
 }
 
 model User {
-  id                 String    @id @default(cuid())
-  email              String    @unique
-  passwordHash       String
-  fullName           String?
-  emailVerifiedAt    DateTime?
-  isSuperAdmin       Boolean   @default(false)
+  id                     String               @id @default(cuid())
+  email                  String               @unique
+  passwordHash           String
+  fullName               String?
+  emailVerifiedAt        DateTime?
+  isSuperAdmin           Boolean              @default(false)
   // Owner-level billing discount, set by platform admins. Applies to billing
   // months that start before billingDiscountEndsAt (null = no end).
-  billingDiscountType   BillingDiscountType?
-  billingDiscountValue  Decimal?             @db.Decimal(12, 2)
-  billingDiscountEndsAt DateTime?
-  billingDiscountNote   String?
+  billingDiscountType    BillingDiscountType?
+  billingDiscountValue   Decimal?             @db.Decimal(12, 2)
+  billingDiscountEndsAt  DateTime?
+  billingDiscountNote    String?
   // Set by a platform admin for non-payment: the owner's stores become
   // read-only for everyone until it is cleared (or the overdue bill is paid).
   billingSuspendedAt     DateTime?
   billingSuspendedReason String?
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
+  createdAt              DateTime             @default(now())
+  updatedAt              DateTime             @updatedAt
 
   memberships             StoreMember[]
   invites                 StoreInvite[]            @relation("InvitedBy")
@@ -147,6 +147,7 @@ model User {
   timeEntriesEdited       TimeEntry[]              @relation("TimeEntryEditedBy")
   dailyInventoryReports   DailyInventoryReport[]   @relation("DailyInventoryCreatedBy")
   mcpTokens               McpToken[]               @relation("McpTokenOwner")
+  saleDiscountsApplied    SaleDiscount[]           @relation("SaleDiscountAppliedBy")
 }
 
 // Monthly per-store billing, one statement per store owner per month.
@@ -155,25 +156,25 @@ model User {
 // time the statement was sent or marked paid, so later store changes don't
 // rewrite what the owner was billed.
 model BillingStatement {
-  id          String    @id @default(cuid())
-  ownerId     String
-  year        Int
-  month       Int
-  storeCount  Int
+  id             String    @id @default(cuid())
+  ownerId        String
+  year           Int
+  month          Int
+  storeCount     Int
   // [{ storeId, storeName, storeType, position, fee, exempt }]
   lines          Json      @default("[]")
   subtotal       Decimal   @default(0) @db.Decimal(12, 2)
   discountAmount Decimal   @default(0) @db.Decimal(12, 2)
   discountNote   String?
   amount         Decimal   @db.Decimal(12, 2)
-  sentAt      DateTime?
-  sentToEmail String?
-  sentById    String?
-  sendCount   Int       @default(0)
-  paidAt      DateTime?
-  paymentNote String?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  sentAt         DateTime?
+  sentToEmail    String?
+  sentById       String?
+  sendCount      Int       @default(0)
+  paidAt         DateTime?
+  paymentNote    String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   owner  User  @relation("BillingStatementOwner", fields: [ownerId], references: [id], onDelete: Cascade)
   sentBy User? @relation("BillingStatementSentBy", fields: [sentById], references: [id], onDelete: SetNull)
@@ -222,67 +223,69 @@ model EmailVerificationToken {
 }
 
 model Store {
-  id                       String      @id @default(cuid())
+  id                       String          @id @default(cuid())
   name                     String
-  storeType                StoreType   @default(RETAIL)
-  timezone                 String      @default("Asia/Manila")
-  currency                 String      @default("PHP")
-  unitOptions              String[]    @default([])
-  categoryOptions          String[]    @default([])
-  subcategoryOptions       Json        @default("{}")
-  rolePermissions          Json        @default("{}")
+  storeType                StoreType       @default(RETAIL)
+  timezone                 String          @default("Asia/Manila")
+  currency                 String          @default("PHP")
+  unitOptions              String[]        @default([])
+  categoryOptions          String[]        @default([])
+  subcategoryOptions       Json            @default("{}")
+  rolePermissions          Json            @default("{}")
   // Sales channels like Grab: [{ key, name, markupPercent, rounding, alwaysTakeout, active }]
-  salesChannels            Json        @default("[]")
-  expenseCategoryOptions   String[]    @default([])
+  salesChannels            Json            @default("[]")
+  expenseCategoryOptions   String[]        @default([])
   supplyCostBasis          SupplyCostBasis @default(PURCHASE)
-  allowNegativeStock       Boolean     @default(false)
-  lowStockThreshold        Decimal     @default(0) @db.Decimal(12, 4)
-  defaultTaxRate           Decimal     @default(0) @db.Decimal(5, 2)
-  defaultDiscount          Decimal     @default(0) @db.Decimal(12, 2)
+  allowNegativeStock       Boolean         @default(false)
+  lowStockThreshold        Decimal         @default(0) @db.Decimal(12, 4)
+  defaultTaxRate           Decimal         @default(0) @db.Decimal(5, 2)
+  defaultDiscount          Decimal         @default(0) @db.Decimal(12, 2)
   cashierSalesHistoryLimit Int?
-  paymentMethods           String[]    @default(["CASH", "CARD", "TRANSFER", "GCASH", "MAYA", "OTHER"])
+  paymentMethods           String[]        @default(["CASH", "CARD", "TRANSFER", "GCASH", "MAYA", "OTHER"])
   aiProvider               AiProvider?
   aiModel                  String?
   aiApiKeyEncrypted        String?
   aiApiKeyLast4            String?
   // Complimentary store: billed at 0 and left out of the owner's price ranking
   // for billing months that start before billingExemptEndsAt (null = no end).
-  billingExempt            Boolean     @default(false)
+  billingExempt            Boolean         @default(false)
   billingExemptEndsAt      DateTime?
   billingExemptNote        String?
-  createdAt                DateTime    @default(now())
-  updatedAt                DateTime    @updatedAt
+  createdAt                DateTime        @default(now())
+  updatedAt                DateTime        @updatedAt
   deletedAt                DateTime?
 
-  members            StoreMember[]
-  invites            StoreInvite[]
-  products           Product[]
-  ingredients        Ingredient[]
-  recipes            Recipe[]
-  sales              Sale[]
-  purchaseOrders     PurchaseOrder[]
-  receipts           PurchaseReceipt[]
-  inventoryMovements InventoryMovement[]
-  auditLogs          AuditLog[]
-  suppliers          Supplier[]
-  dailySalesEntries  DailySalesEntry[]
-  dailySalesGoals    DailySalesGoal[]
-  expenses           Expense[]
-  shiftPresets       ShiftPreset[]
-  staffCompensations StaffCompensation[]
-  scheduleWeeks      ScheduleWeek[]
-  cashAdvances       CashAdvance[]
-  timeEntries        TimeEntry[]
+  members               StoreMember[]
+  invites               StoreInvite[]
+  products              Product[]
+  ingredients           Ingredient[]
+  recipes               Recipe[]
+  sales                 Sale[]
+  purchaseOrders        PurchaseOrder[]
+  receipts              PurchaseReceipt[]
+  inventoryMovements    InventoryMovement[]
+  auditLogs             AuditLog[]
+  suppliers             Supplier[]
+  dailySalesEntries     DailySalesEntry[]
+  dailySalesGoals       DailySalesGoal[]
+  expenses              Expense[]
+  shiftPresets          ShiftPreset[]
+  staffCompensations    StaffCompensation[]
+  scheduleWeeks         ScheduleWeek[]
+  cashAdvances          CashAdvance[]
+  timeEntries           TimeEntry[]
   dailyInventoryReports DailyInventoryReport[]
-  mcpTokenStores     McpTokenStore[]
+  mcpTokenStores        McpTokenStore[]
+  discountTypes         DiscountType[]
+  saleDiscounts         SaleDiscount[]
 }
 
 model StoreMember {
-  id        String    @id @default(cuid())
-  storeId   String
-  userId    String
-  role      Role
-  createdAt DateTime  @default(now())
+  id                  String    @id @default(cuid())
+  storeId             String
+  userId              String
+  role                Role
+  createdAt           DateTime  @default(now())
   // Access revoked without losing the membership. A suspended member keeps their
   // history — past sales, attendance, payroll rows all still point here — but is
   // refused at requireStoreRole and stops consuming a plan seat. Distinct from
@@ -291,11 +294,11 @@ model StoreMember {
   // Who suspended them is recorded in AuditLog rather than here: this column is
   // the authority on access, the log is the history. Losing the log costs the
   // "suspended by" line in the UI, never the suspension itself.
-  suspendedAt DateTime?
-  deletedAt   DateTime?
+  suspendedAt         DateTime?
+  deletedAt           DateTime?
   // Per-person exceptions on top of the role's permissions (permission -> granted).
   // Cleared whenever the member's role changes.
-  permissionOverrides Json @default("{}")
+  permissionOverrides Json      @default("{}")
 
   store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
   user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -329,26 +332,26 @@ model StoreInvite {
 }
 
 model Product {
-  id                String      @id @default(cuid())
-  storeId           String
-  name              String
-  type              ProductType
-  sku               String?
-  barcode           String?
-  price             Decimal     @db.Decimal(12, 2)
-  cost              Decimal?    @db.Decimal(12, 2)
-  unit              String
-  category          String?
-  subcategory       String?
+  id                  String      @id @default(cuid())
+  storeId             String
+  name                String
+  type                ProductType
+  sku                 String?
+  barcode             String?
+  price               Decimal     @db.Decimal(12, 2)
+  cost                Decimal?    @db.Decimal(12, 2)
+  unit                String
+  category            String?
+  subcategory         String?
   // Explicit per-channel prices that don't follow the channel markup: { GRAB: 115 }
-  channelPrices     Json        @default("{}")
+  channelPrices       Json        @default("{}")
   // Channel keys this product is NOT sold on (e.g. ["GRAB"]). Walk-in always sells everything.
-  unavailableChannels String[]  @default([])
-  active            Boolean     @default(true)
-  lowStockThreshold Decimal?    @db.Decimal(12, 4)
-  createdAt         DateTime    @default(now())
-  updatedAt         DateTime    @updatedAt
-  deletedAt         DateTime?
+  unavailableChannels String[]    @default([])
+  active              Boolean     @default(true)
+  lowStockThreshold   Decimal?    @db.Decimal(12, 4)
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+  deletedAt           DateTime?
 
   store                Store                 @relation(fields: [storeId], references: [id], onDelete: Cascade)
   recipe               Recipe?
@@ -451,28 +454,34 @@ model InventoryMovement {
 }
 
 model Sale {
-  id            String        @id @default(cuid())
-  storeId       String
-  cashierId     String
-  status        SaleStatus    @default(DRAFT)
-  receiptNumber Int?
-  subtotal      Decimal       @db.Decimal(12, 2)
-  discount      Decimal       @db.Decimal(12, 2)
-  tax           Decimal       @db.Decimal(12, 2)
-  total         Decimal       @db.Decimal(12, 2)
-  paymentMethod PaymentMethod
-  orderType     OrderType     @default(DINE_IN)
+  id             String        @id @default(cuid())
+  storeId        String
+  cashierId      String
+  status         SaleStatus    @default(DRAFT)
+  receiptNumber  Int?
+  subtotal       Decimal       @db.Decimal(12, 2)
+  discount       Decimal       @db.Decimal(12, 2)
+  tax            Decimal       @db.Decimal(12, 2)
+  total          Decimal       @db.Decimal(12, 2)
+  paymentMethod  PaymentMethod
+  orderType      OrderType     @default(DINE_IN)
   // Sales channel key (e.g. GRAB); null = walk-in at store prices.
-  channel       String?
-  createdAt     DateTime      @default(now())
-  finalizedAt   DateTime?
-  voidedAt      DateTime?
-  editedAt      DateTime?
-  deletedAt     DateTime?
+  channel        String?
+  // Senior/PWD-style VAT exemption. `discount` already includes vatRemoved (it is
+  // the total reduction from subtotal); vatExemptSales is the VAT-exclusive base
+  // of the exempt portion, as shown on the receipt.
+  vatRemoved     Decimal       @default(0) @db.Decimal(12, 2)
+  vatExemptSales Decimal       @default(0) @db.Decimal(12, 2)
+  createdAt      DateTime      @default(now())
+  finalizedAt    DateTime?
+  voidedAt       DateTime?
+  editedAt       DateTime?
+  deletedAt      DateTime?
 
-  store   Store      @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  cashier User       @relation("Cashier", fields: [cashierId], references: [id])
-  items   SaleItem[]
+  store     Store          @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  cashier   User           @relation("Cashier", fields: [cashierId], references: [id])
+  items     SaleItem[]
+  discounts SaleDiscount[]
 
   @@unique([storeId, receiptNumber])
   @@index([storeId, createdAt])
@@ -481,22 +490,110 @@ model Sale {
 }
 
 model SaleItem {
-  id           String  @id @default(cuid())
-  saleId       String
-  productId    String
-  qty          Decimal @db.Decimal(12, 4)
-  unitPrice    Decimal @db.Decimal(12, 2)
-  discount     Decimal @db.Decimal(12, 2)
-  tax          Decimal @db.Decimal(12, 2)
-  total        Decimal @db.Decimal(12, 2)
+  id             String   @id @default(cuid())
+  saleId         String
+  productId      String
+  qty            Decimal  @db.Decimal(12, 4)
+  unitPrice      Decimal  @db.Decimal(12, 2)
+  discount       Decimal  @db.Decimal(12, 2)
+  tax            Decimal  @db.Decimal(12, 2)
+  total          Decimal  @db.Decimal(12, 2)
   // Store (walk-in) price at the time of sale; unitPrice - basePrice is the channel markup.
-  basePrice    Decimal? @db.Decimal(12, 2)
-  nameSnapshot String
+  basePrice      Decimal? @db.Decimal(12, 2)
+  nameSnapshot   String
+  // Discount applied to this line (one per line); `discount` holds this line's
+  // share including any VAT removed.
+  saleDiscountId String?
+  vatRemoved     Decimal  @default(0) @db.Decimal(12, 2)
+  vatExemptSales Decimal  @default(0) @db.Decimal(12, 2)
 
-  sale    Sale    @relation(fields: [saleId], references: [id], onDelete: Cascade)
-  product Product @relation(fields: [productId], references: [id])
+  sale         Sale          @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  product      Product       @relation(fields: [productId], references: [id])
+  saleDiscount SaleDiscount? @relation(fields: [saleDiscountId], references: [id], onDelete: SetNull)
 
   @@index([saleId])
+  @@index([saleDiscountId])
+}
+
+enum DiscountScope {
+  LINE
+  SALE
+  BOTH
+}
+
+enum DiscountMethod {
+  PERCENT
+  FIXED
+}
+
+enum FieldRequirement {
+  OFF
+  OPTIONAL
+  REQUIRED
+}
+
+// Store-configurable discounts. Senior Citizen and PWD are statutory presets:
+// their code, rate and VAT rule are locked.
+model DiscountType {
+  id              String           @id @default(cuid())
+  storeId         String
+  name            String
+  code            String
+  statutory       Boolean          @default(false)
+  method          DiscountMethod
+  value           Decimal          @db.Decimal(12, 2)
+  removesVat      Boolean          @default(false)
+  scope           DiscountScope    @default(LINE)
+  holderName      FieldRequirement @default(OFF)
+  holderIdNumber  FieldRequirement @default(OFF)
+  allowOnChannels Boolean          @default(false)
+  // Round each application's net amount to the nearest whole currency unit.
+  roundToWhole    Boolean          @default(false)
+  isActive        Boolean          @default(true)
+  sortOrder       Int              @default(0)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  // Never hard-deleted: past sales point here.
+  archivedAt      DateTime?
+
+  store         Store          @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  saleDiscounts SaleDiscount[]
+
+  @@unique([storeId, code])
+  @@index([storeId, archivedAt])
+}
+
+// One row per discount applied to a sale, snapshotting the type's settings.
+model SaleDiscount {
+  id             String         @id @default(cuid())
+  storeId        String
+  saleId         String
+  discountTypeId String
+  scope          DiscountScope
+  code           String
+  name           String
+  method         DiscountMethod
+  value          Decimal        @db.Decimal(12, 2)
+  removesVat     Boolean
+  holderName     String?
+  holderIdNumber String?
+  // Group meals (sale-wide statutory discount): diners at the table and how many hold the discount.
+  dinerCount     Int?
+  holderCount    Int?
+  // Discount given, excluding VAT removed.
+  amount         Decimal        @db.Decimal(12, 2)
+  vatRemoved     Decimal        @default(0) @db.Decimal(12, 2)
+  appliedById    String
+  createdAt      DateTime       @default(now())
+
+  store        Store        @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  sale         Sale         @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  discountType DiscountType @relation(fields: [discountTypeId], references: [id], onDelete: NoAction)
+  appliedBy    User         @relation("SaleDiscountAppliedBy", fields: [appliedById], references: [id])
+  items        SaleItem[]
+
+  @@index([saleId])
+  @@index([storeId, code, createdAt])
 }
 
 model Supplier {
@@ -920,7 +1017,7 @@ model DailyInventoryReport {
   createdAt   DateTime                 @default(now())
   updatedAt   DateTime                 @updatedAt
 
-  items       DailyInventoryReportItem[]
+  items DailyInventoryReportItem[]
 
   @@unique([storeId, reportType, date])
   @@index([storeId, reportType, date])

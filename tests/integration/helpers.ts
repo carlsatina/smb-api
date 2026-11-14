@@ -32,6 +32,8 @@ export const createTestApp = () => request.agent(createApp());
 
 export const resetDb = async () => {
     await prisma.saleItem.deleteMany();
+    await prisma.saleDiscount.deleteMany();
+    await prisma.discountType.deleteMany();
     await prisma.purchaseReceiptItem.deleteMany();
     await prisma.purchaseOrderItem.deleteMany();
     await prisma.recipeLine.deleteMany();

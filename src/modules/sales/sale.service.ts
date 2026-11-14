@@ -13,6 +13,14 @@ import { AppError } from '../../shared/errors';
 import { parseImportDate } from '../../shared/datetime';
 import { saleRepository, type SaleFilters } from './sale.repository';
 import { computeChannelPrice, parseChannelPrices, parseSalesChannels } from '../../shared/salesChannels';
+import { discountTypeService } from '../discountTypes/discountType.service';
+import {
+    applySaleDiscounts,
+    type DiscountApplicationInput,
+    type DiscountedLine,
+    type DiscountTypeConfig,
+    type ResolvedApplication,
+} from './saleDiscounts';
 
 type SaleItemInput = {
     productId: string;
@@ -20,6 +28,7 @@ type SaleItemInput = {
     unitPrice: number;
     discount?: number;
     tax?: number;
+    discountRef?: string;
 };
 
 type MovementDelta = {
@@ -52,6 +61,7 @@ const ensureStore = async (storeId: string) => {
             id: true,
             allowNegativeStock: true,
             salesChannels: true,
+            defaultTaxRate: true,
         },
     });
 
@@ -143,26 +153,38 @@ const loadPackagingLines = async (storeId: string, productIds: string[]) => {
     return map;
 };
 
+/**
+ * `priced` (from applySaleDiscounts) overrides discount/tax for lines a configured
+ * discount touched; `discountIds` maps its application index to the SaleDiscount id.
+ */
 const calculateSaleItems = (
     items: SaleItemInput[],
-    productMap: Map<string, { name: string; basePrice?: number | null }>
+    productMap: Map<string, { name: string; basePrice?: number | null }>,
+    priced?: { lines: DiscountedLine[]; discountIds: string[] }
 ) => {
     type SaleItemDraft = Omit<Prisma.SaleItemCreateManyInput, 'saleId'>;
     const saleItems: SaleItemDraft[] = [];
     let subtotal = 0;
     let discountTotal = 0;
     let taxTotal = 0;
+    let vatRemovedTotal = 0;
+    let vatExemptTotal = 0;
 
-    items.forEach((item) => {
+    items.forEach((item, index) => {
         const product = productMap.get(item.productId);
         if (!product) {
             throw new AppError('PRODUCT_NOT_FOUND', 'Product not found', 404);
         }
 
+        const line = priced?.lines[index];
         const qty = item.qty;
         const unitPrice = item.unitPrice;
-        const discount = item.discount ?? 0;
-        const tax = item.tax ?? 0;
+        const discount = line ? line.discount : item.discount ?? 0;
+        const tax = line ? line.tax : item.tax ?? 0;
+        const vatRemoved = line?.vatRemoved ?? 0;
+        const vatExemptSales = line?.vatExemptSales ?? 0;
+        const saleDiscountId =
+            line && line.applicationIndex !== null ? priced!.discountIds[line.applicationIndex] : null;
 
         if (discount < 0 || tax < 0) {
             throw new AppError('INVALID_AMOUNT', 'Discount and tax must be non-negative.', 400);
@@ -185,6 +207,8 @@ const calculateSaleItems = (
         subtotal += lineSubtotal;
         discountTotal += discount;
         taxTotal += tax;
+        vatRemovedTotal += vatRemoved;
+        vatExemptTotal += vatExemptSales;
 
         saleItems.push({
             productId: item.productId,
@@ -198,6 +222,9 @@ const calculateSaleItems = (
                 product.basePrice !== null && product.basePrice !== undefined
                     ? new Prisma.Decimal(roundMoney(product.basePrice))
                     : null,
+            saleDiscountId,
+            vatRemoved: new Prisma.Decimal(roundMoney(vatRemoved)),
+            vatExemptSales: new Prisma.Decimal(roundMoney(vatExemptSales)),
         });
     });
 
@@ -214,8 +241,139 @@ const calculateSaleItems = (
             discount: discountTotal,
             tax: taxTotal,
             total,
+            vatRemoved: roundMoney(vatRemovedTotal),
+            vatExemptSales: roundMoney(vatExemptTotal),
         },
     };
+};
+
+type ExistingSaleDiscount = Prisma.SaleDiscountGetPayload<object>;
+
+type PricedDiscounts = {
+    lines: DiscountedLine[];
+    applications: ResolvedApplication[];
+    discountIds: string[];
+    existingById: Map<string, ExistingSaleDiscount>;
+};
+
+/**
+ * Validates and prices the sale's configured discounts. When editing, an entry
+ * whose ref is the id of a discount already on the sale (same type) keeps that
+ * row's id and snapshot (rate, VAT rule), even if the type changed since.
+ */
+const priceDiscounts = async (
+    storeId: string,
+    vatRate: number,
+    isChannelSale: boolean,
+    items: SaleItemInput[],
+    discounts: DiscountApplicationInput[] | undefined,
+    existing: ExistingSaleDiscount[] = []
+): Promise<PricedDiscounts | undefined> => {
+    const hasRefs = items.some((item) => item.discountRef !== undefined);
+    if (!discounts?.length) {
+        if (hasRefs) {
+            throw new AppError('DISCOUNT_REF_NOT_FOUND', 'An item refers to a discount that is not on the sale.', 400);
+        }
+        return undefined;
+    }
+
+    const configs = await discountTypeService.loadConfigs(
+        storeId,
+        Array.from(new Set(discounts.map((entry) => entry.discountTypeId)))
+    );
+
+    const existingById = new Map(existing.map((row) => [row.id, row]));
+    const keptRefs = new Set<string>();
+    const types = new Map<string, DiscountTypeConfig>();
+    const appsForPricing = discounts.map((entry) => {
+        const current = configs.get(entry.discountTypeId);
+        const kept = existingById.get(entry.ref);
+        if (!kept || kept.discountTypeId !== entry.discountTypeId || !current) {
+            return entry;
+        }
+        // Price with the snapshot; key it separately so other entries of the type use current settings.
+        keptRefs.add(entry.ref);
+        const snapshotKey = `snapshot:${entry.ref}`;
+        types.set(snapshotKey, {
+            ...current,
+            code: kept.code,
+            name: kept.name,
+            method: kept.method,
+            value: Number(kept.value),
+            removesVat: kept.removesVat,
+        });
+        return { ...entry, discountTypeId: snapshotKey };
+    });
+    configs.forEach((config, id) => types.set(id, config));
+
+    const result = applySaleDiscounts({
+        lines: items,
+        applications: appsForPricing,
+        types,
+        vatRate,
+        isChannelSale,
+        existingRefs: keptRefs,
+    });
+
+    // Snapshot-keyed entries point back at the real type id.
+    result.applications.forEach((app, index) => {
+        app.type = { ...app.type, id: discounts[index].discountTypeId };
+    });
+
+    return {
+        ...result,
+        discountIds: result.applications.map((app) => (keptRefs.has(app.ref) ? app.ref : randomUUID())),
+        existingById,
+    };
+};
+
+const saleDiscountRows = (
+    storeId: string,
+    saleId: string,
+    userId: string,
+    priced: PricedDiscounts
+): Prisma.SaleDiscountCreateManyInput[] =>
+    priced.applications.map((app, index) => {
+        const id = priced.discountIds[index];
+        const kept = priced.existingById.get(id);
+        return {
+            id,
+            storeId,
+            saleId,
+            discountTypeId: app.type.id,
+            scope: app.scope,
+            code: app.type.code,
+            name: app.type.name,
+            method: app.type.method,
+            value: new Prisma.Decimal(app.type.value),
+            removesVat: app.type.removesVat,
+            holderName: app.holderName,
+            holderIdNumber: app.holderIdNumber,
+            dinerCount: app.dinerCount,
+            holderCount: app.holderCount,
+            amount: new Prisma.Decimal(app.amount),
+            vatRemoved: new Prisma.Decimal(app.vatRemoved),
+            appliedById: kept?.appliedById ?? userId,
+            ...(kept ? { createdAt: kept.createdAt } : {}),
+        };
+    });
+
+/** Audit-friendly summary; never includes ID numbers. */
+const discountAuditSummary = (
+    rows: Array<{ code: string; scope: string; amount: Prisma.Decimal | number; vatRemoved: Prisma.Decimal | number; holderName: string | null }>
+) =>
+    rows.map((row) => ({
+        code: row.code,
+        scope: row.scope,
+        amount: Number(row.amount),
+        vatRemoved: Number(row.vatRemoved),
+        holderName: row.holderName,
+    }));
+
+export const maskIdNumber = (value: string | null) => {
+    if (!value) return value;
+    const visible = value.slice(-4);
+    return `${'*'.repeat(Math.max(value.length - 4, 4))}${visible}`;
 };
 
 const buildMovementDeltas = (
@@ -415,17 +573,24 @@ const mapSaleSummary = (
     })),
 });
 
+type SaleDetailOptions = {
+    /** Full holder ID numbers; otherwise masked to the last 4 characters. */
+    revealHolderIds?: boolean;
+};
+
 const mapSaleDetail = (
     sale: Prisma.SaleGetPayload<{
         include: {
             cashier: { select: { id: true; fullName: true; email: true } };
+            discounts: true;
             items: {
                 include: {
                     product: { select: { id: true; name: true; sku: true; unit: true; type: true } };
                 };
             };
         };
-    }>
+    }>,
+    options: SaleDetailOptions = {}
 ) => ({
     id: sale.id,
     receiptNumber: sale.receiptNumber,
@@ -434,6 +599,8 @@ const mapSaleDetail = (
     discount: normalizeDecimal(sale.discount),
     tax: normalizeDecimal(sale.tax),
     total: normalizeDecimal(sale.total),
+    vatRemoved: normalizeDecimal(sale.vatRemoved),
+    vatExemptSales: normalizeDecimal(sale.vatExemptSales),
     paymentMethod: sale.paymentMethod,
     orderType: sale.orderType,
     channel: sale.channel,
@@ -442,6 +609,26 @@ const mapSaleDetail = (
     voidedAt: sale.voidedAt,
     editedAt: sale.editedAt,
     cashier: sale.cashier,
+    // `ref` is what items' discountRef points at; send it back unchanged when editing.
+    discounts: (sale.discounts ?? []).map((row) => ({
+        id: row.id,
+        ref: row.id,
+        discountTypeId: row.discountTypeId,
+        scope: row.scope,
+        code: row.code,
+        name: row.name,
+        method: row.method,
+        value: normalizeDecimal(row.value),
+        removesVat: row.removesVat,
+        holderName: row.holderName,
+        holderIdNumber: options.revealHolderIds ? row.holderIdNumber : maskIdNumber(row.holderIdNumber),
+        dinerCount: row.dinerCount,
+        holderCount: row.holderCount,
+        amount: normalizeDecimal(row.amount),
+        vatRemoved: normalizeDecimal(row.vatRemoved),
+        appliedById: row.appliedById,
+        createdAt: row.createdAt,
+    })),
     items: sale.items.map((item) => ({
         id: item.id,
         productId: item.productId,
@@ -452,6 +639,9 @@ const mapSaleDetail = (
         discount: normalizeDecimal(item.discount),
         tax: normalizeDecimal(item.tax),
         total: normalizeDecimal(item.total),
+        discountRef: item.saleDiscountId ?? undefined,
+        vatRemoved: normalizeDecimal(item.vatRemoved),
+        vatExemptSales: normalizeDecimal(item.vatExemptSales),
         product: item.product
             ? {
                   id: item.product.id,
@@ -508,13 +698,13 @@ export const saleService = {
             pageSize,
         };
     },
-    get: async (storeId: string, saleId: string) => {
+    get: async (storeId: string, saleId: string, options: SaleDetailOptions = {}) => {
         const sale = await saleRepository.getById(storeId, saleId);
         if (!sale) {
             throw new AppError('NOT_FOUND', 'Sale not found', 404);
         }
 
-        return mapSaleDetail(sale);
+        return mapSaleDetail(sale, options);
     },
     finalize: async (
         storeId: string,
@@ -525,7 +715,9 @@ export const saleService = {
             orderType: OrderType;
             customDate?: Date;
             channel?: string | null;
-        }
+            discounts?: DiscountApplicationInput[];
+        },
+        options: SaleDetailOptions = {}
     ) => {
         if (!payload.items.length) {
             throw new AppError('INVALID_ITEMS', 'Sale must include at least one item.', 400);
@@ -622,9 +814,18 @@ export const saleService = {
                 ? await loadPackagingLines(storeId, uniqueProductIds)
                 : new Map<string, PackagingLine[]>();
 
+        const pricedDiscounts = await priceDiscounts(
+            storeId,
+            normalizeDecimal(store.defaultTaxRate),
+            Boolean(channel),
+            payload.items,
+            payload.discounts
+        );
+
         const { saleItems, totals } = calculateSaleItems(
             payload.items,
-            new Map(products.map((p) => [p.id, { name: p.name, basePrice: normalizeDecimal(p.price) }]))
+            new Map(products.map((p) => [p.id, { name: p.name, basePrice: normalizeDecimal(p.price) }])),
+            pricedDiscounts
         );
 
         const movementDeltas = buildMovementDeltas(
@@ -685,6 +886,8 @@ export const saleService = {
                     discount: new Prisma.Decimal(totals.discount),
                     tax: new Prisma.Decimal(totals.tax),
                     total: new Prisma.Decimal(totals.total),
+                    vatRemoved: new Prisma.Decimal(totals.vatRemoved),
+                    vatExemptSales: new Prisma.Decimal(totals.vatExemptSales),
                     paymentMethod: payload.paymentMethod,
                     orderType: payload.orderType,
                     channel: channel?.key ?? null,
@@ -692,6 +895,15 @@ export const saleService = {
                     createdAt: effectiveDate,
                 },
             });
+
+            if (pricedDiscounts) {
+                await tx.saleDiscount.createMany({
+                    data: saleDiscountRows(storeId, created.id, userId, pricedDiscounts).map((row) => ({
+                        ...row,
+                        createdAt: effectiveDate,
+                    })),
+                });
+            }
 
             await tx.saleItem.createMany({
                 data: saleItems.map((item) => ({
@@ -730,7 +942,7 @@ export const saleService = {
             throw new AppError('NOT_FOUND', 'Sale not found', 404);
         }
 
-        return mapSaleDetail(finalized);
+        return mapSaleDetail(finalized, options);
     },
     update: async (
         storeId: string,
@@ -740,7 +952,9 @@ export const saleService = {
             items: SaleItemInput[];
             paymentMethod: PaymentMethod;
             orderType: OrderType;
-        }
+            discounts?: DiscountApplicationInput[];
+        },
+        options: SaleDetailOptions = {}
     ) => {
         if (!payload.items.length) {
             throw new AppError('INVALID_ITEMS', 'Sale must include at least one item.', 400);
@@ -752,6 +966,16 @@ export const saleService = {
         }
         if (sale.status !== SaleStatus.FINALIZED || sale.voidedAt) {
             throw new AppError('INVALID_STATUS', 'Only finalized sales can be edited.', 400);
+        }
+
+        // An editor that doesn't know about discounts would silently drop them (and the holder records).
+        const existingDiscounts = sale.discounts ?? [];
+        if (existingDiscounts.length && payload.discounts === undefined) {
+            throw new AppError(
+                'DISCOUNTS_REQUIRED',
+                'This sale has discounts; send them with the edit so they are kept.',
+                409
+            );
         }
 
         const store = await ensureStore(storeId);
@@ -844,6 +1068,18 @@ export const saleService = {
                 ? await loadPackagingLines(storeId, uniqueProductIds)
                 : new Map<string, PackagingLine[]>();
 
+        const pricedDiscounts = await priceDiscounts(
+            storeId,
+            normalizeDecimal(store.defaultTaxRate),
+            Boolean(sale.channel),
+            payload.items,
+            payload.discounts,
+            existingDiscounts
+        );
+        const discountRowsToCreate = pricedDiscounts
+            ? saleDiscountRows(storeId, saleId, userId, pricedDiscounts)
+            : [];
+
         const { saleItems, totals } = calculateSaleItems(
             payload.items,
             new Map(
@@ -851,7 +1087,8 @@ export const saleService = {
                     p.id,
                     { name: p.name, basePrice: originalLines.get(p.id)?.basePrice ?? normalizeDecimal(p.price) },
                 ])
-            )
+            ),
+            pricedDiscounts
         );
 
         const nextDeltas = buildMovementDeltas(
@@ -931,6 +1168,7 @@ export const saleService = {
             paymentMethod: sale.paymentMethod,
             orderType: sale.orderType,
             channel: sale.channel,
+            discounts: discountAuditSummary(existingDiscounts),
             items: sale.items.map((item) => ({
                 productId: item.productId,
                 name: item.nameSnapshot,
@@ -954,6 +1192,8 @@ export const saleService = {
                     discount: new Prisma.Decimal(totals.discount),
                     tax: new Prisma.Decimal(totals.tax),
                     total: new Prisma.Decimal(totals.total),
+                    vatRemoved: new Prisma.Decimal(totals.vatRemoved),
+                    vatExemptSales: new Prisma.Decimal(totals.vatExemptSales),
                     paymentMethod: payload.paymentMethod,
                     orderType: payload.orderType,
                     editedAt: new Date(),
@@ -965,6 +1205,12 @@ export const saleService = {
             }
 
             await tx.saleItem.deleteMany({ where: { saleId } });
+            if (existingDiscounts.length) {
+                await tx.saleDiscount.deleteMany({ where: { saleId } });
+            }
+            if (discountRowsToCreate.length) {
+                await tx.saleDiscount.createMany({ data: discountRowsToCreate });
+            }
             await tx.saleItem.createMany({
                 data: saleItems.map((item) => ({ ...item, saleId })),
             });
@@ -1007,6 +1253,15 @@ export const saleService = {
                             ...totals,
                             paymentMethod: payload.paymentMethod,
                             orderType: payload.orderType,
+                            discounts: discountAuditSummary(
+                                discountRowsToCreate.map((row) => ({
+                                    code: row.code,
+                                    scope: row.scope,
+                                    amount: Number(row.amount),
+                                    vatRemoved: Number(row.vatRemoved),
+                                    holderName: row.holderName ?? null,
+                                }))
+                            ),
                             items: saleItems.map((item) => ({
                                 productId: item.productId,
                                 name: item.nameSnapshot,
@@ -1025,7 +1280,7 @@ export const saleService = {
             throw new AppError('NOT_FOUND', 'Sale not found', 404);
         }
 
-        return mapSaleDetail(updated);
+        return mapSaleDetail(updated, options);
     },
     /**
      * Owner-only soft delete. A still-finalized sale gives back exactly what it
@@ -1275,7 +1530,7 @@ export const saleService = {
 
         return { deletedCount: sales.length, stockReturned: reversal.length > 0 };
     },
-    voidSale:async (storeId: string, userId: string, saleId: string) => {
+    voidSale: async (storeId: string, userId: string, saleId: string, options: SaleDetailOptions = {}) => {
         const sale = await saleRepository.getById(storeId, saleId);
         if (!sale) {
             throw new AppError('NOT_FOUND', 'Sale not found', 404);
@@ -1399,7 +1654,7 @@ export const saleService = {
             throw new AppError('NOT_FOUND', 'Sale not found', 404);
         }
 
-        return mapSaleDetail(updated);
+        return mapSaleDetail(updated, options);
     },
 
     importSales: async (
