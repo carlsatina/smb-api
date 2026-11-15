@@ -153,7 +153,7 @@ export const applySaleDiscounts = (input: {
                 'DISCOUNT_SCOPE_NOT_ALLOWED',
                 type.scope === DiscountScope.LINE
                     ? `${type.name} can only be applied to individual items.`
-                    : `${type.name} can only be applied to the whole sale.`,
+                    : `${type.name} can only be applied to the whole order.`,
                 { code: type.code }
             );
         }
@@ -179,7 +179,7 @@ export const applySaleDiscounts = (input: {
         let holderCount: number | null = null;
         if (app.scope === 'SALE') {
             if (saleWide !== null) {
-                throw bad('MULTIPLE_SALE_DISCOUNTS', 'Only one discount can apply to the whole sale.');
+                throw bad('MULTIPLE_SALE_DISCOUNTS', 'Only one discount can apply to the whole order.');
             }
             saleWide = index;
             // Statutory group meals: the discount covers the holders' share of the bill.
